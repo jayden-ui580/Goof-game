@@ -137,6 +137,7 @@ local function pickGoal(home: Vector3, rng: Random): Vector3?
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = rigModels
+	params.IgnoreWater = true -- aim for the floor under the arena's water, not the water surface
 	local arena = Workspace:FindFirstChild(ARENA_NAME)
 	local floor = arena and arena:FindFirstChild("Floor")
 	for _ = 1, 12 do

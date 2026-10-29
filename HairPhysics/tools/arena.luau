@@ -4,7 +4,8 @@ local Instance, Vector3, CFrame, Color3, Enum = roblox.Instance, roblox.Vector3,
 
 local ORIGIN = Vector3.new(0, 8, -120) -- centre of the floor's top surface, in the world
 local INNER = Vector3.new(64, 24, 64) -- inside of the box: width, height, depth
-local WALL = 2 -- wall / floor thickness
+local WALL = 2 -- wall thickness
+local FLOOR_T = 4 -- floor thickness (thick enough to hide the underside of the terrain water)
 local GATE_W, GATE_H = 8, 4 -- the drain hole at the bottom of the +X wall
 
 local WALL_COLOR = Color3.fromRGB(226, 229, 234)
@@ -38,7 +39,7 @@ return function()
 	local outerW, outerD = INNER.X + WALL * 2, INNER.Z + WALL * 2
 
 	-- floor (its top surface is the arena's floor level; scripts read it from this part)
-	part(arena, "Floor", Vector3.new(outerW, WALL, outerD), Vector3.new(0, -WALL / 2, 0), {
+	part(arena, "Floor", Vector3.new(outerW, FLOOR_T, outerD), Vector3.new(0, -FLOOR_T / 2, 0), {
 		Material = Enum.Material.Concrete,
 		Color = FLOOR_COLOR,
 	})
@@ -95,9 +96,34 @@ return function()
 			Color = Color3.fromRGB(60, 63, 70),
 		})
 	end
-	part(drain, "Spout", Vector3.new(3, 0.4, GATE_W + 1), Vector3.new(hw + WALL + 1.5, -0.2, 0), {
+	part(drain, "Spout", Vector3.new(3, FLOOR_T, GATE_W + 1), Vector3.new(hw + WALL + 1.5, -FLOOR_T / 2, 0), {
 		Material = Enum.Material.Concrete,
 		Color = FLOOR_COLOR,
+	})
+
+	-- the tap: a pipe sticking out of the -Z wall that the water pours from
+	local inlet = Instance.new("Folder")
+	inlet.Name = "Inlet"
+	inlet.Parent = arena
+	local pipeY = 18
+	local pipe = part(inlet, "Pipe", Vector3.new(3, 2.4, 2.4), Vector3.new(0, pipeY, -hd + 1.5), {
+		Material = Enum.Material.Metal,
+		Color = Color3.fromRGB(120, 126, 134),
+		Shape = Enum.PartType.Cylinder,
+	})
+	pipe.CFrame = CFrame.new(ORIGIN + Vector3.new(0, pipeY, -hd + 1.5)) * CFrame.Angles(0, math.rad(90), 0)
+	local flange = part(inlet, "Flange", Vector3.new(0.4, 3.4, 3.4), Vector3.new(0, pipeY, -hd + 0.2), {
+		Material = Enum.Material.Metal,
+		Color = Color3.fromRGB(90, 96, 105),
+		Shape = Enum.PartType.Cylinder,
+	})
+	flange.CFrame = CFrame.new(ORIGIN + Vector3.new(0, pipeY, -hd + 0.2)) * CFrame.Angles(0, math.rad(90), 0)
+	-- where the water leaves the pipe (the water scripts read this)
+	part(inlet, "InletMouth", Vector3.new(0.4, 0.4, 0.4), Vector3.new(0, pipeY - 0.6, -hd + 3.4), {
+		Transparency = 1,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
 	})
 
 	-- depth gauge on the -X wall: a stripe every 2 studs, a number every 4
@@ -161,10 +187,10 @@ return function()
 	local legs = Instance.new("Folder")
 	legs.Name = "Legs"
 	legs.Parent = arena
-	local legH = ORIGIN.Y - WALL
+	local legH = ORIGIN.Y - FLOOR_T
 	for _, sx in { -1, 1 } do
 		for _, sz in { -1, 1 } do
-			part(legs, "Leg", Vector3.new(3, legH, 3), Vector3.new(sx * (hw - 1), -WALL - legH / 2, sz * (hd - 1)), {
+			part(legs, "Leg", Vector3.new(3, legH, 3), Vector3.new(sx * (hw - 1), -FLOOR_T - legH / 2, sz * (hd - 1)), {
 				Material = Enum.Material.Concrete,
 				Color = Color3.fromRGB(150, 155, 160),
 			})

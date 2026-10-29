@@ -22,7 +22,7 @@ do
 	gui.ResetOnSpawn = false
 	label.AnchorPoint = Vector2.new(0.5, 0)
 	label.Position = UDim2.new(0.5, 0, 0, 8)
-	label.Size = UDim2.fromOffset(300, 28)
+	label.Size = UDim2.fromOffset(420, 28)
 	label.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
 	label.BackgroundTransparency = 0.25
 	label.TextColor3 = Color3.new(1, 1, 1)
@@ -41,12 +41,20 @@ end
 
 local function refresh()
 	local open = arena and arena:GetAttribute("GateOpen")
-	label.Text = ("Drain gate: %s   (press Z)"):format(open and "OPEN" or "closed")
+	local level = arena and arena:GetAttribute("WaterLevel")
+	local water = ""
+	if level then
+		local tap = arena:GetAttribute("TapOn")
+		water = ("Water %.1f studs%s   ·   "):format(level, tap and " (filling)" or (open and level > 0.05 and " (draining)" or ""))
+	end
+	label.Text = ("%sDrain gate: %s   (press Z)"):format(water, open and "OPEN" or "closed")
 	label.TextColor3 = open and Color3.fromRGB(120, 210, 255) or Color3.new(1, 1, 1)
 end
 
 if arena then
 	arena:GetAttributeChangedSignal("GateOpen"):Connect(refresh)
+	arena:GetAttributeChangedSignal("WaterLevel"):Connect(refresh)
+	arena:GetAttributeChangedSignal("TapOn"):Connect(refresh)
 end
 refresh()
 

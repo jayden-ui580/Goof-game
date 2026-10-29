@@ -9,53 +9,55 @@
         <bool name="Disabled">true</bool>
         <ProtectedString name="Source"><![CDATA[--[[
 	============================================================================
-	 HAIR PHYSICS + TEST ARENA KIT — READ ME   (this script is switched off; it's just notes)
+	 HAIR PHYSICS + TEST ARENA + WATER KIT — READ ME   (this script is switched off; it's notes)
 	============================================================================
 
 	WHAT'S IN HERE
-	  Workspace              -> TestArena (sealed glass-roofed test box with a drain gate)
-	  ReplicatedStorage      -> HairPhysics (the simulator) + HairConfig (ALL hair settings)
+	  Workspace              -> TestArena (sealed glass-roofed test box, tap, drain gate)
+	  ReplicatedStorage      -> HairPhysics, HairConfig   (hair)
+	                            WaterSim, WaterConfig     (water)
 	  ServerScriptService    -> HairApplier (puts the hair on the rigs)
 	                            ArenaSetup  (spawns everyone in the arena, runs the drain gate)
+	                            WaterServer (runs the water and turns it into terrain water)
 	                            NPCRoam     (test: rigs walk, jump, turn around inside the arena)
 	  StarterPlayerScripts   -> HairPhysicsClient (starts the hair simulation for each player)
 	                            HairFitTool       (press H: nudge the hair on the heads)
 	                            ArenaControls     (press Z: open / close the drain gate)
+	                            WaterClient       (tap stream, splashes, waterfall, floating foam)
 	  ServerStorage          -> HairModels (the imported hair goes here)
 
 	SETUP (once)
-	  1. Import the two rigged hairs (skip if you already did): File > Import 3D,
-	     pick Pigtails_Rigged.fbx, Rig Type: Custom, Scale Unit: Studs, tick
-	     "Keep Zero Influence Bones", leave "Upload to Roblox" on. Same for LadyHair_Rigged.fbx.
-	     Drag both imported models into ServerStorage > HairModels.
-	  2. Move the contents of each folder in this kit into the service with the same
-	     name (StarterPlayerScripts is inside StarterPlayer). REPLACE the old copies of
-	     HairPhysics, HairConfig, HairApplier, NPCRoam and HairPhysicsClient if you have them.
+	  1. Hair (skip if already done): import Pigtails_Rigged.fbx and LadyHair_Rigged.fbx with
+	     File > Import 3D (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones")
+	     and drag both models into ServerStorage > HairModels.
+	  2. Move the contents of each folder in this kit into the service with the same name
+	     (StarterPlayerScripts is inside StarterPlayer). REPLACE older copies — including the
+	     old TestArena in Workspace (the new one has a thicker floor and the tap).
 	     Then delete this kit folder.
-	  3. Paste each hair's texture id into TextureId in HairConfig (the .obj files didn't
-	     include textures).
-	  4. Press Play (F5). You and both rigs start inside the arena.
+	  3. Press Play (F5). You and both rigs start inside the arena and the tap starts filling it.
 
 	CONTROLS (in Play)
-	  Z   open / close the drain gate in the arena wall ("Gate" button on phones)
-	  H   hair fit panel ("Fit" button on phones): pick a rig with Prev/Next, nudge its hair,
-	      then copy the Offset line it shows into that hair's entry in HairConfig.
+	  Z   open / close the drain gate ("Gate" button on phones). Open = the water rushes out of
+	      the hole and pours down the side of the arena. Shut = the tap fills it back up.
+	  H   hair fit panel ("Fit" button on phones).
 
-	TWEAKING
-	  Hair: everything is in ReplicatedStorage > HairConfig, with notes on each number.
-	    - hair sits wrong on the head      -> use the H panel, then paste the Offset it gives
-	    - too floppy / too stiff           -> Stiffness, Damping
-	    - wobbles too much                 -> raise Damping, lower Bounce
-	    - too much / too little swing      -> Inertia
-	  Arena: move/resize the TestArena model freely; scripts read its Floor part and its
-	  InteriorSize attribute (update that if you change the walls).
-	  When you're done testing, delete NPCRoam (or set ENABLED = false at its top).
+	THE WATER
+	  It's real Roblox terrain water (so it looks like Roblox water and you can swim in it),
+	  moved around by a flow simulation on the server. The arena floor is split into 4×4-stud
+	  cells; water flows from higher cells to lower ones, so it pours in, spreads across the
+	  floor, sloshes, levels out, and runs toward the hole when the gate opens.
+	  Settings are in ReplicatedStorage > WaterConfig (how deep, how fast it fills, how fast it
+	  drains, the water colour...). Note: Roblox has one water look per place, so the colour /
+	  clearness settings change ALL terrain water in the place (turn ApplyWaterLook off if you
+	  have other water you don't want changed).
+	  Keep the TestArena unrotated and on the 4-stud grid (its floor-top centre at whole
+	  multiples of 4) — terrain water can only sit on that grid.
 
 	IF SOMETHING'S OFF
-	  - Output says it couldn't find the hair: the imported models aren't in
-	    ServerStorage > HairModels, or the import dropped the bones (re-import, Rig Type Custom).
-	  - Hair is see-through from some angles: tick DoubleSided on the hair MeshPart in HairModels.
-	  - Hair doesn't move: you pressed Run instead of Play.
+	  - No water: check Output for [WaterServer] messages. The arena needs its Floor, Inlet >
+	    InletMouth and Drain > GateOpening parts.
+	  - Hair: Output says it couldn't find the hair -> step 1. Hair see-through -> tick
+	    DoubleSided on the hair MeshPart. Hair not moving -> you pressed Run, not Play.
 ]]
 ]]></ProtectedString>
       </Properties>
@@ -1266,12 +1268,527 @@ return HairConfig
 ]]></ProtectedString>
         </Properties>
       </Item>
+      <Item class="ModuleScript" referent="5">
+        <Properties>
+          <string name="Name">WaterSim</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	WaterSim  (ModuleScript — lives in ReplicatedStorage)
+
+	The water's brain. The arena floor is split into a grid of 4×4-stud cells (the same size
+	as Roblox's terrain water cubes) and each cell remembers how deep its water is.
+
+	How the water moves (the "pipe method", the standard trick for game water):
+	  * Imagine a little pipe between every pair of neighbouring cells.
+	  * Water in a pipe speeds up toward the lower side, pushed by the difference in water
+	    height (gravity), and slows down a bit from friction.
+	  * Every slice of time each cell gives water to its neighbours through those pipes,
+	    never more than it has, so water is never created or lost by accident.
+	  This makes water pour in, spread out across the floor in a moving front, slosh, level
+	  out, and run downhill toward an opening — all from that one rule.
+
+	The drain cells (the hole in the wall) also lose water over the edge, using the real
+	formulas for water spilling over a ledge (a "weir") or squirting through a submerged hole
+	(an "orifice").
+
+	This module has no Roblox-specific code in its maths, so it can be tested on its own.
+]]
+
+local WaterSim = {}
+WaterSim.__index = WaterSim
+
+WaterSim.CELL = 4 -- studs per cell (must match terrain voxels)
+
+-- opts: NX, NZ (cells), Gravity, Friction (per second), PipeDepth (studs, how "thick" the pipes are),
+--       Active (flat array of booleans: can this cell ever hold water?)
+function WaterSim.new(opts)
+	local self = setmetatable({}, WaterSim)
+	local n = opts.NX * opts.NZ
+	self.NX, self.NZ, self.N = opts.NX, opts.NZ, n
+	self.L = opts.CellSize or WaterSim.CELL
+	self.Gravity = opts.Gravity or 35
+	self.Friction = opts.Friction or 0.5
+	self.PipeArea = self.L * (opts.PipeDepth or 8)
+	-- extra flow straight down any height difference, with no momentum. It irons out the
+	-- cell-to-cell zigzag ("checkerboard") that the pipe method can grow, without slowing
+	-- big waves. (studs³ per second per stud of height difference)
+	self.Smoothing = opts.Smoothing or 40
+	self.Depth = table.create(n, 0)
+	self.FL = table.create(n, 0) -- flow out toward -X
+	self.FR = table.create(n, 0) -- flow out toward +X
+	self.FD = table.create(n, 0) -- flow out toward -Z
+	self.FU = table.create(n, 0) -- flow out toward +Z
+	self.SmL, self.SmR, self.SmD, self.SmU = table.create(n, 0), table.create(n, 0), table.create(n, 0), table.create(n, 0)
+	self.VelX = table.create(n, 0)
+	self.VelZ = table.create(n, 0)
+	self.Active = opts.Active or table.create(n, true)
+	self.Openness = table.create(n, 1) -- 0..1, how open a cell is (gate cells slide open)
+	self.Drains = {} -- [index] = { Width = studs, Height = studs (opening height when fully open) }
+	self.Sources = {} -- list of { Index = i, Rate = studs³/s }
+	self.SoakRate = opts.SoakRate or 0.05 -- studs/s: a last thin film soaks away instead of lingering
+	self.SoakBelow = opts.SoakBelow or 0.15 -- studs: only films thinner than this soak away
+	self.SoakedRate = 0 -- studs³/s that soaked away (last step)
+	self.DrainCoefficient = 0.62 -- how freely water leaves through the opening (real-world value)
+	self.DrainSpeed = opts.DrainSpeed or 1
+	-- the floor dips slightly into the drain opening (like a real floor drain), so the last
+	-- shallow water keeps running out instead of creeping
+	self.DrainDip = opts.DrainDip or 0.3
+	self.OutflowRate = 0 -- studs³/s leaving through drains (last step)
+	self.InflowRate = 0
+	return self
+end
+
+function WaterSim:Index(i: number, j: number): number
+	return (j - 1) * self.NX + i
+end
+
+function WaterSim:AddDrain(index: number, width: number, height: number)
+	self.Drains[index] = { Width = width, Height = height }
+end
+
+-- Volume in studs³ (optionally only where filter(index) is true).
+function WaterSim:Volume(filter): number
+	local v, area = 0, self.L * self.L
+	for i = 1, self.N do
+		if not filter or filter(i) then
+			v += self.Depth[i] * area
+		end
+	end
+	return v
+end
+
+function WaterSim:Step(dt: number)
+	local NX, NZ, L = self.NX, self.NZ, self.L
+	local area = L * L
+	local depth, active, open = self.Depth, self.Active, self.Openness
+	local FL, FR, FD, FU = self.FL, self.FR, self.FD, self.FU
+	local gain = dt * self.PipeArea * self.Gravity / L
+	local keep = math.exp(-self.Friction * dt)
+	local smooth = self.Smoothing
+
+	-- 1) pipes speed up / slow down
+	for j = 1, NZ do
+		for i = 1, NX do
+			local k = (j - 1) * NX + i
+			if active[k] and open[k] > 0 and depth[k] > 0 then
+				local h = depth[k]
+				local fl, fr, fd, fu = 0, 0, 0, 0
+				local sl, sr, sd, su = 0, 0, 0, 0
+				if i > 1 and active[k - 1] and open[k - 1] > 0 then
+					local dh = (h - depth[k - 1]) * math.min(open[k], open[k - 1])
+					fl = math.max(0, FL[k] * keep + gain * dh)
+					sl = math.max(0, smooth * dh)
+				end
+				if i < NX and active[k + 1] and open[k + 1] > 0 then
+					local dh = (h - depth[k + 1]) * math.min(open[k], open[k + 1])
+					fr = math.max(0, FR[k] * keep + gain * dh)
+					sr = math.max(0, smooth * dh)
+				end
+				if j > 1 and active[k - NX] and open[k - NX] > 0 then
+					local dh = (h - depth[k - NX]) * math.min(open[k], open[k - NX])
+					fd = math.max(0, FD[k] * keep + gain * dh)
+					sd = math.max(0, smooth * dh)
+				end
+				if j < NZ and active[k + NX] and open[k + NX] > 0 then
+					local dh = (h - depth[k + NX]) * math.min(open[k], open[k + NX])
+					fu = math.max(0, FU[k] * keep + gain * dh)
+					su = math.max(0, smooth * dh)
+				end
+				-- the smoothing flow is added on top but not remembered as momentum
+				self.SmL[k], self.SmR[k], self.SmD[k], self.SmU[k] = sl, sr, sd, su
+				fl, fr, fd, fu = fl + sl, fr + sr, fd + sd, fu + su
+				-- never send out more water than the cell holds
+				local total = (fl + fr + fd + fu) * dt
+				if total > h * area then
+					local s = h * area / total
+					fl, fr, fd, fu = fl * s, fr * s, fd * s, fu * s
+				end
+				FL[k], FR[k], FD[k], FU[k] = fl, fr, fd, fu
+			else
+				FL[k], FR[k], FD[k], FU[k] = 0, 0, 0, 0
+				self.SmL[k], self.SmR[k], self.SmD[k], self.SmU[k] = 0, 0, 0, 0
+			end
+		end
+	end
+
+	-- 2) move the water and work out how fast it's flowing (for foam and splashes)
+	local velX, velZ = self.VelX, self.VelZ
+	for j = 1, NZ do
+		for i = 1, NX do
+			local k = (j - 1) * NX + i
+			if active[k] then
+				local inX = (i > 1 and FR[k - 1] or 0) + (i < NX and FL[k + 1] or 0)
+				local inZ = (j > 1 and FU[k - NX] or 0) + (j < NZ and FD[k + NX] or 0)
+				local before = depth[k]
+				local after = before + dt * (inX + inZ - FL[k] - FR[k] - FD[k] - FU[k]) / area
+				depth[k] = after > 1e-5 and after or 0
+				local avg = math.max((before + depth[k]) * 0.5, 0.05)
+				local throughX = ((i > 1 and FR[k - 1] or 0) - FL[k] + FR[k] - (i < NX and FL[k + 1] or 0)) * 0.5
+				local throughZ = ((j > 1 and FU[k - NX] or 0) - FD[k] + FU[k] - (j < NZ and FD[k + NX] or 0)) * 0.5
+				velX[k] = throughX / (L * avg)
+				velZ[k] = throughZ / (L * avg)
+			end
+		end
+	end
+
+	-- forget the smoothing part so it doesn't build up momentum next step
+	local SmL, SmR, SmD, SmU = self.SmL, self.SmR, self.SmD, self.SmU
+	for k = 1, self.N do
+		FL[k] = math.max(0, FL[k] - SmL[k])
+		FR[k] = math.max(0, FR[k] - SmR[k])
+		FD[k] = math.max(0, FD[k] - SmD[k])
+		FU[k] = math.max(0, FU[k] - SmU[k])
+	end
+
+	-- 3) taps pour in
+	local inflow = 0
+	for _, src in self.Sources do
+		if src.Rate > 0 and active[src.Index] then
+			depth[src.Index] += src.Rate * dt / area
+			inflow += src.Rate
+		end
+	end
+	self.InflowRate = inflow
+
+	-- 4) drains: water spills over the ledge (weir) or squirts through the hole (orifice)
+	local out = 0
+	local g2 = math.sqrt(2 * self.Gravity)
+	for k, drain in self.Drains do
+		local h = depth[k]
+		local opening = drain.Height * open[k]
+		if active[k] and h > 0 and opening > 0.01 then
+			local q
+			local head = h + self.DrainDip
+			if head <= opening then
+				q = self.DrainCoefficient * (2 / 3) * drain.Width * g2 * head ^ 1.5
+			else
+				q = self.DrainCoefficient * drain.Width * opening * g2 * math.sqrt(head - opening / 2)
+			end
+			q = math.min(q * self.DrainSpeed, h * area / dt)
+			depth[k] = h - q * dt / area
+			out += q
+		end
+	end
+	self.OutflowRate = out
+
+	-- 5) the last thin film soaks away (otherwise a 1-millimetre puddle lingers forever)
+	local soak = self.SoakRate * dt
+	local soaked = 0
+	if soak > 0 and inflow == 0 then
+		local below = self.SoakBelow
+		for k = 1, self.N do
+			local h = depth[k]
+			if h > 0 and h < below then
+				local nh = h > soak and h - soak or 0
+				soaked += (h - nh) * area
+				depth[k] = nh
+			end
+		end
+	end
+	self.SoakedRate = soaked / dt
+end
+
+-- Removes water from cells that can't hold any right now (e.g. a gate that just shut).
+function WaterSim:ClearInactive()
+	for k = 1, self.N do
+		if not self.Active[k] or self.Openness[k] <= 0 then
+			self.Depth[k] = 0
+			self.FL[k], self.FR[k], self.FD[k], self.FU[k] = 0, 0, 0, 0
+		end
+	end
+end
+
+----------------------------------------------------------------------------------------
+-- Network packet: what the server sends players so they can draw splashes and foam.
+-- Depth in millimetres (u16), flow speed in centistuds/s (i16).
+----------------------------------------------------------------------------------------
+local HEADER = 16
+
+function WaterSim:Encode(flags: number): buffer
+	local n = self.N
+	local b = buffer.create(HEADER + n * 6)
+	buffer.writeu8(b, 0, 1)
+	buffer.writeu8(b, 1, self.NX)
+	buffer.writeu8(b, 2, self.NZ)
+	buffer.writeu8(b, 3, flags)
+	buffer.writef32(b, 4, self.InflowRate)
+	buffer.writef32(b, 8, self.OutflowRate)
+	buffer.writef32(b, 12, 0)
+	for k = 1, n do
+		local o = HEADER + (k - 1) * 6
+		buffer.writeu16(b, o, math.clamp(math.round(self.Depth[k] * 1000), 0, 65535))
+		buffer.writei16(b, o + 2, math.clamp(math.round(self.VelX[k] * 100), -32768, 32767))
+		buffer.writei16(b, o + 4, math.clamp(math.round(self.VelZ[k] * 100), -32768, 32767))
+	end
+	return b
+end
+
+function WaterSim.Decode(b: buffer)
+	local nx, nz = buffer.readu8(b, 1), buffer.readu8(b, 2)
+	local n = nx * nz
+	local state = {
+		NX = nx,
+		NZ = nz,
+		Flags = buffer.readu8(b, 3),
+		Inflow = buffer.readf32(b, 4),
+		Outflow = buffer.readf32(b, 8),
+		Depth = table.create(n, 0),
+		VelX = table.create(n, 0),
+		VelZ = table.create(n, 0),
+	}
+	for k = 1, n do
+		local o = HEADER + (k - 1) * 6
+		state.Depth[k] = buffer.readu16(b, o) / 1000
+		state.VelX[k] = buffer.readi16(b, o + 2) / 100
+		state.VelZ[k] = buffer.readi16(b, o + 4) / 100
+	end
+	return state
+end
+
+WaterSim.FLAG_TAP = 1
+WaterSim.FLAG_GATE = 2
+
+----------------------------------------------------------------------------------------
+-- Turning a water depth into terrain-cube fill amounts.
+----------------------------------------------------------------------------------------
+
+-- Roblox draws a water surface halfway (in fill amount) between neighbouring cube centres, so a
+-- cube that's 30% full doesn't show its surface 30% of the way up. This converts "the surface
+-- should be s studs above the bottom of this cube" into the fill amount that puts it there.
+-- (s from 0 to 4, with a full cube underneath.)
+function WaterSim.OccupancyForSurface(s: number): number
+	local c = WaterSim.CELL
+	s = math.clamp(s / c * 4, 0, 4) -- work in units of a 4-tall cube
+	if s <= 2 then
+		return s / (s + 2)
+	end
+	return 2 / (6 - s)
+end
+
+----------------------------------------------------------------------------------------
+-- Arena layout: where the grid sits in the world, which cells are inside the box, which
+-- cells are the drain hole, and where the tap pours.
+----------------------------------------------------------------------------------------
+
+-- The grid is the inside of the box plus one ring of cells outside the walls (the drain hole
+-- is in that ring). Returns nil and a reason if the arena is missing something.
+function WaterSim.Layout(arena: Instance)
+	local C = WaterSim.CELL
+	local floor = arena:FindFirstChild("Floor")
+	local size = arena:GetAttribute("InteriorSize")
+	if not (floor and floor:IsA("BasePart") and typeof(size) == "Vector3") then
+		return nil, "the arena needs a Floor part and an InteriorSize attribute"
+	end
+	local fcf = floor.CFrame
+	local floorTop = fcf.Position.Y + floor.Size.Y / 2
+	local nxIn, nzIn = math.round(size.X / C), math.round(size.Z / C)
+	local layers = math.max(1, math.round(size.Y / C))
+	local x0 = fcf.Position.X - nxIn * C / 2
+	local z0 = fcf.Position.Z - nzIn * C / 2
+	-- terrain water lives on a fixed 4-stud grid, so the box has to line up with it
+	local sx, sy, sz = math.round(x0 / C) * C, math.round(floorTop / C) * C, math.round(z0 / C) * C
+	local look = fcf.LookVector
+	local turned = math.abs(look.Y) > 0.01 or (math.abs(look.X) > 0.01 and math.abs(look.Z) > 0.01)
+	local misaligned = turned or math.abs(sx - x0) > 0.05 or math.abs(sy - floorTop) > 0.05 or math.abs(sz - z0) > 0.05
+
+	local NX, NZ = nxIn + 2, nzIn + 2
+	local origin = Vector3.new(sx - C, sy, sz - C) -- grid corner (outer ring included), at floor level
+	local layout = {
+		Cell = C,
+		NX = NX,
+		NZ = NZ,
+		Layers = layers,
+		Origin = origin,
+		FloorTop = sy,
+		Misaligned = misaligned,
+		Interior = table.create(NX * NZ, false),
+		InteriorCount = nxIn * nzIn,
+		Gates = {},
+		GateHeight = 0,
+		Inlet = {}, -- list of { Index, Weight }
+	}
+	for j = 2, NZ - 1 do
+		for i = 2, NX - 1 do
+			layout.Interior[(j - 1) * NX + i] = true
+		end
+	end
+
+	local opening = arena:FindFirstChild("GateOpening", true)
+	if opening and opening:IsA("BasePart") then
+		local half = opening.Size / 2
+		layout.GateHeight = opening.Size.Y
+		local thinIsX = half.X < half.Z
+		for j = 1, NZ do
+			for i = 1, NX do
+				local k = (j - 1) * NX + i
+				if not layout.Interior[k] then
+					local centre = origin + Vector3.new((i - 0.5) * C, C / 2, (j - 0.5) * C)
+					local p = opening.CFrame:PointToObjectSpace(centre)
+					local thin, wide = math.abs(p.X), math.abs(p.Z)
+					local halfThin, halfWide = half.X, half.Z
+					if not thinIsX then
+						thin, wide, halfThin, halfWide = wide, thin, halfWide, halfThin
+					end
+					if thin <= halfThin + C / 2 + 0.01 and wide < halfWide and math.abs(p.Y) < half.Y + C then
+						table.insert(layout.Gates, k)
+					end
+				end
+			end
+		end
+	end
+
+	local mouth = arena:FindFirstChild("InletMouth", true)
+	if mouth and mouth:IsA("BasePart") then
+		-- share the pouring water between the 4 cells around the spot it lands on
+		local m = mouth.CFrame.Position
+		local fx = (m.X - origin.X) / C + 0.5
+		local fz = (m.Z - origin.Z) / C + 0.5
+		local i0, j0 = math.floor(fx), math.floor(fz)
+		local tx, tz = fx - i0, fz - j0
+		local total = 0
+		for _, c in { { i0, j0, (1 - tx) * (1 - tz) }, { i0 + 1, j0, tx * (1 - tz) }, { i0, j0 + 1, (1 - tx) * tz }, { i0 + 1, j0 + 1, tx * tz } } do
+			local i, j, w = c[1], c[2], c[3]
+			local k = (j - 1) * NX + i
+			if i >= 1 and i <= NX and j >= 1 and j <= NZ and layout.Interior[k] and w > 0 then
+				table.insert(layout.Inlet, { Index = k, Weight = w })
+				total += w
+			end
+		end
+		for _, e in layout.Inlet do
+			e.Weight /= total
+		end
+		layout.InletPosition = m
+	end
+	return layout
+end
+
+-- Centre of a cell in the world, at floor level.
+function WaterSim.CellCentre(layout, i: number, j: number): Vector3
+	return layout.Origin + Vector3.new((i - 0.5) * layout.Cell, 0, (j - 0.5) * layout.Cell)
+end
+
+-- Fills a terrain "LiquidOccupancy" array [x][y][z] from the water depths. y = 1 is a hidden
+-- layer inside the (4-stud-thick) floor: keeping it full under wet cells makes Roblox draw a
+-- thin film of water lying ON the floor rather than a floating blob.
+-- cap[k] (optional) limits how deep a cell can look (the drain hole is only so tall).
+WaterSim.MIN_VISIBLE = 0.1
+function WaterSim:FillLiquid(layout, liquid, cap)
+	local C, layers = layout.Cell, layout.Layers
+	local NX, NZ = self.NX, self.NZ
+	local depth = self.Depth
+	local minVisible = WaterSim.MIN_VISIBLE
+	for i = 1, NX do
+		local column = liquid[i]
+		for j = 1, NZ do
+			local k = (j - 1) * NX + i
+			local d = depth[k]
+			if cap and cap[k] then
+				d = math.min(d, cap[k])
+			end
+			local wet = d >= minVisible
+			column[1][j] = wet and 1 or 0
+			for y = 2, layers + 1 do
+				local occ = 0
+				if wet then
+					local s = d - (y - 2) * C
+					if s >= C then
+						occ = 1
+					elseif s > 0 then
+						occ = WaterSim.OccupancyForSurface(s)
+						if occ < 0.02 then
+							occ = 0
+						end
+					end
+				end
+				column[y][j] = occ
+			end
+		end
+	end
+end
+
+-- An empty [x][y][z] array the right size for FillLiquid.
+function WaterSim.NewLiquidArray(layout, fill)
+	local a = table.create(layout.NX)
+	for i = 1, layout.NX do
+		local col = table.create(layout.Layers + 1)
+		for y = 1, layout.Layers + 1 do
+			col[y] = table.create(layout.NZ, fill or 0)
+		end
+		a[i] = col
+	end
+	return a
+end
+
+return WaterSim
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="6">
+        <Properties>
+          <string name="Name">WaterConfig</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	WaterConfig  (ModuleScript — lives in ReplicatedStorage)
+
+	Settings for the flowing water in the TestArena. Read by WaterServer (which runs the water)
+	and WaterClient (which draws the pouring stream, the waterfall and the floating foam).
+]]
+
+local WaterConfig = {}
+
+WaterConfig.Enabled = true
+WaterConfig.ArenaName = "TestArena"
+
+---------------------------------------------------------------------------------------------
+-- Filling and draining
+---------------------------------------------------------------------------------------------
+WaterConfig.FillLevel = 10 -- how deep (studs) the water gets when the arena is "full"
+WaterConfig.FillSeconds = 45 -- how long the tap takes to fill the arena from empty
+WaterConfig.AutoFill = true -- the tap turns on by itself whenever the gate is shut and it's not full
+WaterConfig.RefillDelay = 2 -- seconds after the gate shuts before the tap starts again
+WaterConfig.TapWhileGateOpen = false -- keep pouring while the gate is open?
+WaterConfig.DrainSpeed = 5 -- how fast water escapes through the hole (1 = real-world, higher = quicker)
+
+---------------------------------------------------------------------------------------------
+-- How the water moves (you rarely need to touch these)
+---------------------------------------------------------------------------------------------
+WaterConfig.Gravity = 35 -- studs/s². Lower than Roblox's 196 because 1 stud ≈ 0.28 m; this is real gravity
+WaterConfig.Friction = 0.5 -- how quickly sloshing calms down (per second)
+WaterConfig.PipeDepth = 16 -- how freely water flows between cells (higher = faster waves)
+WaterConfig.Smoothing = 60 -- irons out bumps between neighbouring cells
+WaterConfig.DrainDip = 0.3 -- the floor dips slightly into the hole so the last of the water runs out
+
+WaterConfig.SimRate = 30 -- simulation steps per second (server)
+WaterConfig.TerrainRate = 10 -- terrain water updates per second (these replicate to players)
+WaterConfig.NetworkRate = 8 -- flow updates per second sent to players for splashes and foam
+
+---------------------------------------------------------------------------------------------
+-- Look. Roblox has one water look per place, so these change ALL terrain water in the place.
+---------------------------------------------------------------------------------------------
+WaterConfig.ApplyWaterLook = true
+WaterConfig.WaterColor = Color3.fromRGB(32, 120, 150)
+WaterConfig.WaterTransparency = 0.55 -- 0 = murky, 1 = invisible
+WaterConfig.WaterReflectance = 0.45
+WaterConfig.WaterWaveSize = 0.12 -- studs (indoor water barely ripples)
+WaterConfig.WaterWaveSpeed = 12
+
+---------------------------------------------------------------------------------------------
+-- Effects drawn on each player's screen
+---------------------------------------------------------------------------------------------
+WaterConfig.StreamWidth = 2.2 -- thickness of the water pouring from the tap
+WaterConfig.StreamColor = Color3.fromRGB(150, 205, 230)
+WaterConfig.FoamCount = 80 -- floating foam flecks that show which way the water is flowing
+WaterConfig.FoamSize = 0.45
+WaterConfig.SplashRate = 60 -- mist particles per second where the tap's stream hits the water
+
+return WaterConfig
+]]></ProtectedString>
+        </Properties>
+      </Item>
     </Item>
-    <Item class="Folder" referent="5">
+    <Item class="Folder" referent="7">
       <Properties>
         <string name="Name">ServerScriptService</string>
       </Properties>
-      <Item class="Script" referent="6">
+      <Item class="Script" referent="8">
         <Properties>
           <string name="Name">HairApplier</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -1593,7 +2110,7 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="Script" referent="7">
+      <Item class="Script" referent="9">
         <Properties>
           <string name="Name">NPCRoam</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -1735,6 +2252,7 @@ local function pickGoal(home: Vector3, rng: Random): Vector3?
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = rigModels
+	params.IgnoreWater = true -- aim for the floor under the arena's water, not the water surface
 	local arena = Workspace:FindFirstChild(ARENA_NAME)
 	local floor = arena and arena:FindFirstChild("Floor")
 	for _ = 1, 12 do
@@ -1838,7 +2356,7 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="Script" referent="8">
+      <Item class="Script" referent="10">
         <Properties>
           <string name="Name">ArenaSetup</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -1973,12 +2491,270 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
+      <Item class="Script" referent="11">
+        <Properties>
+          <string name="Name">WaterServer</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	WaterServer  (Script — lives in ServerScriptService)
+
+	Runs the flowing water in the TestArena:
+	  * the tap fills the arena to WaterConfig.FillLevel when the game starts,
+	  * the water spreads, sloshes and levels out (WaterSim does the maths),
+	  * when the drain gate opens (Z), water rushes out of the hole; when it shuts, the tap
+	    refills the arena,
+	  * the result is written into Roblox terrain water, so you get Roblox's real water look,
+	    underwater view and swimming,
+	  * every player gets a small flow update for drawing splashes, the waterfall and foam.
+
+	Settings: ReplicatedStorage > WaterConfig.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local WaterConfig = require(ReplicatedStorage:WaitForChild("WaterConfig"))
+local WaterSim = require(ReplicatedStorage:WaitForChild("WaterSim"))
+
+if not WaterConfig.Enabled then
+	return
+end
+
+local function complain(message: string)
+	warn("[WaterServer] " .. message)
+end
+
+local arena = Workspace:WaitForChild(WaterConfig.ArenaName, 15)
+if not arena then
+	complain("no " .. WaterConfig.ArenaName .. " in Workspace, so there's nowhere to put water")
+	return
+end
+
+local layout, why = WaterSim.Layout(arena)
+if not layout then
+	complain(why)
+	return
+end
+if layout.Misaligned then
+	complain(
+		"the arena isn't lined up with Roblox's 4-stud terrain grid (or is turned), so the water may poke into the walls. "
+			.. "Keep the arena's floor-top centre on whole multiples of 4 studs and don't rotate it."
+	)
+end
+if #layout.Gates == 0 then
+	complain("couldn't find the drain hole (a part called GateOpening in the arena) — the water won't be able to drain")
+end
+if #layout.Inlet == 0 then
+	complain("couldn't find the tap (a part called InletMouth in the arena) — the water won't fill")
+end
+
+local C = layout.Cell
+local terrain = Workspace.Terrain
+
+-- the simulation
+local active = table.create(layout.NX * layout.NZ, false)
+for k, inside in layout.Interior do
+	active[k] = inside
+end
+for _, k in layout.Gates do
+	active[k] = true
+end
+local sim = WaterSim.new({
+	NX = layout.NX,
+	NZ = layout.NZ,
+	Active = active,
+	Gravity = WaterConfig.Gravity,
+	Friction = WaterConfig.Friction,
+	PipeDepth = WaterConfig.PipeDepth,
+	Smoothing = WaterConfig.Smoothing,
+	DrainSpeed = WaterConfig.DrainSpeed,
+	DrainDip = WaterConfig.DrainDip,
+})
+local cap = {}
+for _, k in layout.Gates do
+	sim.Openness[k] = 0
+	sim:AddDrain(k, C, layout.GateHeight)
+	cap[k] = 0
+end
+local taps = {}
+for _, entry in layout.Inlet do
+	local source = { Index = entry.Index, Rate = 0, Weight = entry.Weight }
+	table.insert(sim.Sources, source)
+	table.insert(taps, source)
+end
+local interiorArea = layout.InteriorCount * C * C
+local fullRate = WaterConfig.FillLevel * interiorArea / math.max(WaterConfig.FillSeconds, 1)
+local function isInterior(k)
+	return layout.Interior[k]
+end
+
+-- tell the clients how the grid is laid out
+arena:SetAttribute("WaterOrigin", layout.Origin)
+arena:SetAttribute("WaterGrid", Vector3.new(layout.NX, layout.Layers, layout.NZ))
+arena:SetAttribute("WaterLevel", 0)
+arena:SetAttribute("TapOn", false)
+
+local stateEvent = ReplicatedStorage:FindFirstChild("WaterState")
+if not stateEvent then
+	stateEvent = Instance.new("RemoteEvent")
+	stateEvent.Name = "WaterState"
+	stateEvent.Parent = ReplicatedStorage
+end
+
+-- the water's look
+if WaterConfig.ApplyWaterLook then
+	terrain.WaterColor = WaterConfig.WaterColor
+	terrain.WaterTransparency = WaterConfig.WaterTransparency
+	terrain.WaterReflectance = WaterConfig.WaterReflectance
+	terrain.WaterWaveSize = WaterConfig.WaterWaveSize
+	terrain.WaterWaveSpeed = WaterConfig.WaterWaveSpeed
+end
+
+-- terrain writing: the box of 4-stud cubes covering the grid, plus one layer inside the floor
+local region = Region3.new(
+	layout.Origin - Vector3.new(0, C, 0),
+	layout.Origin + Vector3.new(layout.NX * C, layout.Layers * C, layout.NZ * C)
+)
+local liquid = WaterSim.NewLiquidArray(layout, 0)
+local useChannels = true
+local legacyMaterials, legacyOccupancy
+
+local function writeTerrain()
+	sim:FillLiquid(layout, liquid, cap)
+	if useChannels then
+		local ok, err = pcall(function()
+			terrain:WriteVoxelChannels(region, 4, { LiquidOccupancy = liquid })
+		end)
+		if ok then
+			return
+		end
+		complain("WriteVoxelChannels failed (" .. tostring(err) .. "), switching to the older WriteVoxels method")
+		useChannels = false
+	end
+	-- older terrain water: one material per cube
+	legacyMaterials = legacyMaterials or WaterSim.NewLiquidArray(layout, Enum.Material.Air)
+	legacyOccupancy = legacyOccupancy or WaterSim.NewLiquidArray(layout, 0)
+	for i = 1, layout.NX do
+		for y = 1, layout.Layers + 1 do
+			local src, mats, occ = liquid[i][y], legacyMaterials[i][y], legacyOccupancy[i][y]
+			for j = 1, layout.NZ do
+				local o = src[j]
+				mats[j] = o > 0 and Enum.Material.Water or Enum.Material.Air
+				occ[j] = o
+			end
+		end
+	end
+	terrain:WriteVoxels(region, 4, legacyMaterials, legacyOccupancy)
+end
+
+-- the gate: how far open it is, read from where the Gate part has slid to
+local gate = arena:FindFirstChild("Gate", true)
+local gateClosedY = gate and gate:IsA("BasePart") and gate.CFrame.Position.Y or nil
+local function gateOpenness(): number
+	if not gateClosedY then
+		return arena:GetAttribute("GateOpen") and 1 or 0
+	end
+	return math.clamp((gate.CFrame.Position.Y - gateClosedY) / gate.Size.Y, 0, 1)
+end
+
+-- start dry
+writeTerrain()
+
+local step = 1 / WaterConfig.SimRate
+local terrainEvery = 1 / WaterConfig.TerrainRate
+local networkEvery = 1 / WaterConfig.NetworkRate
+local accum, terrainClock, networkClock, levelClock = 0, 0, 0, 0
+local tapOn = false
+local gateShutAt = -math.huge
+local lastGateOpen = false
+local lastWritten = table.create(sim.N, 0)
+
+local function terrainNeedsWrite(): boolean
+	for k = 1, sim.N do
+		if math.abs(sim.Depth[k] - lastWritten[k]) > 0.02 then
+			return true
+		end
+	end
+	return false
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	dt = math.min(dt, 0.25)
+	local now = os.clock()
+
+	-- the gate
+	local openness = gateOpenness()
+	local gateOpen = arena:GetAttribute("GateOpen") == true
+	if lastGateOpen and not gateOpen then
+		gateShutAt = now
+	end
+	lastGateOpen = gateOpen
+	for _, k in layout.Gates do
+		sim.Openness[k] = openness
+		cap[k] = layout.GateHeight * openness
+	end
+
+	-- the tap
+	local level = sim:Volume(isInterior) / interiorArea
+	if gateOpen and not WaterConfig.TapWhileGateOpen then
+		tapOn = false
+	elseif WaterConfig.AutoFill then
+		if level >= WaterConfig.FillLevel then
+			tapOn = false
+		elseif level < WaterConfig.FillLevel - 0.25 and now - gateShutAt > WaterConfig.RefillDelay then
+			tapOn = true
+		end
+	end
+	-- ease off as it gets close to full so it doesn't overshoot
+	local rate = tapOn and fullRate * math.clamp((WaterConfig.FillLevel - level) / 0.5, 0.15, 1) or 0
+	for _, source in taps do
+		source.Rate = rate * source.Weight
+	end
+
+	-- simulate in fixed slices
+	accum += dt
+	local steps = 0
+	while accum >= step and steps < 8 do
+		accum -= step
+		steps += 1
+		sim:Step(step)
+		sim:ClearInactive()
+	end
+
+	-- terrain (only when something visibly changed)
+	terrainClock += dt
+	if terrainClock >= terrainEvery then
+		terrainClock = 0
+		if terrainNeedsWrite() then
+			writeTerrain()
+			table.move(sim.Depth, 1, sim.N, 1, lastWritten)
+		end
+	end
+
+	-- players
+	networkClock += dt
+	if networkClock >= networkEvery then
+		networkClock = 0
+		local flags = (tapOn and WaterSim.FLAG_TAP or 0) + (openness > 0 and WaterSim.FLAG_GATE or 0)
+		stateEvent:FireAllClients(sim:Encode(flags))
+	end
+
+	levelClock += dt
+	if levelClock >= 0.2 then
+		levelClock = 0
+		arena:SetAttribute("WaterLevel", math.floor(level * 20 + 0.5) / 20)
+		arena:SetAttribute("TapOn", tapOn)
+	end
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
     </Item>
-    <Item class="Folder" referent="9">
+    <Item class="Folder" referent="12">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="10">
+      <Item class="LocalScript" referent="13">
         <Properties>
           <string name="Name">HairPhysicsClient</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -1996,7 +2772,7 @@ HairPhysics.StartClient()
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="11">
+      <Item class="LocalScript" referent="14">
         <Properties>
           <string name="Name">HairFitTool</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2289,7 +3065,7 @@ ContextActionService:SetPosition("HairFitTool", UDim2.new(1, -70, 0, 10))
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="12">
+      <Item class="LocalScript" referent="15">
         <Properties>
           <string name="Name">ArenaControls</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2316,7 +3092,7 @@ do
 	gui.ResetOnSpawn = false
 	label.AnchorPoint = Vector2.new(0.5, 0)
 	label.Position = UDim2.new(0.5, 0, 0, 8)
-	label.Size = UDim2.fromOffset(300, 28)
+	label.Size = UDim2.fromOffset(420, 28)
 	label.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
 	label.BackgroundTransparency = 0.25
 	label.TextColor3 = Color3.new(1, 1, 1)
@@ -2335,12 +3111,20 @@ end
 
 local function refresh()
 	local open = arena and arena:GetAttribute("GateOpen")
-	label.Text = ("Drain gate: %s   (press Z)"):format(open and "OPEN" or "closed")
+	local level = arena and arena:GetAttribute("WaterLevel")
+	local water = ""
+	if level then
+		local tap = arena:GetAttribute("TapOn")
+		water = ("Water %.1f studs%s   ·   "):format(level, tap and " (filling)" or (open and level > 0.05 and " (draining)" or ""))
+	end
+	label.Text = ("%sDrain gate: %s   (press Z)"):format(water, open and "OPEN" or "closed")
 	label.TextColor3 = open and Color3.fromRGB(120, 210, 255) or Color3.new(1, 1, 1)
 end
 
 if arena then
 	arena:GetAttributeChangedSignal("GateOpen"):Connect(refresh)
+	arena:GetAttributeChangedSignal("WaterLevel"):Connect(refresh)
+	arena:GetAttributeChangedSignal("TapOn"):Connect(refresh)
 end
 refresh()
 
@@ -2355,34 +3139,422 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
 ]]></ProtectedString>
         </Properties>
       </Item>
+      <Item class="LocalScript" referent="16">
+        <Properties>
+          <string name="Name">WaterClient</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	WaterClient  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Draws the moving parts of the water on this player's screen (the water itself is Roblox
+	terrain water, made by WaterServer):
+	  * the stream pouring from the tap — when the tap turns on, the front of the water falls
+	    from the pipe; when it turns off, the tail falls after it,
+	  * mist and droplets where the stream hits the water,
+	  * the waterfall pouring out of the drain hole when the gate is open,
+	  * foam flecks floating on the surface that drift along with the current, so you can see
+	    the water flowing toward the hole.
+
+	Settings: ReplicatedStorage > WaterConfig.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local WaterConfig = require(ReplicatedStorage:WaitForChild("WaterConfig"))
+local WaterSim = require(ReplicatedStorage:WaitForChild("WaterSim"))
+
+if not WaterConfig.Enabled then
+	return
+end
+
+local arena = Workspace:WaitForChild(WaterConfig.ArenaName, 30)
+local stateEvent = ReplicatedStorage:WaitForChild("WaterState", 30)
+if not (arena and stateEvent) then
+	return
+end
+while arena:GetAttribute("WaterGrid") == nil do
+	arena:GetAttributeChangedSignal("WaterGrid"):Wait()
+end
+
+local C = WaterSim.CELL
+local origin: Vector3 = arena:GetAttribute("WaterOrigin")
+local grid: Vector3 = arena:GetAttribute("WaterGrid")
+local NX, NZ = grid.X, grid.Z
+local floorTop = origin.Y
+local mouth = arena:FindFirstChild("InletMouth", true)
+local opening = arena:FindFirstChild("GateOpening", true)
+local spout = arena:FindFirstChild("Spout", true)
+
+local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
+local FALL_GRAVITY = 110 -- how fast falling water speeds up (studs/s²)
+
+local fx = Instance.new("Folder")
+fx.Name = "WaterFX"
+fx.Parent = Workspace
+
+local function effectPart(name: string, shape: Enum.PartType?): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Material = Enum.Material.Glass
+	p.Color = WaterConfig.StreamColor
+	p.Transparency = 1
+	p.Shape = shape or Enum.PartType.Block
+	p.Parent = fx
+	return p
+end
+
+local function emitter(parent: Instance, props): ParticleEmitter
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = SMOKE
+	e.Rate = 0
+	e.LightEmission = 0.2
+	e.LightInfluence = 0.8
+	for k, v in props do
+		e[k] = v
+	end
+	e.Parent = parent
+	return e
+end
+
+local function anchorAttachment(name: string): Attachment
+	local holder = effectPart(name .. "Holder")
+	holder.Size = Vector3.new(0.2, 0.2, 0.2)
+	local a = Instance.new("Attachment")
+	a.Name = name
+	a.Parent = holder
+	return a
+end
+
+----------------------------------------------------------------------------------------
+-- latest water state from the server, blended between the last two updates
+----------------------------------------------------------------------------------------
+local prevState, curState
+local curTime = 0
+local interval = 1 / WaterConfig.NetworkRate
+
+stateEvent.OnClientEvent:Connect(function(packet: buffer)
+	local ok, state = pcall(WaterSim.Decode, packet)
+	if ok and state.NX == NX and state.NZ == NZ then
+		prevState = curState or state
+		curState = state
+		curTime = os.clock()
+	end
+end)
+
+local blendAlpha = 1
+local function cellValue(field: string, i: number, j: number): number
+	if i < 1 or i > NX or j < 1 or j > NZ then
+		return 0
+	end
+	local k = (j - 1) * NX + i
+	local a, b = prevState[field][k], curState[field][k]
+	return a + (b - a) * blendAlpha
+end
+
+-- smooth value of a field at a world position (between cell centres)
+local function sample(field: string, x: number, z: number): number
+	local fxc = (x - origin.X) / C + 0.5
+	local fzc = (z - origin.Z) / C + 0.5
+	local i0, j0 = math.floor(fxc), math.floor(fzc)
+	local tx, tz = fxc - i0, fzc - j0
+	local v00, v10 = cellValue(field, i0, j0), cellValue(field, i0 + 1, j0)
+	local v01, v11 = cellValue(field, i0, j0 + 1), cellValue(field, i0 + 1, j0 + 1)
+	return (v00 * (1 - tx) + v10 * tx) * (1 - tz) + (v01 * (1 - tx) + v11 * tx) * tz
+end
+
+----------------------------------------------------------------------------------------
+-- falling water (tap stream and waterfall share this): a column whose front (head) falls
+-- when it starts and whose back (tail) falls when it stops
+----------------------------------------------------------------------------------------
+local function newFall()
+	return { On = false, Head = 0, Tail = 0, HeadSpeed = 0, TailSpeed = 0, Active = false }
+end
+
+local function updateFall(f, on: boolean, top: number, bottom: number, dt: number)
+	if on and not f.Active then
+		f.Active = true
+		f.Head, f.Tail, f.HeadSpeed, f.TailSpeed = top, top, 0, 0
+	end
+	if f.Active then
+		if f.Head > bottom then
+			f.HeadSpeed += FALL_GRAVITY * dt
+			f.Head = math.max(bottom, f.Head - f.HeadSpeed * dt)
+		else
+			f.Head = bottom
+		end
+		if on then
+			f.Tail, f.TailSpeed = top, 0
+		else
+			f.TailSpeed += FALL_GRAVITY * dt
+			f.Tail -= f.TailSpeed * dt
+			if f.Tail <= bottom then
+				f.Active = false
+			end
+		end
+	end
+	f.On = on
+	return f.Active and math.max(0, f.Tail - f.Head) or 0
+end
+
+----------------------------------------------------------------------------------------
+-- tap stream + splash
+----------------------------------------------------------------------------------------
+local stream = effectPart("TapStream", Enum.PartType.Cylinder)
+local streamFall = newFall()
+local splash = anchorAttachment("TapSplash")
+local mist = emitter(splash, {
+	Color = ColorSequence.new(Color3.fromRGB(235, 245, 255)),
+	Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.2), NumberSequenceKeypoint.new(1, 4) }),
+	Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.45), NumberSequenceKeypoint.new(1, 1) }),
+	Lifetime = NumberRange.new(0.6, 1.2),
+	Speed = NumberRange.new(4, 9),
+	SpreadAngle = Vector2.new(70, 70),
+	EmissionDirection = Enum.NormalId.Top,
+	Acceleration = Vector3.new(0, -6, 0),
+	Drag = 2,
+})
+local droplets = emitter(splash, {
+	Color = ColorSequence.new(Color3.fromRGB(210, 235, 250)),
+	Size = NumberSequence.new(0.25),
+	Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) }),
+	Lifetime = NumberRange.new(0.4, 0.8),
+	Speed = NumberRange.new(10, 18),
+	SpreadAngle = Vector2.new(55, 55),
+	EmissionDirection = Enum.NormalId.Top,
+	Acceleration = Vector3.new(0, -90, 0),
+})
+
+----------------------------------------------------------------------------------------
+-- waterfall out of the drain hole
+----------------------------------------------------------------------------------------
+local outward, across, lip, gateWidth, groundY
+if opening and spout then
+	local floor = arena:FindFirstChild("Floor")
+	local centre = floor and floor.CFrame.Position or arena:GetPivot().Position
+	local d = opening.CFrame.Position - centre
+	outward = math.abs(d.X) > math.abs(d.Z) and Vector3.new(math.sign(d.X), 0, 0) or Vector3.new(0, 0, math.sign(d.Z))
+	across = Vector3.new(outward.Z, 0, -outward.X)
+	-- outer edge of the spout, at floor level
+	local sp = spout.CFrame.Position
+	local reach = math.abs(spout.Size.X * outward.X) + math.abs(spout.Size.Z * outward.Z)
+	lip = Vector3.new(sp.X, floorTop, sp.Z) + outward * (reach / 2)
+	local openSize = opening.Size
+	gateWidth = math.abs(openSize.X * across.X) + math.abs(openSize.Z * across.Z)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { arena, fx }
+	params.IgnoreWater = true
+	local hit = Workspace:Raycast(lip + outward * 0.8, Vector3.new(0, -300, 0), params)
+	groundY = hit and hit.Position.Y or floorTop - 8
+end
+local waterfall = effectPart("Waterfall")
+local fallState = newFall()
+local fallSplash = anchorAttachment("FallSplash")
+local fallMist = emitter(fallSplash, {
+	Color = ColorSequence.new(Color3.fromRGB(235, 245, 255)),
+	Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2), NumberSequenceKeypoint.new(1, 6) }),
+	Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(1, 1) }),
+	Lifetime = NumberRange.new(0.8, 1.6),
+	Speed = NumberRange.new(5, 12),
+	SpreadAngle = Vector2.new(80, 80),
+	EmissionDirection = Enum.NormalId.Top,
+	Acceleration = Vector3.new(0, -5, 0),
+	Drag = 1.5,
+})
+local fallDrops = emitter(fallSplash, {
+	Color = ColorSequence.new(Color3.fromRGB(210, 235, 250)),
+	Size = NumberSequence.new(0.3),
+	Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) }),
+	Lifetime = NumberRange.new(0.5, 0.9),
+	Speed = NumberRange.new(12, 22),
+	SpreadAngle = Vector2.new(60, 60),
+	EmissionDirection = Enum.NormalId.Top,
+	Acceleration = Vector3.new(0, -90, 0),
+})
+local lipSpray = anchorAttachment("LipSpray")
+local lipMist = emitter(lipSpray, {
+	Color = ColorSequence.new(Color3.fromRGB(235, 245, 255)),
+	Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 2.5) }),
+	Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.6), NumberSequenceKeypoint.new(1, 1) }),
+	Lifetime = NumberRange.new(0.5, 1),
+	Speed = NumberRange.new(2, 5),
+	SpreadAngle = Vector2.new(40, 40),
+	EmissionDirection = Enum.NormalId.Top,
+})
+
+----------------------------------------------------------------------------------------
+-- foam flecks
+----------------------------------------------------------------------------------------
+local rng = Random.new()
+local flecks = {}
+local fleckParts = {}
+local xMin, xMax = origin.X + C, origin.X + (NX - 1) * C
+local zMin, zMax = origin.Z + C, origin.Z + (NZ - 1) * C
+for n = 1, WaterConfig.FoamCount do
+	local p = effectPart("Foam", Enum.PartType.Cylinder)
+	p.Material = Enum.Material.SmoothPlastic
+	p.Color = Color3.fromRGB(245, 250, 255)
+	local s = WaterConfig.FoamSize * rng:NextNumber(0.6, 1.3)
+	p.Size = Vector3.new(0.06, s, s)
+	flecks[n] = { X = 0, Z = 0, Life = 0, MaxLife = 0, Visible = false }
+	fleckParts[n] = p
+end
+
+local function respawn(f, tapOn: boolean)
+	for _ = 1, 6 do
+		local x, z
+		if tapOn and mouth and rng:NextNumber() < 0.55 then
+			local m = mouth.CFrame.Position
+			local a, r = rng:NextNumber(0, math.pi * 2), rng:NextNumber(0.5, 4)
+			x, z = m.X + math.cos(a) * r, m.Z + math.sin(a) * r
+		else
+			x, z = rng:NextNumber(xMin, xMax), rng:NextNumber(zMin, zMax)
+		end
+		if x > xMin and x < xMax and z > zMin and z < zMax and sample("Depth", x, z) > 0.3 then
+			f.X, f.Z = x, z
+			f.MaxLife = rng:NextNumber(4, 9)
+			f.Life = 0
+			f.Visible = true
+			return
+		end
+	end
+	f.Visible = false
+end
+
+----------------------------------------------------------------------------------------
+-- every frame
+----------------------------------------------------------------------------------------
+local moveParts, moveFrames = {}, {}
+local FLAT = CFrame.Angles(0, 0, math.pi / 2) -- turns a cylinder part to stand up / lie flat
+
+RunService.RenderStepped:Connect(function(dt)
+	if not curState then
+		return
+	end
+	dt = math.min(dt, 0.1)
+	blendAlpha = math.clamp((os.clock() - curTime) / interval, 0, 1)
+	local flags = curState.Flags
+	local tapOn = bit32.band(flags, WaterSim.FLAG_TAP) ~= 0
+	table.clear(moveParts)
+	table.clear(moveFrames)
+
+	-- tap stream
+	if mouth then
+		local m = mouth.CFrame.Position
+		local depthHere = sample("Depth", m.X, m.Z)
+		local surface = floorTop + (depthHere > WaterSim.MIN_VISIBLE and depthHere or 0)
+		local length = updateFall(streamFall, tapOn, m.Y, surface, dt)
+		if length > 0.05 then
+			local wobble = Vector3.new(math.sin(os.clock() * 7) * 0.05, 0, math.cos(os.clock() * 5.3) * 0.05)
+			local mid = Vector3.new(m.X, (streamFall.Head + streamFall.Tail) / 2, m.Z) + wobble
+			stream.Size = Vector3.new(length, WaterConfig.StreamWidth, WaterConfig.StreamWidth)
+			stream.Transparency = 0.35
+			table.insert(moveParts, stream)
+			table.insert(moveFrames, CFrame.new(mid) * FLAT)
+		else
+			stream.Transparency = 1
+		end
+		local landed = streamFall.Active and streamFall.Head <= surface + 0.01
+		local strength = landed and math.clamp(curState.Inflow / 800, 0.2, 1) or 0
+		splash.Parent.CFrame = CFrame.new(m.X, surface, m.Z)
+		mist.Rate = WaterConfig.SplashRate * strength
+		droplets.Rate = WaterConfig.SplashRate * 0.6 * strength
+	end
+
+	-- waterfall
+	if lip then
+		local flow = curState.Outflow
+		local on = flow > 5
+		local length = updateFall(fallState, on, lip.Y + 0.6, groundY, dt)
+		local amount = math.clamp(flow / 1200, 0, 1)
+		if length > 0.05 then
+			local top = fallState.Tail
+			local mid = lip + outward * 0.7 + Vector3.new(0, (fallState.Head + top) / 2 - lip.Y, 0)
+			waterfall.Size = Vector3.new(gateWidth * (0.6 + 0.4 * amount), length, 0.35 + amount * 0.6)
+			waterfall.Transparency = 0.8 - 0.45 * amount
+			table.insert(moveParts, waterfall)
+			table.insert(moveFrames, CFrame.fromMatrix(mid, across, Vector3.yAxis))
+		else
+			waterfall.Transparency = 1
+		end
+		local landed = fallState.Active and fallState.Head <= groundY + 0.01
+		fallSplash.Parent.CFrame = CFrame.new(lip.X + outward.X * 0.7, groundY, lip.Z + outward.Z * 0.7)
+		fallMist.Rate = landed and 70 * amount or 0
+		fallDrops.Rate = landed and 50 * amount or 0
+		lipSpray.Parent.CFrame = CFrame.new(lip + Vector3.new(0, 0.4, 0))
+		lipMist.Rate = on and 25 * amount or 0
+	end
+
+	-- foam flecks drift with the current
+	for n, f in flecks do
+		local part = fleckParts[n]
+		if not f.Visible then
+			if rng:NextNumber() < dt * 3 then
+				respawn(f, tapOn)
+			end
+		end
+		if f.Visible then
+			f.Life += dt
+			local depth = sample("Depth", f.X, f.Z)
+			if depth < 0.25 or f.Life > f.MaxLife then
+				f.Visible = false
+			else
+				local vx, vz = sample("VelX", f.X, f.Z), sample("VelZ", f.X, f.Z)
+				f.X = math.clamp(f.X + (vx + rng:NextNumber(-0.3, 0.3)) * dt, xMin, xMax)
+				f.Z = math.clamp(f.Z + (vz + rng:NextNumber(-0.3, 0.3)) * dt, zMin, zMax)
+				local speed = math.sqrt(vx * vx + vz * vz)
+				local fade = math.min(1, f.Life / 0.6, (f.MaxLife - f.Life) / 0.8)
+				part.Transparency = 1 - 0.8 * fade * math.clamp(0.25 + speed / 2, 0, 1)
+				table.insert(moveParts, part)
+				table.insert(moveFrames, CFrame.new(f.X, floorTop + depth + 0.04, f.Z) * FLAT)
+			end
+		end
+		if not f.Visible then
+			part.Transparency = 1
+		end
+	end
+
+	if #moveParts > 0 then
+		Workspace:BulkMoveTo(moveParts, moveFrames, Enum.BulkMoveMode.FireCFrameChanged)
+	end
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
     </Item>
-    <Item class="Folder" referent="13">
+    <Item class="Folder" referent="17">
       <Properties>
         <string name="Name">ServerStorage</string>
       </Properties>
-      <Item class="Folder" referent="14">
+      <Item class="Folder" referent="18">
         <Properties>
           <string name="Name">HairModels</string>
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="15">
+    <Item class="Folder" referent="19">
       <Properties>
         <string name="Name">Workspace</string>
       </Properties>
-      <Item class="Model" referent="16">
+      <Item class="Model" referent="20">
         <Properties>
           <string name="Name">TestArena</string>
           <BinaryString name="AttributesSerialize">AgAAAAgAAABHYXRlT3BlbgMADAAAAEludGVyaW9yU2l6ZREAAIBCAADAQQAAgEI=</BinaryString>
         </Properties>
-        <Item class="Part" referent="17">
+        <Item class="Part" referent="21">
           <Properties>
             <string name="Name">Floor</string>
             <bool name="Anchored">true</bool>
             <token name="BottomSurface">0</token>
             <CoordinateFrame name="CFrame">
               <X>0</X>
-              <Y>7</Y>
+              <Y>6</Y>
               <Z>-120</Z>
               <R00>1</R00>
               <R01>0</R01>
@@ -2398,17 +3570,17 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
             <token name="Material">816</token>
             <Vector3 name="size">
               <X>68</X>
-              <Y>2</Y>
+              <Y>4</Y>
               <Z>68</Z>
             </Vector3>
             <token name="TopSurface">0</token>
           </Properties>
         </Item>
-        <Item class="Folder" referent="18">
+        <Item class="Folder" referent="22">
           <Properties>
             <string name="Name">Walls</string>
           </Properties>
-          <Item class="Part" referent="19">
+          <Item class="Part" referent="23">
             <Properties>
               <string name="Name">WallMinusX</string>
               <bool name="Anchored">true</bool>
@@ -2437,7 +3609,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="20">
+          <Item class="Part" referent="24">
             <Properties>
               <string name="Name">WallMinusZ</string>
               <bool name="Anchored">true</bool>
@@ -2466,7 +3638,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="21">
+          <Item class="Part" referent="25">
             <Properties>
               <string name="Name">WallPlusZ</string>
               <bool name="Anchored">true</bool>
@@ -2495,7 +3667,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="22">
+          <Item class="Part" referent="26">
             <Properties>
               <string name="Name">WallPlusX_A</string>
               <bool name="Anchored">true</bool>
@@ -2524,7 +3696,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="23">
+          <Item class="Part" referent="27">
             <Properties>
               <string name="Name">WallPlusX_B</string>
               <bool name="Anchored">true</bool>
@@ -2553,7 +3725,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="24">
+          <Item class="Part" referent="28">
             <Properties>
               <string name="Name">WallPlusX_Top</string>
               <bool name="Anchored">true</bool>
@@ -2583,11 +3755,11 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
             </Properties>
           </Item>
         </Item>
-        <Item class="Folder" referent="25">
+        <Item class="Folder" referent="29">
           <Properties>
             <string name="Name">Trim</string>
           </Properties>
-          <Item class="Part" referent="26">
+          <Item class="Part" referent="30">
             <Properties>
               <string name="Name">TrimMinusX</string>
               <bool name="Anchored">true</bool>
@@ -2617,7 +3789,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="27">
+          <Item class="Part" referent="31">
             <Properties>
               <string name="Name">TrimMinusZ</string>
               <bool name="Anchored">true</bool>
@@ -2647,7 +3819,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="28">
+          <Item class="Part" referent="32">
             <Properties>
               <string name="Name">TrimPlusZ</string>
               <bool name="Anchored">true</bool>
@@ -2678,7 +3850,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
             </Properties>
           </Item>
         </Item>
-        <Item class="Part" referent="29">
+        <Item class="Part" referent="33">
           <Properties>
             <string name="Name">Ceiling</string>
             <bool name="Anchored">true</bool>
@@ -2708,11 +3880,11 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
             <float name="Transparency">0.6</float>
           </Properties>
         </Item>
-        <Item class="Folder" referent="30">
+        <Item class="Folder" referent="34">
           <Properties>
             <string name="Name">Drain</string>
           </Properties>
-          <Item class="Part" referent="31">
+          <Item class="Part" referent="35">
             <Properties>
               <string name="Name">Gate</string>
               <bool name="Anchored">true</bool>
@@ -2741,7 +3913,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="32">
+          <Item class="Part" referent="36">
             <Properties>
               <string name="Name">GateOpening</string>
               <bool name="Anchored">true</bool>
@@ -2774,7 +3946,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <float name="Transparency">1</float>
             </Properties>
           </Item>
-          <Item class="Part" referent="33">
+          <Item class="Part" referent="37">
             <Properties>
               <string name="Name">Bar</string>
               <bool name="Anchored">true</bool>
@@ -2803,7 +3975,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="34">
+          <Item class="Part" referent="38">
             <Properties>
               <string name="Name">Bar</string>
               <bool name="Anchored">true</bool>
@@ -2832,7 +4004,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="35">
+          <Item class="Part" referent="39">
             <Properties>
               <string name="Name">Bar</string>
               <bool name="Anchored">true</bool>
@@ -2861,7 +4033,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="36">
+          <Item class="Part" referent="40">
             <Properties>
               <string name="Name">Bar</string>
               <bool name="Anchored">true</bool>
@@ -2890,7 +4062,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="37">
+          <Item class="Part" referent="41">
             <Properties>
               <string name="Name">Bar</string>
               <bool name="Anchored">true</bool>
@@ -2919,7 +4091,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="38">
+          <Item class="Part" referent="42">
             <Properties>
               <string name="Name">Bar</string>
               <bool name="Anchored">true</bool>
@@ -2948,7 +4120,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="39">
+          <Item class="Part" referent="43">
             <Properties>
               <string name="Name">Bar</string>
               <bool name="Anchored">true</bool>
@@ -2977,14 +4149,14 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="40">
+          <Item class="Part" referent="44">
             <Properties>
               <string name="Name">Spout</string>
               <bool name="Anchored">true</bool>
               <token name="BottomSurface">0</token>
               <CoordinateFrame name="CFrame">
                 <X>35.5</X>
-                <Y>7.800003</Y>
+                <Y>6</Y>
                 <Z>-120</Z>
                 <R00>1</R00>
                 <R01>0</R01>
@@ -3000,18 +4172,116 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="Material">816</token>
               <Vector3 name="size">
                 <X>3</X>
-                <Y>0.3999939</Y>
+                <Y>4</Y>
                 <Z>9</Z>
               </Vector3>
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
         </Item>
-        <Item class="Folder" referent="41">
+        <Item class="Folder" referent="45">
+          <Properties>
+            <string name="Name">Inlet</string>
+          </Properties>
+          <Item class="Part" referent="46">
+            <Properties>
+              <string name="Name">Pipe</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>0</X>
+                <Y>26</Y>
+                <Z>-150.5</Z>
+                <R00>-0</R00>
+                <R01>0</R01>
+                <R02>1</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>-1</R20>
+                <R21>0</R21>
+                <R22>-0</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">7896710</Color3uint8>
+              <token name="Material">1088</token>
+              <token name="shape">2</token>
+              <Vector3 name="size">
+                <X>3</X>
+                <Y>2.399994</Y>
+                <Z>2.399994</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="47">
+            <Properties>
+              <string name="Name">Flange</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>0</X>
+                <Y>26</Y>
+                <Z>-151.8</Z>
+                <R00>-0</R00>
+                <R01>0</R01>
+                <R02>1</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>-1</R20>
+                <R21>0</R21>
+                <R22>-0</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">5922921</Color3uint8>
+              <token name="Material">1088</token>
+              <token name="shape">2</token>
+              <Vector3 name="size">
+                <X>0.3999939</X>
+                <Y>3.399994</Y>
+                <Z>3.399994</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="48">
+            <Properties>
+              <string name="Name">InletMouth</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>0</X>
+                <Y>25.399994</Y>
+                <Z>-148.6</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <bool name="CanTouch">false</bool>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.3999939</X>
+                <Y>0.3999939</Y>
+                <Z>0.3999939</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+              <float name="Transparency">1</float>
+            </Properties>
+          </Item>
+        </Item>
+        <Item class="Folder" referent="49">
           <Properties>
             <string name="Name">DepthGauge</string>
           </Properties>
-          <Item class="Part" referent="42">
+          <Item class="Part" referent="50">
             <Properties>
               <string name="Name">Mark2</string>
               <bool name="Anchored">true</bool>
@@ -3042,7 +4312,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="43">
+          <Item class="Part" referent="51">
             <Properties>
               <string name="Name">Mark4</string>
               <bool name="Anchored">true</bool>
@@ -3073,7 +4343,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="44">
+          <Item class="Part" referent="52">
             <Properties>
               <string name="Name">Label4</string>
               <bool name="Anchored">true</bool>
@@ -3104,14 +4374,14 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
               <float name="Transparency">1</float>
             </Properties>
-            <Item class="SurfaceGui" referent="45">
+            <Item class="SurfaceGui" referent="53">
               <Properties>
                 <string name="Name">SurfaceGui</string>
                 <token name="Face">0</token>
                 <float name="PixelsPerStud">50</float>
                 <token name="SizingMode">1</token>
               </Properties>
-              <Item class="TextLabel" referent="46">
+              <Item class="TextLabel" referent="54">
                 <Properties>
                   <string name="Name">TextLabel</string>
                   <float name="BackgroundTransparency">1</float>
@@ -3139,7 +4409,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               </Item>
             </Item>
           </Item>
-          <Item class="Part" referent="47">
+          <Item class="Part" referent="55">
             <Properties>
               <string name="Name">Mark6</string>
               <bool name="Anchored">true</bool>
@@ -3170,7 +4440,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="48">
+          <Item class="Part" referent="56">
             <Properties>
               <string name="Name">Mark8</string>
               <bool name="Anchored">true</bool>
@@ -3201,7 +4471,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="49">
+          <Item class="Part" referent="57">
             <Properties>
               <string name="Name">Label8</string>
               <bool name="Anchored">true</bool>
@@ -3232,14 +4502,14 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
               <float name="Transparency">1</float>
             </Properties>
-            <Item class="SurfaceGui" referent="50">
+            <Item class="SurfaceGui" referent="58">
               <Properties>
                 <string name="Name">SurfaceGui</string>
                 <token name="Face">0</token>
                 <float name="PixelsPerStud">50</float>
                 <token name="SizingMode">1</token>
               </Properties>
-              <Item class="TextLabel" referent="51">
+              <Item class="TextLabel" referent="59">
                 <Properties>
                   <string name="Name">TextLabel</string>
                   <float name="BackgroundTransparency">1</float>
@@ -3267,7 +4537,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               </Item>
             </Item>
           </Item>
-          <Item class="Part" referent="52">
+          <Item class="Part" referent="60">
             <Properties>
               <string name="Name">Mark10</string>
               <bool name="Anchored">true</bool>
@@ -3298,7 +4568,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="53">
+          <Item class="Part" referent="61">
             <Properties>
               <string name="Name">Mark12</string>
               <bool name="Anchored">true</bool>
@@ -3329,7 +4599,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="54">
+          <Item class="Part" referent="62">
             <Properties>
               <string name="Name">Label12</string>
               <bool name="Anchored">true</bool>
@@ -3360,14 +4630,14 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
               <float name="Transparency">1</float>
             </Properties>
-            <Item class="SurfaceGui" referent="55">
+            <Item class="SurfaceGui" referent="63">
               <Properties>
                 <string name="Name">SurfaceGui</string>
                 <token name="Face">0</token>
                 <float name="PixelsPerStud">50</float>
                 <token name="SizingMode">1</token>
               </Properties>
-              <Item class="TextLabel" referent="56">
+              <Item class="TextLabel" referent="64">
                 <Properties>
                   <string name="Name">TextLabel</string>
                   <float name="BackgroundTransparency">1</float>
@@ -3395,7 +4665,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               </Item>
             </Item>
           </Item>
-          <Item class="Part" referent="57">
+          <Item class="Part" referent="65">
             <Properties>
               <string name="Name">Mark14</string>
               <bool name="Anchored">true</bool>
@@ -3426,7 +4696,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="58">
+          <Item class="Part" referent="66">
             <Properties>
               <string name="Name">Mark16</string>
               <bool name="Anchored">true</bool>
@@ -3457,7 +4727,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="59">
+          <Item class="Part" referent="67">
             <Properties>
               <string name="Name">Label16</string>
               <bool name="Anchored">true</bool>
@@ -3488,14 +4758,14 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
               <float name="Transparency">1</float>
             </Properties>
-            <Item class="SurfaceGui" referent="60">
+            <Item class="SurfaceGui" referent="68">
               <Properties>
                 <string name="Name">SurfaceGui</string>
                 <token name="Face">0</token>
                 <float name="PixelsPerStud">50</float>
                 <token name="SizingMode">1</token>
               </Properties>
-              <Item class="TextLabel" referent="61">
+              <Item class="TextLabel" referent="69">
                 <Properties>
                   <string name="Name">TextLabel</string>
                   <float name="BackgroundTransparency">1</float>
@@ -3523,7 +4793,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               </Item>
             </Item>
           </Item>
-          <Item class="Part" referent="62">
+          <Item class="Part" referent="70">
             <Properties>
               <string name="Name">Mark18</string>
               <bool name="Anchored">true</bool>
@@ -3554,7 +4824,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="63">
+          <Item class="Part" referent="71">
             <Properties>
               <string name="Name">Mark20</string>
               <bool name="Anchored">true</bool>
@@ -3585,7 +4855,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="64">
+          <Item class="Part" referent="72">
             <Properties>
               <string name="Name">Label20</string>
               <bool name="Anchored">true</bool>
@@ -3616,14 +4886,14 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="TopSurface">0</token>
               <float name="Transparency">1</float>
             </Properties>
-            <Item class="SurfaceGui" referent="65">
+            <Item class="SurfaceGui" referent="73">
               <Properties>
                 <string name="Name">SurfaceGui</string>
                 <token name="Face">0</token>
                 <float name="PixelsPerStud">50</float>
                 <token name="SizingMode">1</token>
               </Properties>
-              <Item class="TextLabel" referent="66">
+              <Item class="TextLabel" referent="74">
                 <Properties>
                   <string name="Name">TextLabel</string>
                   <float name="BackgroundTransparency">1</float>
@@ -3651,7 +4921,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               </Item>
             </Item>
           </Item>
-          <Item class="Part" referent="67">
+          <Item class="Part" referent="75">
             <Properties>
               <string name="Name">Mark22</string>
               <bool name="Anchored">true</bool>
@@ -3683,7 +4953,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
             </Properties>
           </Item>
         </Item>
-        <Item class="SpawnLocation" referent="68">
+        <Item class="SpawnLocation" referent="76">
           <Properties>
             <string name="Name">ArenaSpawn</string>
             <bool name="Anchored">true</bool>
@@ -3713,7 +4983,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
             <token name="TopSurface">0</token>
           </Properties>
         </Item>
-        <Item class="Part" referent="69">
+        <Item class="Part" referent="77">
           <Properties>
             <string name="Name">RigSpot_MrLady</string>
             <bool name="Anchored">true</bool>
@@ -3746,7 +5016,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
             <float name="Transparency">1</float>
           </Properties>
         </Item>
-        <Item class="Part" referent="70">
+        <Item class="Part" referent="78">
           <Properties>
             <string name="Name">RigSpot_MrPigtails</string>
             <bool name="Anchored">true</bool>
@@ -3779,18 +5049,18 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
             <float name="Transparency">1</float>
           </Properties>
         </Item>
-        <Item class="Folder" referent="71">
+        <Item class="Folder" referent="79">
           <Properties>
             <string name="Name">Legs</string>
           </Properties>
-          <Item class="Part" referent="72">
+          <Item class="Part" referent="80">
             <Properties>
               <string name="Name">Leg</string>
               <bool name="Anchored">true</bool>
               <token name="BottomSurface">0</token>
               <CoordinateFrame name="CFrame">
                 <X>-31</X>
-                <Y>3</Y>
+                <Y>2</Y>
                 <Z>-151</Z>
                 <R00>1</R00>
                 <R01>0</R01>
@@ -3806,20 +5076,20 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="Material">816</token>
               <Vector3 name="size">
                 <X>3</X>
-                <Y>6</Y>
+                <Y>4</Y>
                 <Z>3</Z>
               </Vector3>
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="73">
+          <Item class="Part" referent="81">
             <Properties>
               <string name="Name">Leg</string>
               <bool name="Anchored">true</bool>
               <token name="BottomSurface">0</token>
               <CoordinateFrame name="CFrame">
                 <X>-31</X>
-                <Y>3</Y>
+                <Y>2</Y>
                 <Z>-89</Z>
                 <R00>1</R00>
                 <R01>0</R01>
@@ -3835,20 +5105,20 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="Material">816</token>
               <Vector3 name="size">
                 <X>3</X>
-                <Y>6</Y>
+                <Y>4</Y>
                 <Z>3</Z>
               </Vector3>
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="74">
+          <Item class="Part" referent="82">
             <Properties>
               <string name="Name">Leg</string>
               <bool name="Anchored">true</bool>
               <token name="BottomSurface">0</token>
               <CoordinateFrame name="CFrame">
                 <X>31</X>
-                <Y>3</Y>
+                <Y>2</Y>
                 <Z>-151</Z>
                 <R00>1</R00>
                 <R01>0</R01>
@@ -3864,20 +5134,20 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="Material">816</token>
               <Vector3 name="size">
                 <X>3</X>
-                <Y>6</Y>
+                <Y>4</Y>
                 <Z>3</Z>
               </Vector3>
               <token name="TopSurface">0</token>
             </Properties>
           </Item>
-          <Item class="Part" referent="75">
+          <Item class="Part" referent="83">
             <Properties>
               <string name="Name">Leg</string>
               <bool name="Anchored">true</bool>
               <token name="BottomSurface">0</token>
               <CoordinateFrame name="CFrame">
                 <X>31</X>
-                <Y>3</Y>
+                <Y>2</Y>
                 <Z>-89</Z>
                 <R00>1</R00>
                 <R01>0</R01>
@@ -3893,7 +5163,7 @@ ContextActionService:SetTitle("ArenaGate", "Gate")
               <token name="Material">816</token>
               <Vector3 name="size">
                 <X>3</X>
-                <Y>6</Y>
+                <Y>4</Y>
                 <Z>3</Z>
               </Vector3>
               <token name="TopSurface">0</token>
