@@ -1,0 +1,1734 @@
+<roblox version="4">
+  <Item class="Folder" referent="0">
+    <Properties>
+      <string name="Name">HairPhysicsKit</string>
+    </Properties>
+    <Item class="Script" referent="1">
+      <Properties>
+        <string name="Name">README</string>
+        <bool name="Disabled">true</bool>
+        <ProtectedString name="Source"><![CDATA[--[[
+	============================================================================
+	 HAIR PHYSICS KIT — READ ME   (this script is switched off; it's just notes)
+	============================================================================
+
+	WHAT'S IN HERE
+	  ReplicatedStorage      -> HairPhysics (the simulator) + HairConfig (ALL settings)
+	  ServerScriptService    -> HairApplier (puts the hair on the rigs)
+	                            NPCRoam     (test: rigs walk, jump, turn around)
+	  StarterPlayerScripts   -> HairPhysicsClient (starts the simulation for each player)
+	  ServerStorage          -> HairModels (empty folder: the imported hair goes here)
+
+	SETUP (once)
+	  1. Import the two rigged hairs: File > Import 3D, pick Pigtails_Rigged.fbx.
+	       - Rig Type: Custom (the importer usually picks this itself — just not "No Rig")
+	       - Scale Unit: Studs        - World Forward: Front   - World Up: Top
+	       - tick "Keep Zero Influence Bones"
+	       - leave "Upload to Roblox" on (the mesh has to be uploaded to show up in
+	         the published game)
+	     Do the same for LadyHair_Rigged.fbx.
+	  2. Drag both imported models into ServerStorage > HairModels.
+	     (No need to clean them up or weld anything — HairApplier does all of that.)
+	  3. Move the contents of each folder in this kit into the service with the same
+	     name. StarterPlayerScripts is inside StarterPlayer. Then delete this kit folder.
+	  4. The .obj exports didn't include the hair textures. Open HairConfig and paste
+	     each hair's original texture id into TextureId (from the original accessory's
+	     Handle). Until then they show in the Color set there.
+	  5. Make sure Workspace has your two R15 rigs named MrPigtails and MrLady.
+	  6. Press Play (F5). Not "Run" — the hair moves on the player's screen, so it needs
+	     a player.
+
+	TWEAKING
+	  Everything is in ReplicatedStorage > HairConfig, with notes on what each number
+	  does. Common ones:
+	    - hair sits a bit high/low/forward on the head -> Offset
+	    - hair too floppy / too stiff                  -> Stiffness
+	    - too much / too little swing when moving      -> Inertia
+	    - want a breeze                                -> Wind, WindGust
+	  When you're done testing, delete NPCRoam (or set ENABLED = false at its top).
+
+	IF SOMETHING'S OFF
+	  - Output says it couldn't find the hair: step 2 wasn't done, or the import
+	    dropped the bones (re-import with Rig Type = Custom).
+	  - Hair is see-through from some angles: select the hair MeshPart in
+	    HairModels and tick DoubleSided.
+	  - Hair doesn't move: you pressed Run instead of Play, or the rig is anchored
+	    (NPCRoam un-anchors them for you).
+]]
+]]></ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="Folder" referent="2">
+      <Properties>
+        <string name="Name">ReplicatedStorage</string>
+      </Properties>
+      <Item class="ModuleScript" referent="3">
+        <Properties>
+          <string name="Name">HairPhysics</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairPhysics  (ModuleScript — lives in ReplicatedStorage)
+
+	The hair simulator. It runs on each player's computer (the LocalScript
+	"HairPhysicsClient" starts it), because bone movement is purely visual and
+	Roblox intentionally does not send Bone.Transform changes over the network.
+
+	How it works, in plain English:
+	  * Every hair strand is a "chain" of bones (PigL_1 -> PigL_2 -> ... -> PigL_End).
+	    Each joint between bones is treated like a little bead on a string.
+	  * Each frame the beads keep their momentum, get pulled down by gravity, and
+	    get dragged along when the head moves (that's the swing / lag).
+	  * Then rules are applied to the beads, in order:
+	      1. Length   – the string never stretches.
+	      2. Shape    – each bone springs back toward the shape the hair was modeled in.
+	      3. Bend cap – no joint can bend more than MaxBend degrees, so a strand can never
+	                    fold back on itself.
+	      4. Body     – beads are pushed out of the head / torso / upper arms.
+	      5. Hair     – every bone is a capsule (a pill shape); capsules from different
+	                    strands (and far-apart parts of the same strand) push each other
+	                    apart, so strands can't pass through each other or bunch into one spot.
+	  * Finally the bones are rotated to point at their beads, which bends the mesh.
+
+	Every tunable lives in HairConfig — you shouldn't need to edit this file.
+]]
+
+local HairPhysics = {}
+
+HairPhysics.TAG = "HairPhysics" -- CollectionService tag the server puts on hair parts
+
+local STEP = 1 / 60 -- the simulation always runs in fixed 60 Hz slices, so it behaves the
+-- same at any frame rate; frames in between are smoothed (see WriteBones)
+local MAX_SUBSTEPS = 4 -- most slices per frame (protects low frame rates)
+local TELEPORT_DISTANCE = 8 -- head moved further than this in one frame? reset the hair
+local EPS = 1e-6
+
+-- Used for anything a hair's Physics table in HairConfig leaves out.
+local DEFAULTS = {
+	Gravity = 30,
+	GravityCompensation = 0.85,
+	Damping = 0.1,
+	Inertia = 0.35,
+	Stiffness = { 0.3, 0.2, 0.14, 0.1, 0.08 },
+	MaxBend = { 35, 35, 40, 45, 50 },
+	Wind = Vector3.zero,
+	WindGust = 0,
+	SelfCollision = true,
+	SelfCollisionRadiusScale = 1,
+	SelfCollisionRange = 1.2,
+	CollisionIterations = 2,
+	BodyColliders = { "Head", "UpperTorso", "Torso", "LeftUpperArm", "RightUpperArm" },
+	TorsoExtendDown = 0.4,
+	HeadColliderScale = 1.05,
+	BodyColliderScale = 0.95,
+	BodyRadiusScale = 0.8,
+	SimulationDistance = 150,
+	ChainOverrides = {},
+}
+HairPhysics.DEFAULTS = DEFAULTS
+
+----------------------------------------------------------------------------------------
+-- small vector helpers (no CFrames in the hot loop: they're slower than plain vectors)
+----------------------------------------------------------------------------------------
+
+-- Rotates v by the rotation that turns unit vector a into unit vector b.
+local function rotateByArc(v: Vector3, a: Vector3, b: Vector3): Vector3
+	local axis = a:Cross(b)
+	local s2 = axis:Dot(axis)
+	local c = a:Dot(b)
+	if s2 < EPS then
+		if c > 0 then
+			return v
+		end
+		-- a and b point opposite ways: spin 180 degrees around any axis at right angles to a
+		local perp = (math.abs(a.X) < 0.9 and Vector3.xAxis or Vector3.yAxis):Cross(a).Unit
+		return perp * (2 * perp:Dot(v)) - v
+	end
+	return v * c + axis:Cross(v) + axis * (axis:Dot(v) * (1 - c) / s2)
+end
+
+-- Rotation-only CFrame that turns unit vector a into unit vector b.
+local function arcCFrame(a: Vector3, b: Vector3): CFrame
+	local axis = a:Cross(b)
+	local w = 1 + a:Dot(b)
+	if w < EPS then
+		local perp = (math.abs(a.X) < 0.9 and Vector3.xAxis or Vector3.yAxis):Cross(a).Unit
+		return CFrame.new(0, 0, 0, perp.X, perp.Y, perp.Z, 0)
+	end
+	local m = math.sqrt(axis:Dot(axis) + w * w)
+	return CFrame.new(0, 0, 0, axis.X / m, axis.Y / m, axis.Z / m, w / m)
+end
+
+-- If dir points more than maxAngle away from target, swing it back onto the edge of that cone.
+local function clampToCone(dir: Vector3, target: Vector3, cosMax: number, sinMax: number): Vector3
+	if dir:Dot(target) >= cosMax then
+		return dir
+	end
+	local axis = target:Cross(dir)
+	local s = axis.Magnitude
+	if s < EPS then
+		axis = (math.abs(target.X) < 0.9 and Vector3.xAxis or Vector3.yAxis):Cross(target)
+		s = axis.Magnitude
+	end
+	return target * cosMax + (axis / s):Cross(target) * sinMax
+end
+
+-- Closest points between segments p1-q1 and p2-q2 (Ericson, Real-Time Collision Detection 5.1.9).
+-- Returns s, t: how far along each segment (0..1) the closest points are.
+local function closestSegSeg(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3): (number, number)
+	local d1, d2, r = q1 - p1, q2 - p2, p1 - p2
+	local a, e, f = d1:Dot(d1), d2:Dot(d2), d2:Dot(r)
+	if a <= EPS and e <= EPS then
+		return 0, 0
+	end
+	if a <= EPS then
+		return 0, math.clamp(f / e, 0, 1)
+	end
+	local c = d1:Dot(r)
+	if e <= EPS then
+		return math.clamp(-c / a, 0, 1), 0
+	end
+	local b = d1:Dot(d2)
+	local denom = a * e - b * b
+	local s = denom > EPS and math.clamp((b * f - c * e) / denom, 0, 1) or 0
+	local t = (b * s + f) / e
+	if t < 0 then
+		return math.clamp(-c / a, 0, 1), 0
+	elseif t > 1 then
+		return math.clamp((b - c) / a, 0, 1), 1
+	end
+	return s, t
+end
+
+HairPhysics.rotateByArc = rotateByArc
+HairPhysics.closestSegSeg = closestSegSeg
+
+-- Value for bone index k from a per-bone list; lists shorter than the chain reuse their last value.
+local function pick(list, k: number): number
+	if type(list) ~= "table" then
+		return list
+	end
+	return list[math.min(k, #list)]
+end
+
+-- A bone's CFrame relative to the MeshPart it lives in (walks up through parent bones).
+local function partSpaceCFrame(inst: Instance, part: BasePart): CFrame?
+	if inst == part then
+		return CFrame.identity
+	end
+	local cf = CFrame.identity
+	local node: Instance? = inst
+	while node ~= part do
+		if node == nil or not node:IsA("Bone") then
+			return nil
+		end
+		cf = (node :: Bone).CFrame * cf
+		node = node.Parent
+	end
+	return cf
+end
+
+HairPhysics.PartSpaceCFrame = partSpaceCFrame
+
+----------------------------------------------------------------------------------------
+-- Rig fitting (used by the server when it puts hair on a head)
+----------------------------------------------------------------------------------------
+
+-- The 24 ways a model can be turned so its sides still line up with the axes (what an
+-- importer's "which way is up/forward" setting can do to a mesh).
+local AXIS_ROTATIONS = {}
+do
+	local axes = { Vector3.xAxis, -Vector3.xAxis, Vector3.yAxis, -Vector3.yAxis, Vector3.zAxis, -Vector3.zAxis }
+	for _, x in axes do
+		for _, y in axes do
+			if math.abs(x:Dot(y)) < 0.5 then
+				table.insert(AXIS_ROTATIONS, CFrame.fromMatrix(Vector3.zero, x, y, x:Cross(y)))
+			end
+		end
+	end
+end
+
+-- Works out how the imported hair relates to the rig as designed: compares where each bone
+-- was modeled (design, head space) with where it actually ended up inside the MeshPart
+-- (actual, part space). Returns the scale, turn and shift that map one onto the other, plus
+-- Error = average mismatch in studs (should be ~0).
+function HairPhysics.FitRig(design: { Vector3 }, actual: { Vector3 })
+	local n = #design
+	local cd, ca = Vector3.zero, Vector3.zero
+	for i = 1, n do
+		cd += design[i]
+		ca += actual[i]
+	end
+	cd /= n
+	ca /= n
+	local spread = 0
+	for i = 1, n do
+		local d = design[i] - cd
+		spread += d:Dot(d)
+	end
+	local best
+	for _, rot in AXIS_ROTATIONS do
+		local num = 0
+		for i = 1, n do
+			num += rot:VectorToWorldSpace(design[i] - cd):Dot(actual[i] - ca)
+		end
+		local scale = num / spread
+		if scale > 0 then
+			local err = 0
+			for i = 1, n do
+				local e = rot:VectorToWorldSpace(design[i] - cd) * scale - (actual[i] - ca)
+				err += e:Dot(e)
+			end
+			if not best or err < best.err then
+				best = { err = err, rot = rot, scale = scale }
+			end
+		end
+	end
+	return {
+		Scale = best.scale,
+		Rotation = best.rot,
+		Translation = ca - best.rot:VectorToWorldSpace(cd) * best.scale,
+		Error = math.sqrt(best.err / n),
+	}
+end
+
+-- CFrame of the hair part relative to the head, from a FitRig result: puts the modeled head
+-- centre of the hair on the head's centre, facing the same way.
+function HairPhysics.HeadToPart(fit): CFrame
+	return (CFrame.new(fit.Translation) * fit.Rotation):Inverse()
+end
+
+local function mergeSettings(overrides)
+	local s = table.clone(DEFAULTS)
+	for key, value in overrides or {} do
+		s[key] = value
+	end
+	return s
+end
+HairPhysics.mergeSettings = mergeSettings
+
+----------------------------------------------------------------------------------------
+-- Sim: one simulated hair (one MeshPart with bone chains)
+----------------------------------------------------------------------------------------
+
+local Sim = {}
+Sim.__index = Sim
+HairPhysics.Sim = Sim
+
+local function buildChain(part: BasePart, spec, settings)
+	local bones = {}
+	for _, name in spec.Bones do
+		local bone = part:FindFirstChild(name, true)
+		if not (bone and bone:IsA("Bone")) then
+			return nil, ("bone '%s' missing"):format(name)
+		end
+		table.insert(bones, bone)
+	end
+	local n = #bones
+	local parentRest = partSpaceCFrame(bones[1].Parent :: Instance, part)
+	if not parentRest then
+		return nil, ("bone '%s' is not inside the hair part"):format(spec.Bones[1])
+	end
+
+	-- joint positions in the part's own space; joint n+1 is the strand tip
+	local J, restCF = {}, {}
+	for k, bone in bones do
+		restCF[k] = partSpaceCFrame(bone, part) :: CFrame
+		J[k] = restCF[k].Position
+	end
+	local tip = spec.Tip and part:FindFirstChild(spec.Tip, true)
+	if tip and tip:IsA("Bone") and partSpaceCFrame(tip, part) then
+		J[n + 1] = (partSpaceCFrame(tip, part) :: CFrame).Position
+	elseif n >= 2 then
+		-- tip bone didn't survive import: extend the last bone by the length of the one before
+		J[n + 1] = J[n] + (J[n] - J[n - 1])
+	else
+		J[n + 1] = J[n] + Vector3.new(0, -0.4, 0)
+	end
+
+	-- per-chain overrides (e.g. "Lock" = both front locks) on top of the hair's settings
+	local stiff, bend = settings.Stiffness, settings.MaxBend
+	for prefix, ov in settings.ChainOverrides do
+		if spec.Name:sub(1, #prefix) == prefix then
+			stiff = ov.Stiffness or stiff
+			bend = ov.MaxBend or bend
+		end
+	end
+
+	local chain = {
+		Name = spec.Name,
+		Bones = bones,
+		N = n,
+		BoneCF = {},
+		ParentRest = parentRest,
+		J = J,
+		RestLen = {},
+		RestDir = {},
+		ChildOffset = {},
+		Radius = {},
+		SegRadius = {},
+		Stiffness = {},
+		CosMax = {},
+		SinMax = {},
+		Pos = {},
+		Prev = {},
+		LocalPrev = {}, -- bead positions relative to the hair part, previous slice
+		LocalCur = {}, -- ... and latest slice (drawn frames blend between the two)
+		BodyRadius = {},
+	}
+	for k = 1, n do
+		chain.BoneCF[k] = bones[k].CFrame
+		local d = J[k + 1] - J[k]
+		chain.RestLen[k] = math.max(d.Magnitude, 0.01)
+		chain.RestDir[k] = d.Magnitude > EPS and d.Unit or Vector3.new(0, -1, 0)
+		chain.ChildOffset[k] = restCF[k]:PointToObjectSpace(J[k + 1])
+		chain.Stiffness[k] = math.clamp(pick(stiff, k), 0, 1)
+		local maxBend = math.rad(math.clamp(pick(bend, k), 1, 179))
+		chain.CosMax[k] = math.cos(maxBend)
+		chain.SinMax[k] = math.sin(maxBend)
+	end
+	for k = 1, n + 1 do
+		chain.Radius[k] = pick(spec.Radii or 0.15, k)
+	end
+	for k = 1, n do
+		chain.SegRadius[k] = (chain.Radius[k] + chain.Radius[k + 1]) * 0.5 * settings.SelfCollisionRadiusScale
+	end
+	return chain
+end
+
+-- Hair-vs-hair capsule pairs. The allowed gap is shrunk wherever two capsules already
+-- overlap in the modeled pose, so the collision never fights the hair's own shape.
+local function buildPairs(chains, range: number)
+	local pairsList = {}
+	for ia, A in chains do
+		for ib = ia, #chains do
+			local B = chains[ib]
+			for a = 1, A.N do
+				for b = (ia == ib) and a + 2 or 1, B.N do
+					local s, t = closestSegSeg(A.J[a], A.J[a + 1], B.J[b], B.J[b + 1])
+					local pa = A.J[a]:Lerp(A.J[a + 1], s)
+					local pb = B.J[b]:Lerp(B.J[b + 1], t)
+					local restGap = (pa - pb).Magnitude
+					local minDist = math.min(A.SegRadius[a] + B.SegRadius[b], restGap * 0.9)
+					if minDist > 0.03 and restGap < range then
+						table.insert(pairsList, {
+							A = A,
+							a = a,
+							B = B,
+							b = b,
+							MinDist = minDist,
+							Reach = (A.RestLen[a] + B.RestLen[b]) * 0.5 + minDist,
+						})
+					end
+				end
+			end
+		end
+	end
+	return pairsList
+end
+
+function Sim.new(part: BasePart, layout, settings)
+	local self = setmetatable({}, Sim)
+	self.Part = part
+	self.Settings = settings
+	self.Chains = {}
+	self.Colliders = {}
+	self.Awake = false
+	self.Time = 0
+	local problems = {}
+	for _, spec in layout.Chains do
+		local chain, err = buildChain(part, spec, settings)
+		if chain then
+			table.insert(self.Chains, chain)
+		else
+			table.insert(problems, err)
+		end
+	end
+	if #self.Chains == 0 then
+		return nil, "no usable bone chains (" .. table.concat(problems, ", ") .. ")"
+	end
+	self.Problems = problems
+	self.Pairs = settings.SelfCollision and buildPairs(self.Chains, settings.SelfCollisionRange) or {}
+	return self
+end
+
+-- Finds the character this hair is worn by (first ancestor Model that has a Humanoid).
+local function findCharacter(part: Instance): Model?
+	local node = part.Parent
+	while node do
+		if node:IsA("Model") and node:FindFirstChildOfClass("Humanoid") then
+			return node
+		end
+		node = node.Parent
+	end
+	return nil
+end
+
+-- Body collider shapes: Head = sphere, everything else = box. The UpperTorso box is stretched
+-- down over the LowerTorso (TorsoExtendDown) — two stacked boxes would keep shoving a strand
+-- that sits at the seam back and forth between them.
+function Sim:BuildColliders(character: Model?)
+	local s = self.Settings
+	self.Colliders = {}
+	if not character then
+		return
+	end
+	for _, name in s.BodyColliders do
+		local bp = character:FindFirstChild(name)
+		if bp and bp:IsA("BasePart") then
+			if name == "Head" then
+				local size = bp.Size
+				table.insert(self.Colliders, {
+					Part = bp,
+					Sphere = true,
+					Radius = math.min(size.X, size.Y, size.Z) * 0.5 * s.HeadColliderScale,
+					Offset = CFrame.identity,
+				})
+			else
+				local half = bp.Size * 0.5 * s.BodyColliderScale
+				local offset = CFrame.identity
+				if name == "UpperTorso" and s.TorsoExtendDown > 0 then
+					half += Vector3.new(0, s.TorsoExtendDown * 0.5, 0)
+					offset = CFrame.new(0, -s.TorsoExtendDown * 0.5, 0)
+				end
+				table.insert(self.Colliders, { Part = bp, Sphere = false, Half = half, Offset = offset })
+			end
+		end
+	end
+end
+
+-- Signed distance from point p to a collider's surface (negative = inside).
+local function colliderDistance(col, p: Vector3): number
+	local cf = col.Part.CFrame * col.Offset
+	if col.Sphere then
+		return (p - cf.Position).Magnitude - col.Radius
+	end
+	local lp = cf:PointToObjectSpace(p)
+	local q = Vector3.new(math.abs(lp.X), math.abs(lp.Y), math.abs(lp.Z)) - col.Half
+	local outside = Vector3.new(math.max(q.X, 0), math.max(q.Y, 0), math.max(q.Z, 0)).Magnitude
+	return outside + math.min(math.max(q.X, q.Y, q.Z), 0)
+end
+
+HairPhysics.colliderDistance = colliderDistance
+
+-- Puts every bead back at its modeled position (used on start and after teleports).
+function Sim:ResetToRest(partCF: CFrame)
+	for _, chain in self.Chains do
+		for k = 1, chain.N + 1 do
+			local p = partCF * chain.J[k]
+			chain.Pos[k] = p
+			chain.Prev[k] = p
+			chain.LocalPrev[k] = chain.J[k]
+			chain.LocalCur[k] = chain.J[k]
+		end
+	end
+	self.AnchorCF = partCF
+	self.LastCF = partCF
+	self.LastH = STEP
+	self.Accum = 0
+	for _, col in self.Colliders do
+		col.To = nil -- don't sweep body parts across a teleport
+	end
+end
+
+function Sim:Wake(partCF: CFrame)
+	self:BuildColliders(findCharacter(self.Part))
+	for _, col in self.Colliders do
+		col.From = col.Part.CFrame
+		col.To = col.From
+	end
+	self:ResetToRest(partCF)
+	-- How far each bead may get from each body part. A bead that already sits closer than its
+	-- radius in the modeled pose gets a smaller radius, and one that starts inside ignores that
+	-- part, so the body never shoves the hair out of its own resting shape.
+	local s = self.Settings
+	for _, chain in self.Chains do
+		for k = 2, chain.N + 1 do
+			local radii = {}
+			for ci, col in self.Colliders do
+				local gap = colliderDistance(col, chain.Pos[k])
+				radii[ci] = gap > 0.01 and math.min(chain.Radius[k] * s.BodyRadiusScale, gap * 0.9) or false
+			end
+			chain.BodyRadius[k] = radii
+		end
+	end
+	self.Awake = true
+end
+
+function Sim:Sleep()
+	self.Awake = false
+	for _, chain in self.Chains do
+		for _, bone in chain.Bones do
+			if bone.Parent then
+				bone.Transform = CFrame.identity
+			end
+		end
+	end
+end
+
+-- Rules 1-3: length, spring back to the modeled shape, bend cap. Works root -> tip.
+-- Each bone's "target" direction is its modeled direction, swung along with however much
+-- the bone above it has swung, so a strand keeps its curl while it moves.
+--
+-- gravityStep (optional) is this slice's pull of gravity. The modeled shape is how the hair
+-- already hangs under gravity, so without help gravity would sag it below that shape at rest.
+-- Gravity compensation aims the spring a little above the modeled shape by exactly the amount
+-- gravity drags it down, so a still character's hair sits in its modeled pose, while swings,
+-- jumps and falls still move it.
+function Sim:SolveShape(chain, rot: CFrame, stiffnessFactor: number, gravityStep: Vector3?)
+	local pos = chain.Pos
+	local prevRest, prevDir
+	for k = 1, chain.N do
+		local restW = rot:VectorToWorldSpace(chain.RestDir[k])
+		local target = (k == 1) and restW or rotateByArc(restW, prevRest, prevDir)
+		local d = pos[k + 1] - pos[k]
+		local len = d.Magnitude
+		local dir = len > EPS and d / len or target
+		if stiffnessFactor > 0 then
+			local st = 1 - (1 - chain.Stiffness[k]) ^ stiffnessFactor
+			local aim = target
+			if gravityStep and st > 0.01 then
+				local sideways = gravityStep - target * gravityStep:Dot(target)
+				aim = (target - sideways * ((1 - st) / (st * chain.RestLen[k]))).Unit
+			end
+			dir = dir + (aim - dir) * st
+			local m = dir.Magnitude
+			dir = m > EPS and dir / m or target
+		end
+		dir = clampToCone(dir, target, chain.CosMax[k], chain.SinMax[k])
+		pos[k + 1] = pos[k] + dir * chain.RestLen[k]
+		prevRest, prevDir = restW, dir
+	end
+end
+
+-- Rule 4: push beads out of the body parts. Body parts are placed where they were at the same
+-- moment as the slice being simulated (between last frame and this one), not where they are now.
+function Sim:CollideBody()
+	local colliders = self.Colliders
+	if #colliders == 0 then
+		return
+	end
+	local frames = {}
+	local alpha = self.SliceAlpha or 1
+	for ci, col in colliders do
+		frames[ci] = col.From:Lerp(col.To, alpha) * col.Offset
+	end
+	for _, chain in self.Chains do
+		local pos, prev = chain.Pos, chain.Prev
+		for k = 2, chain.N + 1 do
+			local radii = chain.BodyRadius[k]
+			local p = pos[k]
+			for ci, col in colliders do
+				local r = radii[ci]
+				if r then
+					local cf = frames[ci]
+					if col.Sphere then
+						local c = cf.Position
+						local d = p - c
+						local m = d.Magnitude
+						local reach = col.Radius + r
+						if m < reach and m > EPS then
+							p = c + d * (reach / m)
+						end
+					else
+						-- box with rounded edges (the bead is a ball of radius r)
+						local lp = cf:PointToObjectSpace(p)
+						local half = col.Half
+						local ax, ay, az = math.abs(lp.X), math.abs(lp.Y), math.abs(lp.Z)
+						if ax < half.X + r and ay < half.Y + r and az < half.Z + r then
+							local cx = math.clamp(lp.X, -half.X, half.X)
+							local cy = math.clamp(lp.Y, -half.Y, half.Y)
+							local cz = math.clamp(lp.Z, -half.Z, half.Z)
+							local out = lp - Vector3.new(cx, cy, cz)
+							local m = out.Magnitude
+							if m > EPS then
+								-- outside the box but too close to it: push straight away
+								if m < r then
+									p = cf:PointToWorldSpace(Vector3.new(cx, cy, cz) + out * (r / m))
+								end
+							else
+								-- inside: leave through the nearest face, unless the bead was outside
+								-- the opposite face last slice (it moved so fast it went past the
+								-- middle) - then send it back out the side it came from
+								local px, py, pz = half.X - ax, half.Y - ay, half.Z - az
+								local lq = cf:PointToObjectSpace(prev[k])
+								local axis, side, lqc, h
+								if px <= py and px <= pz then
+									axis, side, lqc, h = 1, lp.X, lq.X, half.X
+								elseif py <= pz then
+									axis, side, lqc, h = 2, lp.Y, lq.Y, half.Y
+								else
+									axis, side, lqc, h = 3, lp.Z, lq.Z, half.Z
+								end
+								if math.abs(lqc) > h and (lqc >= 0) ~= (side >= 0) then
+									side = lqc
+								end
+								local face = (side >= 0 and 1 or -1) * (h + r)
+								if axis == 1 then
+									lp = Vector3.new(face, lp.Y, lp.Z)
+								elseif axis == 2 then
+									lp = Vector3.new(lp.X, face, lp.Z)
+								else
+									lp = Vector3.new(lp.X, lp.Y, face)
+								end
+								p = cf:PointToWorldSpace(lp)
+							end
+						end
+					end
+				end
+			end
+			pos[k] = p
+		end
+	end
+end
+
+-- Rule 5: bone capsules push each other apart (joint 1 of every chain is pinned to the head).
+function Sim:CollideSelf()
+	for _, pr in self.Pairs do
+		local A, a, B, b = pr.A, pr.a, pr.B, pr.b
+		local PA, PB = A.Pos, B.Pos
+		local a0, a1, b0, b1 = PA[a], PA[a + 1], PB[b], PB[b + 1]
+		if ((a0 + a1) - (b0 + b1)).Magnitude * 0.5 < pr.Reach then
+			local s, t = closestSegSeg(a0, a1, b0, b1)
+			local ca = a0 + (a1 - a0) * s
+			local cb = b0 + (b1 - b0) * t
+			local d = ca - cb
+			local m = d.Magnitude
+			local minDist = pr.MinDist
+			if m < minDist then
+				local normal = m > EPS and d / m or (a1 - b1).Unit
+				-- how much each end can move (pinned root joints can't)
+				local wa0 = a > 1 and (1 - s) or 0
+				local wa1 = s
+				local wb0 = b > 1 and (1 - t) or 0
+				local wb1 = t
+				local denom = wa0 * wa0 + wa1 * wa1 + wb0 * wb0 + wb1 * wb1
+				if denom > 0.05 then
+					local lambda = (minDist - m) / denom
+					if wa0 > 0 then
+						PA[a] += normal * (lambda * wa0)
+					end
+					PA[a + 1] += normal * (lambda * wa1)
+					if wb0 > 0 then
+						PB[b] -= normal * (lambda * wb0)
+					end
+					PB[b + 1] -= normal * (lambda * wb1)
+				end
+			end
+		end
+	end
+end
+
+function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
+	local s = self.Settings
+	self.SliceAlpha = sliceAlpha or 1
+	-- Part of the head's movement is copied straight onto the hair; the rest (Inertia)
+	-- is left behind, which is what makes the hair trail and swing.
+	local carry = 1 - s.Inertia
+	local delta = anchorCF * self.AnchorCF:Inverse()
+	self.AnchorCF = anchorCF
+	local rot = anchorCF.Rotation
+
+	local ratio = math.clamp(h / self.LastH, 0.5, 2)
+	self.LastH = h
+	local keep = (1 - s.Damping) ^ (h * 60)
+	self.Time += h
+	local wind = s.Wind
+	if s.WindGust > 0 then
+		wind *= 1 + s.WindGust * math.sin(self.Time * 1.7) * math.sin(self.Time * 0.63 + 1)
+	end
+	local gravity = Vector3.new(0, -s.Gravity, 0) * (h * h)
+	local accel = gravity + wind * (h * h)
+	local compensation = s.GravityCompensation > 0 and gravity * s.GravityCompensation or nil
+
+	for _, chain in self.Chains do
+		local pos, prev = chain.Pos, chain.Prev
+		pos[1] = anchorCF * chain.J[1]
+		prev[1] = pos[1]
+		for k = 2, chain.N + 1 do
+			local p, q = pos[k], prev[k]
+			if carry > 0 then
+				p = p:Lerp(delta * p, carry)
+				q = q:Lerp(delta * q, carry)
+			end
+			local vel = (p - q) * (keep * ratio)
+			prev[k] = p
+			pos[k] = p + vel + accel
+		end
+		self:SolveShape(chain, rot, h * 60, compensation)
+	end
+
+	-- collisions go last so nothing is left inside the body or another strand; the small
+	-- length error this can leave is fixed by the next slice and never shows (bones only aim)
+	for i = 1, s.CollisionIterations do
+		if i > 1 then
+			for _, chain in self.Chains do
+				self:SolveShape(chain, rot, 0)
+			end
+		end
+		self:CollideBody()
+		if #self.Pairs > 0 then
+			self:CollideSelf()
+		end
+	end
+	-- the body gets the very last word: hair poking into a body part is the most visible error
+	self:CollideBody()
+end
+
+-- Turns each bone so it points at the next bead. Only Bone.Transform is touched, so the
+-- modeled pose (Bone.CFrame) is never changed.
+-- alpha (0..1) blends between the last two simulation slices for frames that land between them.
+function Sim:WriteBones(partCF: CFrame, alpha: number)
+	for _, chain in self.Chains do
+		local lprev, lcur = chain.LocalPrev, chain.LocalCur
+		local parentWorld = partCF * chain.ParentRest
+		for k = 1, chain.N do
+			local restWorld = parentWorld * chain.BoneCF[k]
+			local restDir = restWorld:VectorToWorldSpace(chain.ChildOffset[k])
+			local bead = partCF * lprev[k + 1]:Lerp(lcur[k + 1], alpha)
+			local simDir = bead - restWorld.Position
+			local newWorld = restWorld
+			if simDir.Magnitude > EPS and restDir.Magnitude > EPS then
+				local arc = arcCFrame(restDir.Unit, simDir.Unit)
+				newWorld = CFrame.new(restWorld.Position) * arc * restWorld.Rotation
+			end
+			chain.Bones[k].Transform = restWorld:ToObjectSpace(newWorld)
+			parentWorld = newWorld
+		end
+	end
+end
+
+-- Call once per rendered frame.
+function Sim:Update(dt: number, cameraPosition: Vector3?)
+	local partCF = self.Part.CFrame
+	if cameraPosition and (partCF.Position - cameraPosition).Magnitude > self.Settings.SimulationDistance then
+		if self.Awake then
+			self:Sleep()
+		end
+		return
+	end
+	if not self.Awake then
+		self:Wake(partCF)
+	elseif (partCF.Position - self.LastCF.Position).Magnitude > TELEPORT_DISTANCE then
+		self:ResetToRest(partCF)
+	end
+
+	dt = math.clamp(dt, 1e-4, 0.25)
+	for _, col in self.Colliders do
+		col.From = col.To or col.Part.CFrame
+		col.To = col.Part.CFrame
+	end
+	local carried = self.Accum
+	self.Accum += dt
+	local from = self.LastCF
+	local steps = 0
+	while self.Accum >= STEP and steps < MAX_SUBSTEPS do
+		steps += 1
+		self.Accum -= STEP
+		-- where the head was at the moment this slice ends (somewhere inside this frame)
+		local alpha = math.clamp((steps * STEP - carried) / dt, 0, 1)
+		local anchor = from:Lerp(partCF, alpha)
+		self:Substep(STEP, anchor, alpha)
+		for _, chain in self.Chains do
+			local lprev, lcur, pos = chain.LocalPrev, chain.LocalCur, chain.Pos
+			for k = 1, chain.N + 1 do
+				lprev[k] = lcur[k]
+				lcur[k] = anchor:PointToObjectSpace(pos[k])
+			end
+		end
+	end
+	if self.Accum >= STEP then
+		self.Accum = 0 -- the game is running too slowly to keep up; skip ahead rather than spiral
+	end
+	self.LastCF = partCF
+	self:WriteBones(partCF, self.Accum / STEP)
+end
+
+----------------------------------------------------------------------------------------
+-- Client runner: simulates every part tagged "HairPhysics"
+----------------------------------------------------------------------------------------
+
+local started = false
+
+function HairPhysics.StartClient()
+	if started then
+		return
+	end
+	started = true
+
+	local RunService = game:GetService("RunService")
+	local CollectionService = game:GetService("CollectionService")
+	local Workspace = game:GetService("Workspace")
+	local HairConfig = require(script.Parent:WaitForChild("HairConfig"))
+
+	local sims = {} -- [part] = Sim
+	local waiting = {} -- [part] = time we started waiting for its bones to arrive
+
+	-- returns true when done with the part (started, or hopeless), false to try again later
+	local function tryStart(part: Instance): (boolean, string?)
+		if not part:IsA("BasePart") then
+			return true
+		end
+		if not part:IsDescendantOf(Workspace) then
+			return false, "not in Workspace"
+		end
+		local presetName = part:GetAttribute("HairPreset")
+		local layout = HairConfig.Layouts[presetName]
+		local hair = HairConfig.Hairs[presetName]
+		if not layout then
+			warn(("[HairPhysics] %s has unknown HairPreset '%s'"):format(part:GetFullName(), tostring(presetName)))
+			return true -- give up on it
+		end
+		local sim, err = Sim.new(part, layout, mergeSettings(hair and hair.Physics))
+		if not sim then
+			return false, err
+		end
+		if #sim.Problems > 0 then
+			warn("[HairPhysics] " .. part:GetFullName() .. ": skipped " .. table.concat(sim.Problems, ", "))
+		end
+		sims[part] = sim
+		return true
+	end
+
+	local function add(part: Instance)
+		if sims[part] then
+			return
+		end
+		local ok = tryStart(part)
+		if not ok then
+			waiting[part] = os.clock() -- bones may still be streaming in; retry for a bit
+		end
+	end
+
+	local function remove(part: Instance)
+		waiting[part] = nil
+		local sim = sims[part]
+		if sim then
+			sims[part] = nil
+			sim:Sleep()
+		end
+	end
+
+	CollectionService:GetInstanceAddedSignal(HairPhysics.TAG):Connect(add)
+	CollectionService:GetInstanceRemovedSignal(HairPhysics.TAG):Connect(remove)
+	for _, part in CollectionService:GetTagged(HairPhysics.TAG) do
+		add(part)
+	end
+
+	-- PreRender runs after Roblox has played animations for the frame and right before it
+	-- draws, so our bone rotations are what ends up on screen.
+	local ok, renderSignal = pcall(function()
+		return RunService.PreRender
+	end)
+	if not ok or not renderSignal then
+		renderSignal = RunService.RenderStepped
+	end
+
+	local retryClock = 0
+	renderSignal:Connect(function(dt: number)
+		retryClock += dt
+		if retryClock > 0.5 then
+			retryClock = 0
+			for part, since in waiting do
+				if part.Parent == nil then
+					waiting[part] = nil
+				else
+					local done, err = tryStart(part)
+					if done then
+						waiting[part] = nil
+					elseif not part:IsDescendantOf(Workspace) then
+						waiting[part] = os.clock() -- stored away (e.g. ReplicatedStorage): keep watching quietly
+					elseif os.clock() - since > 15 then
+						waiting[part] = nil
+						warn(("[HairPhysics] gave up on %s: %s"):format(part:GetFullName(), tostring(err)))
+					end
+				end
+			end
+		end
+
+		local camera = Workspace.CurrentCamera
+		local camPos = camera and camera.CFrame.Position
+		for part, sim in sims do
+			if part.Parent == nil then
+				sims[part] = nil
+			else
+				local success, err = pcall(sim.Update, sim, dt, camPos)
+				if not success then
+					sims[part] = nil
+					warn("[HairPhysics] stopped simulating " .. part:GetFullName() .. ": " .. tostring(err))
+				end
+			end
+		end
+	end)
+end
+
+return HairPhysics
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
+          <string name="Name">HairConfig</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairConfig  (ModuleScript — lives in ReplicatedStorage)
+
+	Every setting for the hair system lives here. Both the server (HairApplier, which
+	puts the hair on) and every player's computer (HairPhysics, which moves it) read it.
+
+	Quick guide to the physics numbers (per hair, under Physics):
+	  Gravity              How hard the hair is pulled down while it swings (studs/s²).
+	  GravityCompensation  0..1. 1 = when the character stands still the hair sits exactly in
+	                       its modeled shape. 0 = gravity sags it below that shape.
+	  Damping              0..1. Higher = swinging dies out faster (0.12 ≈ stops in ~1 second).
+	  Inertia              0..1. How much the hair gets left behind when the head moves.
+	                       Higher = more trailing/swinging when walking and jumping.
+	  Stiffness            One number per bone, root first. How strongly each bone springs back
+	                       to its modeled shape. Higher = stiffer hair.
+	  MaxBend              One number per bone, root first, in degrees. The most each joint can
+	                       bend away from its modeled shape. This is what stops strands folding.
+	  ChainOverrides       Different Stiffness/MaxBend for some strands, matched by the start of
+	                       the strand's name (e.g. "Lock" = LockL and LockR).
+	  Wind / WindGust      Constant wind (studs/s², e.g. Vector3.new(8, 0, 0)) and how gusty it is.
+	  SelfCollision        Strands bump into each other instead of passing through.
+	  BodyColliders        Body parts the hair bumps into. "Head" is a ball, the rest are boxes.
+	  SimulationDistance   Hair further than this from the camera stops simulating (saves FPS).
+]]
+
+local HairConfig = {}
+
+-- Which hair goes on which rig (rigs are found in Workspace by name).
+HairConfig.Assignments = {
+	{ Rig = "MrPigtails", Hair = "Pigtails" },
+	{ Rig = "MrLady", Hair = "LadyHair" },
+}
+
+-- Folder you put the imported rigged hair models in. Looked for in ServerStorage first, then
+-- ReplicatedStorage, then Workspace.
+HairConfig.ModelFolder = "HairModels"
+
+HairConfig.Hairs = {
+	Pigtails = {
+		-- the imported model is found by this bone, so it works whatever the model is named
+		SignatureBone = "PigL_1",
+		-- paste the original hair texture here, e.g. "rbxassetid://1234567890"
+		-- (leave "" to keep whatever the imported MeshPart already has)
+		TextureId = "",
+		Color = Color3.fromRGB(86, 58, 42), -- only shows when there's no texture
+		Offset = CFrame.new(0, 0, 0), -- nudge the hair on the head: CFrame.new(right, up, back) in studs
+		Scale = 1, -- 1 = the size it was made at
+		RemoveOtherHair = true, -- take off any hair the rig is already wearing
+		Physics = {
+			Gravity = 30,
+			GravityCompensation = 0.85,
+			Damping = 0.12,
+			Inertia = 0.3,
+			Stiffness = { 0.5, 0.35, 0.22, 0.15, 0.12 },
+			MaxBend = { 20, 18, 22, 25, 28 },
+			Wind = Vector3.zero,
+			WindGust = 0,
+			SelfCollision = true,
+			BodyColliders = { "Head", "UpperTorso", "Torso", "LeftUpperArm", "RightUpperArm" },
+			SimulationDistance = 150,
+		},
+	},
+
+	LadyHair = {
+		SignatureBone = "BackC_1",
+		TextureId = "",
+		Color = Color3.fromRGB(120, 80, 50),
+		Offset = CFrame.new(0, 0, 0),
+		Scale = 1,
+		RemoveOtherHair = true,
+		Physics = {
+			Gravity = 30,
+			GravityCompensation = 0.85,
+			Damping = 0.12,
+			Inertia = 0.3,
+			Stiffness = { 0.35, 0.22, 0.15, 0.11, 0.09 },
+			MaxBend = { 22, 20, 24, 28, 32 },
+			ChainOverrides = {
+				-- the two front locks that rest on the chest
+				Lock = { Stiffness = { 0.4, 0.3, 0.2, 0.15 }, MaxBend = { 18, 18, 22, 28 } },
+			},
+			Wind = Vector3.zero,
+			WindGust = 0,
+			SelfCollision = true,
+			BodyColliders = { "Head", "UpperTorso", "Torso", "LeftUpperArm", "RightUpperArm" },
+			SimulationDistance = 150,
+		},
+	},
+}
+
+--------------------------------------------------------------------------------------------
+-- Rig layouts (generated from the Blender rigs — only change these if you re-rig the hair).
+-- Radii = how thick each joint's collision ball is, root to tip, in studs.
+--------------------------------------------------------------------------------------------
+HairConfig.Layouts = {
+	Pigtails = {
+		Size = Vector3.new(2.8167, 1.7064, 1.5286), -- size of the whole hair mesh in studs (used to check the import scale)
+		Chains = {
+			{ Name = "PigL", Bones = { "PigL_1", "PigL_2", "PigL_3", "PigL_4", "PigL_5" }, Tip = "PigL_End", Radii = { 0.17, 0.17, 0.16, 0.15, 0.13, 0.11 } },
+			{ Name = "PigR", Bones = { "PigR_1", "PigR_2", "PigR_3", "PigR_4", "PigR_5" }, Tip = "PigR_End", Radii = { 0.17, 0.17, 0.16, 0.15, 0.13, 0.11 } },
+		},
+		-- where every bone sits relative to the centre of the head, as modeled
+		Bones = {
+			HairRoot = Vector3.new(0, 0, 0),
+			PigL_1 = Vector3.new(-0.5638, 0.4368, 0.1196),
+			PigL_2 = Vector3.new(-0.846, 0.5531, 0.1636),
+			PigL_3 = Vector3.new(-1.0887, 0.4157, 0.1346),
+			PigL_4 = Vector3.new(-1.1602, 0.1517, 0.1955),
+			PigL_5 = Vector3.new(-1.1986, -0.3404, 0.2088),
+			PigL_End = Vector3.new(-1.0193, -0.8233, 0.3105),
+			PigR_1 = Vector3.new(0.5629, 0.4368, 0.1196),
+			PigR_2 = Vector3.new(0.8451, 0.5531, 0.1636),
+			PigR_3 = Vector3.new(1.0878, 0.4157, 0.1346),
+			PigR_4 = Vector3.new(1.1593, 0.1517, 0.1956),
+			PigR_5 = Vector3.new(1.1976, -0.3404, 0.2088),
+			PigR_End = Vector3.new(1.0184, -0.8233, 0.3105),
+		},
+	},
+	LadyHair = {
+		Size = Vector3.new(2.076, 3.4076, 2.1828), -- size of the whole hair mesh in studs (used to check the import scale)
+		Chains = {
+			{ Name = "BackL2", Bones = { "BackL2_1", "BackL2_2", "BackL2_3", "BackL2_4", "BackL2_5" }, Tip = "BackL2_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },
+			{ Name = "BackL1", Bones = { "BackL1_1", "BackL1_2", "BackL1_3", "BackL1_4", "BackL1_5" }, Tip = "BackL1_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },
+			{ Name = "BackC", Bones = { "BackC_1", "BackC_2", "BackC_3", "BackC_4", "BackC_5" }, Tip = "BackC_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },
+			{ Name = "BackR1", Bones = { "BackR1_1", "BackR1_2", "BackR1_3", "BackR1_4", "BackR1_5" }, Tip = "BackR1_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },
+			{ Name = "BackR2", Bones = { "BackR2_1", "BackR2_2", "BackR2_3", "BackR2_4", "BackR2_5" }, Tip = "BackR2_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },
+			{ Name = "LockL", Bones = { "LockL_1", "LockL_2", "LockL_3", "LockL_4" }, Tip = "LockL_End", Radii = { 0.12, 0.12, 0.11, 0.1, 0.09 } },
+			{ Name = "LockR", Bones = { "LockR_1", "LockR_2", "LockR_3", "LockR_4" }, Tip = "LockR_End", Radii = { 0.12, 0.12, 0.11, 0.1, 0.09 } },
+		},
+		-- where every bone sits relative to the centre of the head, as modeled
+		Bones = {
+			HairRoot = Vector3.new(0, 0, 0),
+			BackL2_1 = Vector3.new(-0.62, -0.15, 0.3433),
+			BackL2_2 = Vector3.new(-0.74, -0.55, 0.3308),
+			BackL2_3 = Vector3.new(-0.82, -0.95, 0.5197),
+			BackL2_4 = Vector3.new(-0.86, -1.35, 0.746),
+			BackL2_5 = Vector3.new(-0.86, -1.7, 0.9121),
+			BackL2_End = Vector3.new(-0.82, -2, 0.9265),
+			BackL1_1 = Vector3.new(-0.33, -0.15, 0.6132),
+			BackL1_2 = Vector3.new(-0.38, -0.6, 0.5796),
+			BackL1_3 = Vector3.new(-0.42, -1.05, 0.841),
+			BackL1_4 = Vector3.new(-0.45, -1.5, 0.9071),
+			BackL1_5 = Vector3.new(-0.47, -1.95, 0.8829),
+			BackL1_End = Vector3.new(-0.5, -2.3, 1.0244),
+			BackC_1 = Vector3.new(0, -0.15, 0.7083),
+			BackC_2 = Vector3.new(0, -0.6, 0.6556),
+			BackC_3 = Vector3.new(0, -1.05, 0.9106),
+			BackC_4 = Vector3.new(0, -1.5, 1.0237),
+			BackC_5 = Vector3.new(0, -1.95, 0.931),
+			BackC_End = Vector3.new(0.02, -2.45, 1.0134),
+			BackR1_1 = Vector3.new(0.33, -0.15, 0.5744),
+			BackR1_2 = Vector3.new(0.38, -0.6, 0.5635),
+			BackR1_3 = Vector3.new(0.42, -1.05, 0.802),
+			BackR1_4 = Vector3.new(0.43, -1.5, 0.9555),
+			BackR1_5 = Vector3.new(0.45, -1.95, 0.857),
+			BackR1_End = Vector3.new(0.48, -2.3, 0.8719),
+			BackR2_1 = Vector3.new(0.62, -0.15, 0.2777),
+			BackR2_2 = Vector3.new(0.74, -0.55, 0.3935),
+			BackR2_3 = Vector3.new(0.82, -0.95, 0.6891),
+			BackR2_4 = Vector3.new(0.88, -1.35, 0.799),
+			BackR2_5 = Vector3.new(0.86, -1.7, 0.8013),
+			BackR2_End = Vector3.new(0.8, -1.98, 0.6448),
+			LockL_1 = Vector3.new(-0.528, -0.1344, -0.3899),
+			LockL_2 = Vector3.new(-0.6425, -0.3985, -0.3458),
+			LockL_3 = Vector3.new(-0.5729, -0.7506, -0.4994),
+			LockL_4 = Vector3.new(-0.2833, -0.8532, -0.8317),
+			LockL_End = Vector3.new(-0.362, -1.1536, -0.8885),
+			LockR_1 = Vector3.new(0.4965, -0.2442, -0.407),
+			LockR_2 = Vector3.new(0.714, -0.4511, -0.4188),
+			LockR_3 = Vector3.new(0.5634, -0.7236, -0.5763),
+			LockR_4 = Vector3.new(0.2541, -0.8523, -0.8463),
+			LockR_End = Vector3.new(0.3207, -1.1437, -0.8975),
+		},
+	},
+}
+
+return HairConfig
+]]></ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="5">
+      <Properties>
+        <string name="Name">ServerScriptService</string>
+      </Properties>
+      <Item class="Script" referent="6">
+        <Properties>
+          <string name="Name">HairApplier</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairApplier  (Script — lives in ServerScriptService)
+
+	Puts the rigged hair on the rigs listed in HairConfig.Assignments
+	(MrPigtails gets Pigtails, MrLady gets LadyHair) when the game starts.
+
+	For each rig it:
+	  1. finds the imported hair model (in ServerStorage > HairModels) by its bones,
+	  2. copies just the hair MeshPart and its bones,
+	  3. works out from the bone positions exactly where the hair sits on the head
+	     (this also fixes the hair if the importer scaled or turned it),
+	  4. wears it as a normal hair Accessory,
+	  5. tags it "HairPhysics" so every player's computer starts simulating it.
+
+	Nothing to edit here — settings are in HairConfig.
+]]
+
+local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
+
+local HairConfig = require(ReplicatedStorage:WaitForChild("HairConfig"))
+local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
+
+local RIG_WAIT_TIME = 20 -- seconds to wait for a rig to exist before giving up
+
+local function log(message: string)
+	print("[HairApplier] " .. message)
+end
+
+local function complain(message: string)
+	warn("[HairApplier] " .. message)
+end
+
+-- The MeshPart that owns a bone (the first part above it).
+local function partOfBone(bone: Instance): BasePart?
+	local node = bone.Parent
+	while node and not node:IsA("BasePart") do
+		node = node.Parent
+	end
+	return node :: BasePart?
+end
+
+local function isInsideCharacter(inst: Instance): boolean
+	local node = inst.Parent
+	while node and node ~= game do
+		if node:IsA("Model") and node:FindFirstChildOfClass("Humanoid") then
+			return true
+		end
+		node = node.Parent
+	end
+	return false
+end
+
+-- Finds the imported hair by looking for its signature bone. Returns that bone.
+local function findHairSource(hairName: string, hairCfg): (Bone?, string?)
+	local signature = hairCfg.SignatureBone
+	local places = {}
+	for _, container in { ServerStorage, ReplicatedStorage, Workspace } do
+		local folder = container:FindFirstChild(HairConfig.ModelFolder)
+		if folder then
+			table.insert(places, folder)
+		end
+	end
+	for _, place in places do
+		local bone = place:FindFirstChild(signature, true)
+		if bone and bone:IsA("Bone") then
+			return bone, place:GetFullName()
+		end
+	end
+	-- forgiving fallback: the imported model was left loose in Workspace
+	for _, d in Workspace:GetDescendants() do
+		if d.Name == signature and d:IsA("Bone") and not isInsideCharacter(d) then
+			local part = partOfBone(d)
+			if part then
+				complain(
+					("found the %s hair loose in Workspace (%s). It works, but move the model into ServerStorage > %s so it doesn't float around in your map."):format(
+						hairName,
+						part:GetFullName(),
+						HairConfig.ModelFolder
+					)
+				)
+				return d, "Workspace"
+			end
+		end
+	end
+	return nil
+end
+
+-- Bone positions inside the hair part, paired with where they were modeled (head space).
+local function collectBonePairs(hairPart: BasePart, layout)
+	local design, actual = {}, {}
+	for boneName, modeled in layout.Bones do
+		local bone = hairPart:FindFirstChild(boneName, true)
+		if bone and bone:IsA("Bone") then
+			local cf = HairPhysics.PartSpaceCFrame(bone, hairPart)
+			if cf then
+				table.insert(design, modeled)
+				table.insert(actual, cf.Position)
+			end
+		end
+	end
+	return design, actual
+end
+
+-- Makes a copy of the hair MeshPart with all of its bones inside it. Normally the importer
+-- already puts the bones inside the mesh; if it put them in a separate part instead, they're
+-- moved into the mesh at exactly the same spot, so the skinning is unchanged.
+local function copyHairMesh(signatureBone: Bone): BasePart?
+	local original = partOfBone(signatureBone)
+	if not original then
+		return nil
+	end
+	local holder: Instance = signatureBone:FindFirstAncestorWhichIsA("Model") or original
+	if holder:IsA("Workspace") then
+		holder = original -- Workspace counts as a Model; never copy the whole map
+	end
+	local copy = holder:Clone() or original:Clone()
+	if not copy then
+		return nil
+	end
+	local bone = copy:FindFirstChild(signatureBone.Name, true)
+	local bonePart = bone and partOfBone(bone)
+	if not bonePart then
+		copy:Destroy()
+		return nil
+	end
+	local mesh = bonePart
+	if not bonePart:IsA("MeshPart") then
+		local found = copy:IsA("MeshPart") and copy or copy:FindFirstChildWhichIsA("MeshPart", true)
+		if found then
+			mesh = found
+			for _, child in bonePart:GetChildren() do
+				if child:IsA("Bone") then
+					local world = bonePart.CFrame * child.CFrame
+					child.CFrame = mesh.CFrame:ToObjectSpace(world)
+					child.Parent = mesh
+				end
+			end
+		end
+	end
+	if mesh ~= copy then
+		mesh.Parent = nil
+		copy:Destroy()
+	end
+	return mesh
+end
+
+local function removeOldHair(rig: Model, hairCfg)
+	for _, child in rig:GetChildren() do
+		if child:GetAttribute("HairPhysicsHair") then
+			child:Destroy()
+		elseif hairCfg.RemoveOtherHair and child:IsA("Accessory") then
+			local handle = child:FindFirstChild("Handle")
+			local isHair = child.AccessoryType == Enum.AccessoryType.Hair
+				or (handle and handle:FindFirstChild("HairAttachment") ~= nil)
+			if isHair then
+				child:Destroy()
+			end
+		end
+	end
+end
+
+local function applyHair(rig: Model, hairName: string)
+	local hairCfg = HairConfig.Hairs[hairName]
+	local layout = HairConfig.Layouts[hairName]
+	if not hairCfg or not layout then
+		complain(("no settings called '%s' in HairConfig.Hairs / HairConfig.Layouts"):format(hairName))
+		return
+	end
+
+	local humanoid = rig:FindFirstChildOfClass("Humanoid")
+	local head = rig:FindFirstChild("Head")
+	if not (head and head:IsA("BasePart")) then
+		complain(rig.Name .. " has no Head part, so it can't wear hair")
+		return
+	end
+
+	local sourceBone, where = findHairSource(hairName, hairCfg)
+	if not sourceBone then
+		complain(
+			("couldn't find the rigged %s hair. Import %s.fbx with the 3D Importer and put the model in ServerStorage > %s (looking for a bone named %s)."):format(
+				hairName,
+				hairName == "LadyHair" and "LadyHair_Rigged" or hairName .. "_Rigged",
+				HairConfig.ModelFolder,
+				hairCfg.SignatureBone
+			)
+		)
+		return
+	end
+
+	-- copy just the hair mesh and its bones (and its SurfaceAppearance, if the importer made one)
+	local hairPart = copyHairMesh(sourceBone)
+	if not hairPart then
+		complain(("found the %s bones in %s but no hair mesh next to them"):format(hairName, where or "?"))
+		return
+	end
+	for _, d in hairPart:GetDescendants() do
+		if d.Parent and not (d:IsA("Bone") or d:IsA("SurfaceAppearance")) then
+			d:Destroy()
+		end
+	end
+	hairPart.Name = "Handle"
+	hairPart.Anchored = false
+	hairPart.CanCollide = false
+	hairPart.CanTouch = false
+	hairPart.CanQuery = false
+	hairPart.Massless = true
+	if hairPart:IsA("MeshPart") then
+		if hairCfg.TextureId and hairCfg.TextureId ~= "" then
+			hairPart.TextureID = hairCfg.TextureId
+		end
+	end
+	if hairCfg.Color then
+		hairPart.Color = hairCfg.Color
+	end
+
+	-- where does it go? compare modeled bone positions with the imported ones
+	local design, actual = collectBonePairs(hairPart, layout)
+	if #design < 3 then
+		complain(("the %s hair from %s is missing its bones (found %d). Re-import the FBX and make sure the importer kept the rig."):format(hairName, where or "?", #design))
+		hairPart:Destroy()
+		return
+	end
+	local fit = HairPhysics.FitRig(design, actual)
+	local wantScale = hairCfg.Scale or 1
+	if math.abs(fit.Scale / wantScale - 1) > 0.02 then
+		-- the importer used a different unit size (or you changed Scale): resize the hair + bones
+		local holder = Instance.new("Model")
+		hairPart.Parent = holder
+		local ok, err = pcall(function()
+			holder:ScaleTo(holder:GetScale() * wantScale / fit.Scale)
+		end)
+		hairPart.Parent = nil
+		holder:Destroy()
+		if ok then
+			log(("resized the %s hair by x%.3f to match the rig"):format(hairName, wantScale / fit.Scale))
+			design, actual = collectBonePairs(hairPart, layout)
+			fit = HairPhysics.FitRig(design, actual)
+		else
+			complain("couldn't resize the hair: " .. tostring(err))
+		end
+	end
+	if fit.Error > 0.05 * math.max(fit.Scale, 0.01) then
+		complain(("the %s hair's bones don't match the expected layout (off by %.2f studs on average). It may sit wrong — was the rig changed in Blender?"):format(hairName, fit.Error))
+	end
+	local headToHair = hairCfg.Offset * HairPhysics.HeadToPart(fit)
+
+	-- wear it
+	removeOldHair(rig, hairCfg)
+	local accessory = Instance.new("Accessory")
+	accessory.Name = hairName .. "Hair"
+	accessory.AccessoryType = Enum.AccessoryType.Hair
+	accessory:SetAttribute("HairPhysicsHair", true)
+	hairPart:SetAttribute("HairPreset", hairName)
+	CollectionService:AddTag(hairPart, HairPhysics.TAG)
+	hairPart.CFrame = head.CFrame * headToHair
+	hairPart.Parent = accessory
+
+	local headAttachment = head:FindFirstChild("HairAttachment")
+	if humanoid and headAttachment and headAttachment:IsA("Attachment") then
+		-- standard accessory route: Roblox welds our HairAttachment onto the head's HairAttachment
+		local attachment = Instance.new("Attachment")
+		attachment.Name = "HairAttachment"
+		attachment.CFrame = headToHair:Inverse() * headAttachment.CFrame
+		attachment.Parent = hairPart
+		humanoid:AddAccessory(accessory)
+	else
+		accessory.Parent = rig
+	end
+
+	-- make sure it really is attached (and attach it ourselves if not)
+	local attached = false
+	for _, d in hairPart:GetChildren() do
+		if (d:IsA("JointInstance") or d:IsA("WeldConstraint") or d:IsA("RigidConstraint")) then
+			attached = true
+		end
+	end
+	if not attached then
+		if accessory.Parent ~= rig then
+			accessory.Parent = rig
+		end
+		local weld = Instance.new("Weld")
+		weld.Name = "AccessoryWeld"
+		weld.Part0 = head
+		weld.Part1 = hairPart
+		weld.C0 = headToHair
+		weld.Parent = hairPart
+	end
+
+	log(("%s is wearing %s (%d bones lined up, error %.3f studs)"):format(rig.Name, hairName, #design, fit.Error))
+end
+
+for _, assignment in HairConfig.Assignments do
+	task.spawn(function()
+		local rig = Workspace:WaitForChild(assignment.Rig, RIG_WAIT_TIME)
+		if not rig then
+			complain(("no rig called '%s' in Workspace"):format(assignment.Rig))
+			return
+		end
+		local ok, err = pcall(applyHair, rig, assignment.Hair)
+		if not ok then
+			complain(("putting %s on %s failed: %s"):format(assignment.Hair, assignment.Rig, tostring(err)))
+		end
+	end)
+end
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="7">
+        <Properties>
+          <string name="Name">NPCRoam</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	NPCRoam  (Script — lives in ServerScriptService)
+
+	Test script: makes the rigs walk to random spots, jump at random, pause, and
+	sometimes turn around sharply — so you can see the hair swing, bounce and settle.
+	It also plays Roblox's default walk / idle / jump / fall animations on them.
+
+	Delete this script (or set ENABLED = false) once you're happy with the hair.
+]]
+
+----------------------------------------------------------------------------------------
+-- Settings
+----------------------------------------------------------------------------------------
+local ENABLED = true
+local RIGS = { "MrPigtails", "MrLady" } -- rigs in Workspace to move around
+local ROAM_RADIUS = 30 -- how far (studs) from their starting spot they wander
+local WALK_SPEED_MIN = 8 -- they pick a random speed between these for each walk
+local WALK_SPEED_MAX = 16
+local JUMPS_PER_SECOND = 0.35 -- average number of random jumps per second while walking
+local PAUSE_MIN = 0.4 -- seconds they stand still between walks
+local PAUSE_MAX = 2.5
+local TURN_AROUND_CHANCE = 0.3 -- chance to spin round on the spot after a walk (hair whip test)
+local JUMP_IN_PLACE_CHANCE = 0.3 -- chance to jump while standing still
+
+-- Roblox's default character animations (the same ones the built-in Animate script uses)
+local ANIMATIONS = {
+	R15 = {
+		idle = "rbxassetid://507766666",
+		walk = "rbxassetid://507777826",
+		run = "rbxassetid://507767714",
+		jump = "rbxassetid://507765000",
+		fall = "rbxassetid://507767968",
+	},
+	R6 = {
+		idle = "rbxassetid://180435571",
+		walk = "rbxassetid://180426354",
+		run = "rbxassetid://180426354",
+		jump = "rbxassetid://125750702",
+		fall = "rbxassetid://180436148",
+	},
+}
+----------------------------------------------------------------------------------------
+
+if not ENABLED then
+	return
+end
+
+local Workspace = game:GetService("Workspace")
+
+local rigModels = {}
+
+local function setupAnimations(humanoid: Humanoid)
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = humanoid
+	end
+	local set = humanoid.RigType == Enum.HumanoidRigType.R6 and ANIMATIONS.R6 or ANIMATIONS.R15
+	local tracks = {}
+	for name, id in set do
+		local animation = Instance.new("Animation")
+		animation.Name = name
+		animation.AnimationId = id
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(animation)
+		end)
+		if ok then
+			track.Looped = name ~= "jump"
+			track.Priority = Enum.AnimationPriority.Core
+			tracks[name] = track
+		else
+			warn("[NPCRoam] couldn't load the " .. name .. " animation: " .. tostring(track))
+		end
+	end
+
+	local current
+	local function play(name: string, speed: number?)
+		local track = tracks[name]
+		if not track then
+			return
+		end
+		if current ~= track then
+			if current then
+				current:Stop(0.2)
+			end
+			track:Play(0.2)
+			current = track
+		end
+		track:AdjustSpeed(speed or 1)
+	end
+
+	local airborne = false
+	humanoid.Running:Connect(function(speed: number)
+		if airborne then
+			return
+		end
+		if speed > 0.75 then
+			if speed > 12 and tracks.run then
+				play("run", speed / 16)
+			else
+				play("walk", math.clamp(speed / 10, 0.6, 1.6))
+			end
+		else
+			play("idle")
+		end
+	end)
+	humanoid.StateChanged:Connect(function(_, new)
+		if new == Enum.HumanoidStateType.Jumping then
+			airborne = true
+			play("jump")
+		elseif new == Enum.HumanoidStateType.Freefall then
+			airborne = true
+			task.delay(0.2, function()
+				if airborne and humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+					play("fall")
+				end
+			end)
+		elseif new == Enum.HumanoidStateType.Landed or new == Enum.HumanoidStateType.Running then
+			airborne = false
+			local speed = humanoid.MoveDirection.Magnitude * humanoid.WalkSpeed
+			if speed > 0.75 then
+				play("walk", math.clamp(speed / 10, 0.6, 1.6))
+			else
+				play("idle")
+			end
+		end
+	end)
+	play("idle")
+end
+
+-- Random spot on the ground near home (raycasts down so they don't walk into the void).
+local function pickGoal(home: Vector3, rng: Random): Vector3?
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = rigModels
+	for _ = 1, 12 do
+		local angle = rng:NextNumber(0, math.pi * 2)
+		local dist = rng:NextNumber(6, ROAM_RADIUS)
+		local probe = home + Vector3.new(math.cos(angle) * dist, 40, math.sin(angle) * dist)
+		local hit = Workspace:Raycast(probe, Vector3.new(0, -120, 0), params)
+		if hit and hit.Instance.CanCollide then
+			return hit.Position
+		end
+	end
+	return nil
+end
+
+local function tryJump(humanoid: Humanoid)
+	if humanoid.FloorMaterial ~= Enum.Material.Air then
+		humanoid.Jump = true
+	end
+end
+
+local function walkTo(humanoid: Humanoid, goal: Vector3, rng: Random)
+	local done = false
+	local connection = humanoid.MoveToFinished:Connect(function()
+		done = true
+	end)
+	humanoid:MoveTo(goal)
+	local started = os.clock()
+	while not done and os.clock() - started < 8 and humanoid.Health > 0 do
+		if rng:NextNumber() < JUMPS_PER_SECOND * 0.25 then
+			tryJump(humanoid)
+		end
+		task.wait(0.25)
+	end
+	connection:Disconnect()
+end
+
+local function roam(rig: Model)
+	local humanoid = rig:FindFirstChildOfClass("Humanoid")
+	local root = rig:FindFirstChild("HumanoidRootPart")
+	if not (humanoid and root and root:IsA("BasePart")) then
+		warn("[NPCRoam] " .. rig.Name .. " needs a Humanoid and a HumanoidRootPart")
+		return
+	end
+
+	-- rigs made with the Rig Builder are often anchored; they can't walk like that
+	for _, d in rig:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = false
+		end
+	end
+	-- the server drives them, so the server should own their physics (stops stutter near players)
+	pcall(function()
+		root:SetNetworkOwner(nil)
+	end)
+
+	setupAnimations(humanoid)
+
+	local rng = Random.new()
+	local home = root.Position
+	task.wait(rng:NextNumber(0.5, 1.5)) -- so the two don't move in sync
+
+	while rig.Parent and humanoid.Health > 0 do
+		local goal = pickGoal(home, rng)
+		if goal then
+			humanoid.WalkSpeed = rng:NextNumber(WALK_SPEED_MIN, WALK_SPEED_MAX)
+			walkTo(humanoid, goal, rng)
+		end
+
+		if rng:NextNumber() < TURN_AROUND_CHANCE then
+			-- step a little behind themselves: a fast 180° turn
+			humanoid.WalkSpeed = WALK_SPEED_MAX
+			local back = root.Position - root.CFrame.LookVector * 2.5
+			walkTo(humanoid, back, rng)
+		end
+		if rng:NextNumber() < JUMP_IN_PLACE_CHANCE then
+			tryJump(humanoid)
+		end
+		task.wait(rng:NextNumber(PAUSE_MIN, PAUSE_MAX))
+	end
+end
+
+for _, name in RIGS do
+	local rig = Workspace:WaitForChild(name, 20)
+	if rig and rig:IsA("Model") then
+		table.insert(rigModels, rig)
+	else
+		warn("[NPCRoam] no rig called '" .. name .. "' in Workspace")
+	end
+end
+for _, rig in rigModels do
+	task.spawn(roam, rig)
+end
+]]></ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="8">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="LocalScript" referent="9">
+        <Properties>
+          <string name="Name">HairPhysicsClient</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairPhysicsClient  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Starts the hair simulation on this player's screen. Every hair the server tagged
+	"HairPhysics" gets simulated here. Nothing to change in this script — the settings
+	are in ReplicatedStorage > HairConfig.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
+HairPhysics.StartClient()
+]]></ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="10">
+      <Properties>
+        <string name="Name">ServerStorage</string>
+      </Properties>
+      <Item class="Folder" referent="11">
+        <Properties>
+          <string name="Name">HairModels</string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+</roblox>
