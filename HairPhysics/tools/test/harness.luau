@@ -6,8 +6,9 @@ local serde = require("@lune/serde")
 local process = require("@lune/process")
 
 local V3, CF, I = roblox.Vector3, roblox.CFrame, roblox.Instance
-local env = { Vector3 = V3, CFrame = CF, Instance = I }
+local env = { Vector3 = V3, CFrame = CF, Instance = I, Color3 = roblox.Color3, Enum = roblox.Enum }
 local HP = luau.load(fs.readFile(process.args[1]), { environment = env })()
+local CFG = luau.load(fs.readFile((process.args[1]:gsub("HairPhysics%.luau$", "HairConfig.luau"))), { environment = env })()
 local info = serde.decode("json", fs.readFile(process.args[2]))
 local presetName = process.args[3]
 local settingsJson = process.args[4] and serde.decode("json", process.args[4]) or {}
@@ -70,8 +71,13 @@ for _, c in layout.chains do
 end
 
 if settingsJson.Wind then settingsJson.Wind = V3.new(settingsJson.Wind[1], settingsJson.Wind[2], settingsJson.Wind[3]) end
-local settings = HP.mergeSettings(settingsJson)
+-- the real HairConfig settings, with any test overrides on top
+local phys = table.clone(CFG.Hairs[presetName].Physics)
+for k, v in settingsJson do phys[k] = v end
+local settings = HP.mergeSettings(phys)
+local hc = CFG.Layouts[presetName].HeadCenter or V3.zero
 local sim = assert(HP.Sim.new(hair, { Chains = specs }, settings))
+assert(#settings.SheetLinks == 0 or #sim.Links > 0, "sheet links not built")
 
 -- motion script
 local function pose(t)
@@ -98,7 +104,7 @@ local function place(t)
 	local shoulderY = HEAD_Y - 0.65
 	la.CFrame = rootCF * CF.new(-1.5, shoulderY, 0) * CF.Angles(swing, 0, 0) * CF.new(0, -0.6, 0)
 	ra.CFrame = rootCF * CF.new(1.5, shoulderY, 0) * CF.Angles(-swing, 0, 0) * CF.new(0, -0.6, 0)
-	hair.CFrame = head.CFrame
+	hair.CFrame = head.CFrame * CF.new(-hc)
 end
 
 -- metrics

@@ -33,16 +33,22 @@ script("ModuleScript", "HairConfig", "ReplicatedStorage/HairConfig.luau", rs)
 local sss = folder("ServerScriptService", kit)
 script("Script", "HairApplier", "ServerScriptService/HairApplier.server.luau", sss)
 script("Script", "NPCRoam", "ServerScriptService/NPCRoam.server.luau", sss)
+script("Script", "ArenaSetup", "ServerScriptService/ArenaSetup.server.luau", sss)
 
 local sps = folder("StarterPlayerScripts", kit)
 script("LocalScript", "HairPhysicsClient", "StarterPlayerScripts/HairPhysicsClient.client.luau", sps)
+script("LocalScript", "HairFitTool", "StarterPlayerScripts/HairFitTool.client.luau", sps)
+script("LocalScript", "ArenaControls", "StarterPlayerScripts/ArenaControls.client.luau", sps)
 
 local ss = folder("ServerStorage", kit)
 folder("HairModels", ss)
 
+local ws = folder("Workspace", kit)
+require("./arena")().Parent = ws
+
 local xml = roblox.serializeModel({ kit }, true)
 -- Studio stores script code as ProtectedString; write it the same way Studio and Rojo do
 local fixed, count = xml:gsub('<string name="Source">(<!%[CDATA%[.-%]%]>)</string>', '<ProtectedString name="Source">%1</ProtectedString>')
-assert(count == 6, "expected 6 scripts, converted " .. count)
+assert(count == 9, "expected 9 scripts, converted " .. count)
 fs.writeFile(base .. "/HairPhysicsKit.rbxmx", fixed)
 print("wrote " .. base .. "/HairPhysicsKit.rbxmx")

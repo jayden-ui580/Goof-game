@@ -8,13 +8,22 @@
 	  Gravity              How hard the hair is pulled down while it swings (studs/s²).
 	  GravityCompensation  0..1. 1 = when the character stands still the hair sits exactly in
 	                       its modeled shape. 0 = gravity sags it below that shape.
-	  Damping              0..1. Higher = swinging dies out faster (0.12 ≈ stops in ~1 second).
+	  Damping              0..1. How fast swinging dies out. Higher = calmer, lower = floppier.
+	  Bounce               0..1. How much the hair overshoots when it springs back into shape.
+	                       High values wobble like jelly; keep it low.
 	  Inertia              0..1. How much the hair gets left behind when the head moves.
 	                       Higher = more trailing/swinging when walking and jumping.
 	  Stiffness            One number per bone, root first. How strongly each bone springs back
 	                       to its modeled shape. Higher = stiffer hair.
+	  ShapeFollow          0..1. 0 = every bone springs back to its modeled direction relative to
+	                       the HEAD (hairstyle holds its shape). 1 = relative to the bone above it
+	                       (bendy, rope-like).
 	  MaxBend              One number per bone, root first, in degrees. The most each joint can
 	                       bend away from its modeled shape. This is what stops strands folding.
+	  MaxSpeed             No part of a strand moves faster than this (studs/s) — stops whipping.
+	  SheetLinks           Pairs of neighbouring strands tied together like cloth, so a wide sheet
+	                       of hair moves as one piece instead of separate strands squishing apart.
+	  SheetSlack           How much (0.12 = 12%) the gap between linked strands may stretch/shrink.
 	  ChainOverrides       Different Stiffness/MaxBend for some strands, matched by the start of
 	                       the strand's name (e.g. "Lock" = LockL and LockR).
 	  Wind / WindGust      Constant wind (studs/s², e.g. Vector3.new(8, 0, 0)) and how gusty it is.
@@ -35,6 +44,15 @@ HairConfig.Assignments = {
 -- ReplicatedStorage, then Workspace.
 HairConfig.ModelFolder = "HairModels"
 
+-- The hair was made for a head this wide (studs). If a rig's head is bigger or smaller, the hair
+-- is resized to match when ScaleToHead is on.
+HairConfig.ReferenceHeadWidth = 1.2
+
+-- Press this key (or the on-screen "Fit" button on phones) during Play to open the hair-fit
+-- panel: nudge the hair on each head and it prints the Offset line to paste below.
+HairConfig.FitToolKey = Enum.KeyCode.H
+HairConfig.FitToolEnabled = true
+
 HairConfig.Hairs = {
 	Pigtails = {
 		-- the imported model is found by this bone, so it works whatever the model is named
@@ -44,15 +62,19 @@ HairConfig.Hairs = {
 		TextureId = "",
 		Color = Color3.fromRGB(86, 58, 42), -- only shows when there's no texture
 		Offset = CFrame.new(0, 0, 0), -- nudge the hair on the head: CFrame.new(right, up, back) in studs
-		Scale = 1, -- 1 = the size it was made at
+		Scale = 1, -- extra size multiplier (1 = the size it was made at)
+		ScaleToHead = true, -- resize to the rig's head width (see ReferenceHeadWidth)
 		RemoveOtherHair = true, -- take off any hair the rig is already wearing
 		Physics = {
 			Gravity = 30,
-			GravityCompensation = 0.85,
-			Damping = 0.12,
-			Inertia = 0.3,
+			GravityCompensation = 1,
+			Damping = 0.28,
+			Bounce = 0.15,
+			Inertia = 0.2,
 			Stiffness = { 0.5, 0.35, 0.22, 0.15, 0.12 },
-			MaxBend = { 20, 18, 22, 25, 28 },
+			ShapeFollow = 0.3,
+			MaxBend = { 20, 18, 20, 22, 25 },
+			MaxSpeed = 25,
 			Wind = Vector3.zero,
 			WindGust = 0,
 			SelfCollision = true,
@@ -67,17 +89,29 @@ HairConfig.Hairs = {
 		Color = Color3.fromRGB(120, 80, 50),
 		Offset = CFrame.new(0, 0, 0),
 		Scale = 1,
+		ScaleToHead = true,
 		RemoveOtherHair = true,
 		Physics = {
 			Gravity = 30,
-			GravityCompensation = 0.85,
-			Damping = 0.12,
-			Inertia = 0.3,
+			GravityCompensation = 1,
+			Damping = 0.28,
+			Bounce = 0.15,
+			Inertia = 0.2,
 			Stiffness = { 0.35, 0.22, 0.15, 0.11, 0.09 },
-			MaxBend = { 22, 20, 24, 28, 32 },
+			ShapeFollow = 0.3,
+			MaxBend = { 20, 18, 20, 22, 25 },
+			MaxSpeed = 25,
+			-- the five strands down the back move together as one sheet of hair
+			SheetLinks = {
+				{ "BackL2", "BackL1" },
+				{ "BackL1", "BackC" },
+				{ "BackC", "BackR1" },
+				{ "BackR1", "BackR2" },
+			},
+			SheetSlack = 0.12,
 			ChainOverrides = {
 				-- the two front locks that rest on the chest
-				Lock = { Stiffness = { 0.4, 0.3, 0.2, 0.15 }, MaxBend = { 18, 18, 22, 28 } },
+				Lock = { Stiffness = { 0.4, 0.3, 0.2, 0.15 }, MaxBend = { 16, 16, 20, 24 } },
 			},
 			Wind = Vector3.zero,
 			WindGust = 0,
@@ -95,6 +129,7 @@ HairConfig.Hairs = {
 HairConfig.Layouts = {
 	Pigtails = {
 		Size = Vector3.new(2.8167, 1.7064, 1.5286), -- size of the whole hair mesh in studs (used to check the import scale)
+		HeadCenter = Vector3.new(0, -0.3, 0), -- the point in the rig that sits on the centre of the head
 		Chains = {
 			{ Name = "PigL", Bones = { "PigL_1", "PigL_2", "PigL_3", "PigL_4", "PigL_5" }, Tip = "PigL_End", Radii = { 0.17, 0.17, 0.16, 0.15, 0.13, 0.11 } },
 			{ Name = "PigR", Bones = { "PigR_1", "PigR_2", "PigR_3", "PigR_4", "PigR_5" }, Tip = "PigR_End", Radii = { 0.17, 0.17, 0.16, 0.15, 0.13, 0.11 } },
@@ -118,6 +153,7 @@ HairConfig.Layouts = {
 	},
 	LadyHair = {
 		Size = Vector3.new(2.076, 3.4076, 2.1828), -- size of the whole hair mesh in studs (used to check the import scale)
+		HeadCenter = Vector3.new(0, -0.3, 0), -- the point in the rig that sits on the centre of the head
 		Chains = {
 			{ Name = "BackL2", Bones = { "BackL2_1", "BackL2_2", "BackL2_3", "BackL2_4", "BackL2_5" }, Tip = "BackL2_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },
 			{ Name = "BackL1", Bones = { "BackL1_1", "BackL1_2", "BackL1_3", "BackL1_4", "BackL1_5" }, Tip = "BackL1_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },

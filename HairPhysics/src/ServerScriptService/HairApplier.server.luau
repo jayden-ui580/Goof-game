@@ -225,6 +225,13 @@ local function applyHair(rig: Model, hairName: string)
 	end
 	local fit = HairPhysics.FitRig(design, actual)
 	local wantScale = hairCfg.Scale or 1
+	if hairCfg.ScaleToHead and head:IsA("MeshPart") then
+		-- the hair was made for a head ReferenceHeadWidth wide: match this rig's head
+		local ratio = (head.Size.X + head.Size.Z) * 0.5 / (HairConfig.ReferenceHeadWidth or 1.2)
+		if ratio > 0.5 and ratio < 3 then
+			wantScale *= ratio
+		end
+	end
 	if math.abs(fit.Scale / wantScale - 1) > 0.02 then
 		-- the importer used a different unit size (or you changed Scale): resize the hair + bones
 		local holder = Instance.new("Model")
@@ -235,7 +242,7 @@ local function applyHair(rig: Model, hairName: string)
 		hairPart.Parent = nil
 		holder:Destroy()
 		if ok then
-			log(("resized the %s hair by x%.3f to match the rig"):format(hairName, wantScale / fit.Scale))
+			log(("resized the %s hair by x%.3f to fit %s's head"):format(hairName, wantScale / fit.Scale, rig.Name))
 			design, actual = collectBonePairs(hairPart, layout)
 			fit = HairPhysics.FitRig(design, actual)
 		else
@@ -245,7 +252,9 @@ local function applyHair(rig: Model, hairName: string)
 	if fit.Error > 0.05 * math.max(fit.Scale, 0.01) then
 		complain(("the %s hair's bones don't match the expected layout (off by %.2f studs on average). It may sit wrong — was the rig changed in Blender?"):format(hairName, fit.Error))
 	end
-	local headToHair = hairCfg.Offset * HairPhysics.HeadToPart(fit)
+	-- the rig's HeadCenter point goes on the centre of the head, then your Offset nudge on top
+	local headCenter = (layout.HeadCenter or Vector3.zero) * fit.Scale
+	local headToHair = hairCfg.Offset * CFrame.new(-headCenter) * HairPhysics.HeadToPart(fit)
 
 	-- wear it
 	removeOldHair(rig, hairCfg)

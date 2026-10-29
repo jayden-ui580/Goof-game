@@ -1,48 +1,50 @@
 --[[
 	============================================================================
-	 HAIR PHYSICS KIT — READ ME   (this script is switched off; it's just notes)
+	 HAIR PHYSICS + TEST ARENA KIT — READ ME   (this script is switched off; it's just notes)
 	============================================================================
 
 	WHAT'S IN HERE
-	  ReplicatedStorage      -> HairPhysics (the simulator) + HairConfig (ALL settings)
+	  Workspace              -> TestArena (sealed glass-roofed test box with a drain gate)
+	  ReplicatedStorage      -> HairPhysics (the simulator) + HairConfig (ALL hair settings)
 	  ServerScriptService    -> HairApplier (puts the hair on the rigs)
-	                            NPCRoam     (test: rigs walk, jump, turn around)
-	  StarterPlayerScripts   -> HairPhysicsClient (starts the simulation for each player)
-	  ServerStorage          -> HairModels (empty folder: the imported hair goes here)
+	                            ArenaSetup  (spawns everyone in the arena, runs the drain gate)
+	                            NPCRoam     (test: rigs walk, jump, turn around inside the arena)
+	  StarterPlayerScripts   -> HairPhysicsClient (starts the hair simulation for each player)
+	                            HairFitTool       (press H: nudge the hair on the heads)
+	                            ArenaControls     (press Z: open / close the drain gate)
+	  ServerStorage          -> HairModels (the imported hair goes here)
 
 	SETUP (once)
-	  1. Import the two rigged hairs: File > Import 3D, pick Pigtails_Rigged.fbx.
-	       - Rig Type: Custom (the importer usually picks this itself — just not "No Rig")
-	       - Scale Unit: Studs        - World Forward: Front   - World Up: Top
-	       - tick "Keep Zero Influence Bones"
-	       - leave "Upload to Roblox" on (the mesh has to be uploaded to show up in
-	         the published game)
-	     Do the same for LadyHair_Rigged.fbx.
-	  2. Drag both imported models into ServerStorage > HairModels.
-	     (No need to clean them up or weld anything — HairApplier does all of that.)
-	  3. Move the contents of each folder in this kit into the service with the same
-	     name. StarterPlayerScripts is inside StarterPlayer. Then delete this kit folder.
-	  4. The .obj exports didn't include the hair textures. Open HairConfig and paste
-	     each hair's original texture id into TextureId (from the original accessory's
-	     Handle). Until then they show in the Color set there.
-	  5. Make sure Workspace has your two R15 rigs named MrPigtails and MrLady.
-	  6. Press Play (F5). Not "Run" — the hair moves on the player's screen, so it needs
-	     a player.
+	  1. Import the two rigged hairs (skip if you already did): File > Import 3D,
+	     pick Pigtails_Rigged.fbx, Rig Type: Custom, Scale Unit: Studs, tick
+	     "Keep Zero Influence Bones", leave "Upload to Roblox" on. Same for LadyHair_Rigged.fbx.
+	     Drag both imported models into ServerStorage > HairModels.
+	  2. Move the contents of each folder in this kit into the service with the same
+	     name (StarterPlayerScripts is inside StarterPlayer). REPLACE the old copies of
+	     HairPhysics, HairConfig, HairApplier, NPCRoam and HairPhysicsClient if you have them.
+	     Then delete this kit folder.
+	  3. Paste each hair's texture id into TextureId in HairConfig (the .obj files didn't
+	     include textures).
+	  4. Press Play (F5). You and both rigs start inside the arena.
+
+	CONTROLS (in Play)
+	  Z   open / close the drain gate in the arena wall ("Gate" button on phones)
+	  H   hair fit panel ("Fit" button on phones): pick a rig with Prev/Next, nudge its hair,
+	      then copy the Offset line it shows into that hair's entry in HairConfig.
 
 	TWEAKING
-	  Everything is in ReplicatedStorage > HairConfig, with notes on what each number
-	  does. Common ones:
-	    - hair sits a bit high/low/forward on the head -> Offset
-	    - hair too floppy / too stiff                  -> Stiffness
-	    - too much / too little swing when moving      -> Inertia
-	    - want a breeze                                -> Wind, WindGust
+	  Hair: everything is in ReplicatedStorage > HairConfig, with notes on each number.
+	    - hair sits wrong on the head      -> use the H panel, then paste the Offset it gives
+	    - too floppy / too stiff           -> Stiffness, Damping
+	    - wobbles too much                 -> raise Damping, lower Bounce
+	    - too much / too little swing      -> Inertia
+	  Arena: move/resize the TestArena model freely; scripts read its Floor part and its
+	  InteriorSize attribute (update that if you change the walls).
 	  When you're done testing, delete NPCRoam (or set ENABLED = false at its top).
 
 	IF SOMETHING'S OFF
-	  - Output says it couldn't find the hair: step 2 wasn't done, or the import
-	    dropped the bones (re-import with Rig Type = Custom).
-	  - Hair is see-through from some angles: select the hair MeshPart in
-	    HairModels and tick DoubleSided.
-	  - Hair doesn't move: you pressed Run instead of Play, or the rig is anchored
-	    (NPCRoam un-anchors them for you).
+	  - Output says it couldn't find the hair: the imported models aren't in
+	    ServerStorage > HairModels, or the import dropped the bones (re-import, Rig Type Custom).
+	  - Hair is see-through from some angles: tick DoubleSided on the hair MeshPart in HairModels.
+	  - Hair doesn't move: you pressed Run instead of Play.
 ]]

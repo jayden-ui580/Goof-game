@@ -37,11 +37,17 @@ local EPS = 1e-6
 -- Used for anything a hair's Physics table in HairConfig leaves out.
 local DEFAULTS = {
 	Gravity = 30,
-	GravityCompensation = 0.85,
-	Damping = 0.1,
-	Inertia = 0.35,
+	GravityCompensation = 1,
+	Damping = 0.3,
+	Inertia = 0.25,
 	Stiffness = { 0.3, 0.2, 0.14, 0.1, 0.08 },
-	MaxBend = { 35, 35, 40, 45, 50 },
+	MaxBend = { 20, 18, 20, 22, 25 },
+	ShapeFollow = 0.3,
+	Bounce = 0.1,
+	MaxSpeed = 25,
+	InertiaSmoothing = 0.06,
+	SheetLinks = {},
+	SheetSlack = 0.12,
 	Wind = Vector3.zero,
 	WindGust = 0,
 	SelfCollision = true,
@@ -380,6 +386,21 @@ function Sim.new(part: BasePart, layout, settings)
 	end
 	self.Problems = problems
 	self.Pairs = settings.SelfCollision and buildPairs(self.Chains, settings.SelfCollisionRange) or {}
+	self.Links = {}
+	local byName = {}
+	for _, chain in self.Chains do
+		byName[chain.Name] = chain
+	end
+	for _, pair in settings.SheetLinks do
+		local A, B = byName[pair[1]], byName[pair[2]]
+		if A and B then
+			local link = { A = A, B = B, Count = math.min(A.N, B.N) + 1, Rest = {} }
+			for k = 1, link.Count do
+				link.Rest[k] = math.max((A.J[k] - B.J[k]).Magnitude, 0.01)
+			end
+			table.insert(self.Links, link)
+		end
+	end
 	return self
 end
 
@@ -454,6 +475,7 @@ function Sim:ResetToRest(partCF: CFrame)
 		end
 	end
 	self.AnchorCF = partCF
+	self.SmoothCF = partCF
 	self.LastCF = partCF
 	self.LastH = STEP
 	self.Accum = 0
@@ -498,8 +520,8 @@ function Sim:Sleep()
 end
 
 -- Rules 1-3: length, spring back to the modeled shape, bend cap. Works root -> tip.
--- Each bone's "target" direction is its modeled direction, swung along with however much
--- the bone above it has swung, so a strand keeps its curl while it moves.
+-- The bend cap is measured against the bone above (so a strand can never fold), while the
+-- spring pulls mostly toward the modeled direction relative to the head (ShapeFollow).
 --
 -- gravityStep (optional) is this slice's pull of gravity. The modeled shape is how the hair
 -- already hangs under gravity, so without help gravity would sag it below that shape at rest.
@@ -507,28 +529,75 @@ end
 -- gravity drags it down, so a still character's hair sits in its modeled pose, while swings,
 -- jumps and falls still move it.
 function Sim:SolveShape(chain, rot: CFrame, stiffnessFactor: number, gravityStep: Vector3?)
-	local pos = chain.Pos
+	local s = self.Settings
+	local follow = s.ShapeFollow
+	local keepBounce = 1 - s.Bounce
+	local pos, prev = chain.Pos, chain.Prev
 	local prevRest, prevDir
 	for k = 1, chain.N do
 		local restW = rot:VectorToWorldSpace(chain.RestDir[k])
-		local target = (k == 1) and restW or rotateByArc(restW, prevRest, prevDir)
+		-- the direction the bone would have if it just followed the bone above it
+		local relative = (k == 1) and restW or rotateByArc(restW, prevRest, prevDir)
 		local d = pos[k + 1] - pos[k]
 		local len = d.Magnitude
-		local dir = len > EPS and d / len or target
+		local dir = len > EPS and d / len or relative
 		if stiffnessFactor > 0 then
+			-- spring target: mostly the modeled direction relative to the HEAD (holds the hairstyle),
+			-- a little relative to the bone above (lets the strand curve as it swings)
+			local target = relative
+			if follow < 1 then
+				local blend = restW * (1 - follow) + relative * follow
+				local bm = blend.Magnitude
+				target = bm > EPS and blend / bm or relative
+			end
 			local st = 1 - (1 - chain.Stiffness[k]) ^ stiffnessFactor
 			local aim = target
 			if gravityStep and st > 0.01 then
+				-- at rest the spring has to cancel gravity every slice; because most of the spring's
+				-- push is kept out of the speed (Bounce), it has to push harder than gravity alone
+				local gain = 1 / math.max(1 - (self.StepKeep or 0) * keepBounce, 0.05)
 				local sideways = gravityStep - target * gravityStep:Dot(target)
-				aim = (target - sideways * ((1 - st) / (st * chain.RestLen[k]))).Unit
+				aim = (target - sideways * (gain * (1 - st) / (st * chain.RestLen[k]))).Unit
 			end
+			local before = dir
 			dir = dir + (aim - dir) * st
 			local m = dir.Magnitude
 			dir = m > EPS and dir / m or target
+			-- the spring's push mostly doesn't turn into speed, so the hair eases back into shape
+			-- instead of overshooting and wobbling (that wobble is what looks like jelly)
+			prev[k + 1] += (dir - before) * (chain.RestLen[k] * keepBounce)
 		end
-		dir = clampToCone(dir, target, chain.CosMax[k], chain.SinMax[k])
+		dir = clampToCone(dir, relative, chain.CosMax[k], chain.SinMax[k])
 		pos[k + 1] = pos[k] + dir * chain.RestLen[k]
 		prevRest, prevDir = restW, dir
+	end
+end
+
+-- Neighbouring strands of one sheet of hair (the long hair's back) are tied together like
+-- cloth: the gap between them may only grow or shrink by SheetSlack. Without this, strands
+-- drift apart or bunch up and the mesh stretched between them squishes like jelly.
+function Sim:SolveLinks()
+	local slack = self.Settings.SheetSlack
+	for _, link in self.Links do
+		local A, B = link.A, link.B
+		local PA, PB = A.Pos, B.Pos
+		for k = 2, link.Count do
+			local d = PA[k] - PB[k]
+			local m = d.Magnitude
+			local rest = link.Rest[k]
+			local hi, lo = rest * (1 + slack), rest * (1 - slack)
+			local fix = 0
+			if m > hi then
+				fix = m - hi
+			elseif m < lo then
+				fix = m - lo
+			end
+			if fix ~= 0 and m > EPS then
+				local push = d * (0.5 * fix / m)
+				PA[k] -= push
+				PB[k] += push
+			end
+		end
 	end
 end
 
@@ -653,16 +722,23 @@ end
 function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 	local s = self.Settings
 	self.SliceAlpha = sliceAlpha or 1
-	-- Part of the head's movement is copied straight onto the hair; the rest (Inertia)
-	-- is left behind, which is what makes the hair trail and swing.
-	local carry = 1 - s.Inertia
+	-- The hair is carried along with the head, minus a share (Inertia) of the head's movement
+	-- that gets left behind — that's what makes it trail and swing. The left-behind share is
+	-- taken from a smoothed copy of the head's path, so tiny shakes (network jitter on NPCs,
+	-- animation noise) move the hair together with the head instead of making it shiver.
 	local delta = anchorCF * self.AnchorCF:Inverse()
 	self.AnchorCF = anchorCF
+	local smoothOld = self.SmoothCF
+	self.SmoothCF = smoothOld:Lerp(anchorCF, 1 - math.exp(-h / s.InertiaSmoothing))
+	local smoothDelta = self.SmoothCF * smoothOld:Inverse()
+	local inertia = s.Inertia
 	local rot = anchorCF.Rotation
 
 	local ratio = math.clamp(h / self.LastH, 0.5, 2)
 	self.LastH = h
 	local keep = (1 - s.Damping) ^ (h * 60)
+	self.StepKeep = keep
+	local maxStep = s.MaxSpeed * h
 	self.Time += h
 	local wind = s.Wind
 	if s.WindGust > 0 then
@@ -678,11 +754,13 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 		prev[1] = pos[1]
 		for k = 2, chain.N + 1 do
 			local p, q = pos[k], prev[k]
-			if carry > 0 then
-				p = p:Lerp(delta * p, carry)
-				q = q:Lerp(delta * q, carry)
-			end
+			p = delta * p - (smoothDelta * p - p) * inertia
+			q = delta * q - (smoothDelta * q - q) * inertia
 			local vel = (p - q) * (keep * ratio)
+			local speed = vel.Magnitude
+			if speed > maxStep then
+				vel *= maxStep / speed -- no strand whips faster than MaxSpeed
+			end
 			prev[k] = p
 			pos[k] = p + vel + accel
 		end
@@ -696,6 +774,9 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 			for _, chain in self.Chains do
 				self:SolveShape(chain, rot, 0)
 			end
+		end
+		if #self.Links > 0 then
+			self:SolveLinks()
 		end
 		self:CollideBody()
 		if #self.Pairs > 0 then

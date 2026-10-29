@@ -1,8 +1,9 @@
 --[[
 	NPCRoam  (Script — lives in ServerScriptService)
 
-	Test script: makes the rigs walk to random spots, jump at random, pause, and
-	sometimes turn around sharply — so you can see the hair swing, bounce and settle.
+	Test script: makes the rigs walk to random spots (inside the TestArena, if it's in
+	Workspace), jump at random, pause, and sometimes turn around sharply — so you can see
+	the hair swing, bounce and settle.
 	It also plays Roblox's default walk / idle / jump / fall animations on them.
 
 	Delete this script (or set ENABLED = false) once you're happy with the hair.
@@ -13,7 +14,9 @@
 ----------------------------------------------------------------------------------------
 local ENABLED = true
 local RIGS = { "MrPigtails", "MrLady" } -- rigs in Workspace to move around
-local ROAM_RADIUS = 30 -- how far (studs) from their starting spot they wander
+local ARENA_NAME = "TestArena" -- if this model is in Workspace, they roam inside it
+local ARENA_MARGIN = 5 -- keep this far (studs) from the arena walls
+local ROAM_RADIUS = 30 -- with no arena: how far (studs) from their starting spot they wander
 local WALK_SPEED_MIN = 8 -- they pick a random speed between these for each walk
 local WALK_SPEED_MAX = 16
 local JUMPS_PER_SECOND = 0.35 -- average number of random jumps per second while walking
@@ -128,15 +131,26 @@ local function setupAnimations(humanoid: Humanoid)
 	play("idle")
 end
 
--- Random spot on the ground near home (raycasts down so they don't walk into the void).
+-- Random spot on the ground: inside the arena if there is one, otherwise near home
+-- (raycasts down so they don't walk into the void).
 local function pickGoal(home: Vector3, rng: Random): Vector3?
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = rigModels
+	local arena = Workspace:FindFirstChild(ARENA_NAME)
+	local floor = arena and arena:FindFirstChild("Floor")
 	for _ = 1, 12 do
-		local angle = rng:NextNumber(0, math.pi * 2)
-		local dist = rng:NextNumber(6, ROAM_RADIUS)
-		local probe = home + Vector3.new(math.cos(angle) * dist, 40, math.sin(angle) * dist)
+		local probe
+		if floor and floor:IsA("BasePart") then
+			local size = arena:GetAttribute("InteriorSize") or Vector3.new(64, 24, 64)
+			local top = floor.CFrame * CFrame.new(0, floor.Size.Y / 2, 0)
+			local hx, hz = size.X / 2 - ARENA_MARGIN, size.Z / 2 - ARENA_MARGIN
+			probe = top * Vector3.new(rng:NextNumber(-hx, hx), size.Y - 2, rng:NextNumber(-hz, hz))
+		else
+			local angle = rng:NextNumber(0, math.pi * 2)
+			local dist = rng:NextNumber(6, ROAM_RADIUS)
+			probe = home + Vector3.new(math.cos(angle) * dist, 40, math.sin(angle) * dist)
+		end
 		local hit = Workspace:Raycast(probe, Vector3.new(0, -120, 0), params)
 		if hit and hit.Instance.CanCollide then
 			return hit.Position
@@ -189,8 +203,8 @@ local function roam(rig: Model)
 	setupAnimations(humanoid)
 
 	local rng = Random.new()
+	task.wait(rng:NextNumber(1, 2)) -- lets ArenaSetup put them in the arena, and stops them moving in sync
 	local home = root.Position
-	task.wait(rng:NextNumber(0.5, 1.5)) -- so the two don't move in sync
 
 	while rig.Parent and humanoid.Health > 0 do
 		local goal = pickGoal(home, rng)

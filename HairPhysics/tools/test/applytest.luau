@@ -92,7 +92,7 @@ for _, pair in { { rigP, headP, "Pigtails" }, { rigL, headL, "LadyHair" } } do
 		local bone = handle:FindFirstChild(name, true)
 		local ps = modules.HairPhysics.PartSpaceCFrame(bone, handle)
 		local got = handleCF * ps.Position
-		local want = head.CFrame * p
+		local want = head.CFrame * (p - (modules.HairConfig.Layouts[preset].HeadCenter or V3.zero))
 		worst = math.max(worst, (got - want).Magnitude); n += 1
 	end
 	local leftovers = {}

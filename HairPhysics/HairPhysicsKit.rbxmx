@@ -9,51 +9,53 @@
         <bool name="Disabled">true</bool>
         <ProtectedString name="Source"><![CDATA[--[[
 	============================================================================
-	 HAIR PHYSICS KIT — READ ME   (this script is switched off; it's just notes)
+	 HAIR PHYSICS + TEST ARENA KIT — READ ME   (this script is switched off; it's just notes)
 	============================================================================
 
 	WHAT'S IN HERE
-	  ReplicatedStorage      -> HairPhysics (the simulator) + HairConfig (ALL settings)
+	  Workspace              -> TestArena (sealed glass-roofed test box with a drain gate)
+	  ReplicatedStorage      -> HairPhysics (the simulator) + HairConfig (ALL hair settings)
 	  ServerScriptService    -> HairApplier (puts the hair on the rigs)
-	                            NPCRoam     (test: rigs walk, jump, turn around)
-	  StarterPlayerScripts   -> HairPhysicsClient (starts the simulation for each player)
-	  ServerStorage          -> HairModels (empty folder: the imported hair goes here)
+	                            ArenaSetup  (spawns everyone in the arena, runs the drain gate)
+	                            NPCRoam     (test: rigs walk, jump, turn around inside the arena)
+	  StarterPlayerScripts   -> HairPhysicsClient (starts the hair simulation for each player)
+	                            HairFitTool       (press H: nudge the hair on the heads)
+	                            ArenaControls     (press Z: open / close the drain gate)
+	  ServerStorage          -> HairModels (the imported hair goes here)
 
 	SETUP (once)
-	  1. Import the two rigged hairs: File > Import 3D, pick Pigtails_Rigged.fbx.
-	       - Rig Type: Custom (the importer usually picks this itself — just not "No Rig")
-	       - Scale Unit: Studs        - World Forward: Front   - World Up: Top
-	       - tick "Keep Zero Influence Bones"
-	       - leave "Upload to Roblox" on (the mesh has to be uploaded to show up in
-	         the published game)
-	     Do the same for LadyHair_Rigged.fbx.
-	  2. Drag both imported models into ServerStorage > HairModels.
-	     (No need to clean them up or weld anything — HairApplier does all of that.)
-	  3. Move the contents of each folder in this kit into the service with the same
-	     name. StarterPlayerScripts is inside StarterPlayer. Then delete this kit folder.
-	  4. The .obj exports didn't include the hair textures. Open HairConfig and paste
-	     each hair's original texture id into TextureId (from the original accessory's
-	     Handle). Until then they show in the Color set there.
-	  5. Make sure Workspace has your two R15 rigs named MrPigtails and MrLady.
-	  6. Press Play (F5). Not "Run" — the hair moves on the player's screen, so it needs
-	     a player.
+	  1. Import the two rigged hairs (skip if you already did): File > Import 3D,
+	     pick Pigtails_Rigged.fbx, Rig Type: Custom, Scale Unit: Studs, tick
+	     "Keep Zero Influence Bones", leave "Upload to Roblox" on. Same for LadyHair_Rigged.fbx.
+	     Drag both imported models into ServerStorage > HairModels.
+	  2. Move the contents of each folder in this kit into the service with the same
+	     name (StarterPlayerScripts is inside StarterPlayer). REPLACE the old copies of
+	     HairPhysics, HairConfig, HairApplier, NPCRoam and HairPhysicsClient if you have them.
+	     Then delete this kit folder.
+	  3. Paste each hair's texture id into TextureId in HairConfig (the .obj files didn't
+	     include textures).
+	  4. Press Play (F5). You and both rigs start inside the arena.
+
+	CONTROLS (in Play)
+	  Z   open / close the drain gate in the arena wall ("Gate" button on phones)
+	  H   hair fit panel ("Fit" button on phones): pick a rig with Prev/Next, nudge its hair,
+	      then copy the Offset line it shows into that hair's entry in HairConfig.
 
 	TWEAKING
-	  Everything is in ReplicatedStorage > HairConfig, with notes on what each number
-	  does. Common ones:
-	    - hair sits a bit high/low/forward on the head -> Offset
-	    - hair too floppy / too stiff                  -> Stiffness
-	    - too much / too little swing when moving      -> Inertia
-	    - want a breeze                                -> Wind, WindGust
+	  Hair: everything is in ReplicatedStorage > HairConfig, with notes on each number.
+	    - hair sits wrong on the head      -> use the H panel, then paste the Offset it gives
+	    - too floppy / too stiff           -> Stiffness, Damping
+	    - wobbles too much                 -> raise Damping, lower Bounce
+	    - too much / too little swing      -> Inertia
+	  Arena: move/resize the TestArena model freely; scripts read its Floor part and its
+	  InteriorSize attribute (update that if you change the walls).
 	  When you're done testing, delete NPCRoam (or set ENABLED = false at its top).
 
 	IF SOMETHING'S OFF
-	  - Output says it couldn't find the hair: step 2 wasn't done, or the import
-	    dropped the bones (re-import with Rig Type = Custom).
-	  - Hair is see-through from some angles: select the hair MeshPart in
-	    HairModels and tick DoubleSided.
-	  - Hair doesn't move: you pressed Run instead of Play, or the rig is anchored
-	    (NPCRoam un-anchors them for you).
+	  - Output says it couldn't find the hair: the imported models aren't in
+	    ServerStorage > HairModels, or the import dropped the bones (re-import, Rig Type Custom).
+	  - Hair is see-through from some angles: tick DoubleSided on the hair MeshPart in HairModels.
+	  - Hair doesn't move: you pressed Run instead of Play.
 ]]
 ]]></ProtectedString>
       </Properties>
@@ -104,11 +106,17 @@ local EPS = 1e-6
 -- Used for anything a hair's Physics table in HairConfig leaves out.
 local DEFAULTS = {
 	Gravity = 30,
-	GravityCompensation = 0.85,
-	Damping = 0.1,
-	Inertia = 0.35,
+	GravityCompensation = 1,
+	Damping = 0.3,
+	Inertia = 0.25,
 	Stiffness = { 0.3, 0.2, 0.14, 0.1, 0.08 },
-	MaxBend = { 35, 35, 40, 45, 50 },
+	MaxBend = { 20, 18, 20, 22, 25 },
+	ShapeFollow = 0.3,
+	Bounce = 0.1,
+	MaxSpeed = 25,
+	InertiaSmoothing = 0.06,
+	SheetLinks = {},
+	SheetSlack = 0.12,
 	Wind = Vector3.zero,
 	WindGust = 0,
 	SelfCollision = true,
@@ -447,6 +455,21 @@ function Sim.new(part: BasePart, layout, settings)
 	end
 	self.Problems = problems
 	self.Pairs = settings.SelfCollision and buildPairs(self.Chains, settings.SelfCollisionRange) or {}
+	self.Links = {}
+	local byName = {}
+	for _, chain in self.Chains do
+		byName[chain.Name] = chain
+	end
+	for _, pair in settings.SheetLinks do
+		local A, B = byName[pair[1]], byName[pair[2]]
+		if A and B then
+			local link = { A = A, B = B, Count = math.min(A.N, B.N) + 1, Rest = {} }
+			for k = 1, link.Count do
+				link.Rest[k] = math.max((A.J[k] - B.J[k]).Magnitude, 0.01)
+			end
+			table.insert(self.Links, link)
+		end
+	end
 	return self
 end
 
@@ -521,6 +544,7 @@ function Sim:ResetToRest(partCF: CFrame)
 		end
 	end
 	self.AnchorCF = partCF
+	self.SmoothCF = partCF
 	self.LastCF = partCF
 	self.LastH = STEP
 	self.Accum = 0
@@ -565,8 +589,8 @@ function Sim:Sleep()
 end
 
 -- Rules 1-3: length, spring back to the modeled shape, bend cap. Works root -> tip.
--- Each bone's "target" direction is its modeled direction, swung along with however much
--- the bone above it has swung, so a strand keeps its curl while it moves.
+-- The bend cap is measured against the bone above (so a strand can never fold), while the
+-- spring pulls mostly toward the modeled direction relative to the head (ShapeFollow).
 --
 -- gravityStep (optional) is this slice's pull of gravity. The modeled shape is how the hair
 -- already hangs under gravity, so without help gravity would sag it below that shape at rest.
@@ -574,28 +598,75 @@ end
 -- gravity drags it down, so a still character's hair sits in its modeled pose, while swings,
 -- jumps and falls still move it.
 function Sim:SolveShape(chain, rot: CFrame, stiffnessFactor: number, gravityStep: Vector3?)
-	local pos = chain.Pos
+	local s = self.Settings
+	local follow = s.ShapeFollow
+	local keepBounce = 1 - s.Bounce
+	local pos, prev = chain.Pos, chain.Prev
 	local prevRest, prevDir
 	for k = 1, chain.N do
 		local restW = rot:VectorToWorldSpace(chain.RestDir[k])
-		local target = (k == 1) and restW or rotateByArc(restW, prevRest, prevDir)
+		-- the direction the bone would have if it just followed the bone above it
+		local relative = (k == 1) and restW or rotateByArc(restW, prevRest, prevDir)
 		local d = pos[k + 1] - pos[k]
 		local len = d.Magnitude
-		local dir = len > EPS and d / len or target
+		local dir = len > EPS and d / len or relative
 		if stiffnessFactor > 0 then
+			-- spring target: mostly the modeled direction relative to the HEAD (holds the hairstyle),
+			-- a little relative to the bone above (lets the strand curve as it swings)
+			local target = relative
+			if follow < 1 then
+				local blend = restW * (1 - follow) + relative * follow
+				local bm = blend.Magnitude
+				target = bm > EPS and blend / bm or relative
+			end
 			local st = 1 - (1 - chain.Stiffness[k]) ^ stiffnessFactor
 			local aim = target
 			if gravityStep and st > 0.01 then
+				-- at rest the spring has to cancel gravity every slice; because most of the spring's
+				-- push is kept out of the speed (Bounce), it has to push harder than gravity alone
+				local gain = 1 / math.max(1 - (self.StepKeep or 0) * keepBounce, 0.05)
 				local sideways = gravityStep - target * gravityStep:Dot(target)
-				aim = (target - sideways * ((1 - st) / (st * chain.RestLen[k]))).Unit
+				aim = (target - sideways * (gain * (1 - st) / (st * chain.RestLen[k]))).Unit
 			end
+			local before = dir
 			dir = dir + (aim - dir) * st
 			local m = dir.Magnitude
 			dir = m > EPS and dir / m or target
+			-- the spring's push mostly doesn't turn into speed, so the hair eases back into shape
+			-- instead of overshooting and wobbling (that wobble is what looks like jelly)
+			prev[k + 1] += (dir - before) * (chain.RestLen[k] * keepBounce)
 		end
-		dir = clampToCone(dir, target, chain.CosMax[k], chain.SinMax[k])
+		dir = clampToCone(dir, relative, chain.CosMax[k], chain.SinMax[k])
 		pos[k + 1] = pos[k] + dir * chain.RestLen[k]
 		prevRest, prevDir = restW, dir
+	end
+end
+
+-- Neighbouring strands of one sheet of hair (the long hair's back) are tied together like
+-- cloth: the gap between them may only grow or shrink by SheetSlack. Without this, strands
+-- drift apart or bunch up and the mesh stretched between them squishes like jelly.
+function Sim:SolveLinks()
+	local slack = self.Settings.SheetSlack
+	for _, link in self.Links do
+		local A, B = link.A, link.B
+		local PA, PB = A.Pos, B.Pos
+		for k = 2, link.Count do
+			local d = PA[k] - PB[k]
+			local m = d.Magnitude
+			local rest = link.Rest[k]
+			local hi, lo = rest * (1 + slack), rest * (1 - slack)
+			local fix = 0
+			if m > hi then
+				fix = m - hi
+			elseif m < lo then
+				fix = m - lo
+			end
+			if fix ~= 0 and m > EPS then
+				local push = d * (0.5 * fix / m)
+				PA[k] -= push
+				PB[k] += push
+			end
+		end
 	end
 end
 
@@ -720,16 +791,23 @@ end
 function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 	local s = self.Settings
 	self.SliceAlpha = sliceAlpha or 1
-	-- Part of the head's movement is copied straight onto the hair; the rest (Inertia)
-	-- is left behind, which is what makes the hair trail and swing.
-	local carry = 1 - s.Inertia
+	-- The hair is carried along with the head, minus a share (Inertia) of the head's movement
+	-- that gets left behind — that's what makes it trail and swing. The left-behind share is
+	-- taken from a smoothed copy of the head's path, so tiny shakes (network jitter on NPCs,
+	-- animation noise) move the hair together with the head instead of making it shiver.
 	local delta = anchorCF * self.AnchorCF:Inverse()
 	self.AnchorCF = anchorCF
+	local smoothOld = self.SmoothCF
+	self.SmoothCF = smoothOld:Lerp(anchorCF, 1 - math.exp(-h / s.InertiaSmoothing))
+	local smoothDelta = self.SmoothCF * smoothOld:Inverse()
+	local inertia = s.Inertia
 	local rot = anchorCF.Rotation
 
 	local ratio = math.clamp(h / self.LastH, 0.5, 2)
 	self.LastH = h
 	local keep = (1 - s.Damping) ^ (h * 60)
+	self.StepKeep = keep
+	local maxStep = s.MaxSpeed * h
 	self.Time += h
 	local wind = s.Wind
 	if s.WindGust > 0 then
@@ -745,11 +823,13 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 		prev[1] = pos[1]
 		for k = 2, chain.N + 1 do
 			local p, q = pos[k], prev[k]
-			if carry > 0 then
-				p = p:Lerp(delta * p, carry)
-				q = q:Lerp(delta * q, carry)
-			end
+			p = delta * p - (smoothDelta * p - p) * inertia
+			q = delta * q - (smoothDelta * q - q) * inertia
 			local vel = (p - q) * (keep * ratio)
+			local speed = vel.Magnitude
+			if speed > maxStep then
+				vel *= maxStep / speed -- no strand whips faster than MaxSpeed
+			end
 			prev[k] = p
 			pos[k] = p + vel + accel
 		end
@@ -763,6 +843,9 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 			for _, chain in self.Chains do
 				self:SolveShape(chain, rot, 0)
 			end
+		end
+		if #self.Links > 0 then
+			self:SolveLinks()
 		end
 		self:CollideBody()
 		if #self.Pairs > 0 then
@@ -977,13 +1060,22 @@ return HairPhysics
 	  Gravity              How hard the hair is pulled down while it swings (studs/s²).
 	  GravityCompensation  0..1. 1 = when the character stands still the hair sits exactly in
 	                       its modeled shape. 0 = gravity sags it below that shape.
-	  Damping              0..1. Higher = swinging dies out faster (0.12 ≈ stops in ~1 second).
+	  Damping              0..1. How fast swinging dies out. Higher = calmer, lower = floppier.
+	  Bounce               0..1. How much the hair overshoots when it springs back into shape.
+	                       High values wobble like jelly; keep it low.
 	  Inertia              0..1. How much the hair gets left behind when the head moves.
 	                       Higher = more trailing/swinging when walking and jumping.
 	  Stiffness            One number per bone, root first. How strongly each bone springs back
 	                       to its modeled shape. Higher = stiffer hair.
+	  ShapeFollow          0..1. 0 = every bone springs back to its modeled direction relative to
+	                       the HEAD (hairstyle holds its shape). 1 = relative to the bone above it
+	                       (bendy, rope-like).
 	  MaxBend              One number per bone, root first, in degrees. The most each joint can
 	                       bend away from its modeled shape. This is what stops strands folding.
+	  MaxSpeed             No part of a strand moves faster than this (studs/s) — stops whipping.
+	  SheetLinks           Pairs of neighbouring strands tied together like cloth, so a wide sheet
+	                       of hair moves as one piece instead of separate strands squishing apart.
+	  SheetSlack           How much (0.12 = 12%) the gap between linked strands may stretch/shrink.
 	  ChainOverrides       Different Stiffness/MaxBend for some strands, matched by the start of
 	                       the strand's name (e.g. "Lock" = LockL and LockR).
 	  Wind / WindGust      Constant wind (studs/s², e.g. Vector3.new(8, 0, 0)) and how gusty it is.
@@ -1004,6 +1096,15 @@ HairConfig.Assignments = {
 -- ReplicatedStorage, then Workspace.
 HairConfig.ModelFolder = "HairModels"
 
+-- The hair was made for a head this wide (studs). If a rig's head is bigger or smaller, the hair
+-- is resized to match when ScaleToHead is on.
+HairConfig.ReferenceHeadWidth = 1.2
+
+-- Press this key (or the on-screen "Fit" button on phones) during Play to open the hair-fit
+-- panel: nudge the hair on each head and it prints the Offset line to paste below.
+HairConfig.FitToolKey = Enum.KeyCode.H
+HairConfig.FitToolEnabled = true
+
 HairConfig.Hairs = {
 	Pigtails = {
 		-- the imported model is found by this bone, so it works whatever the model is named
@@ -1013,15 +1114,19 @@ HairConfig.Hairs = {
 		TextureId = "",
 		Color = Color3.fromRGB(86, 58, 42), -- only shows when there's no texture
 		Offset = CFrame.new(0, 0, 0), -- nudge the hair on the head: CFrame.new(right, up, back) in studs
-		Scale = 1, -- 1 = the size it was made at
+		Scale = 1, -- extra size multiplier (1 = the size it was made at)
+		ScaleToHead = true, -- resize to the rig's head width (see ReferenceHeadWidth)
 		RemoveOtherHair = true, -- take off any hair the rig is already wearing
 		Physics = {
 			Gravity = 30,
-			GravityCompensation = 0.85,
-			Damping = 0.12,
-			Inertia = 0.3,
+			GravityCompensation = 1,
+			Damping = 0.28,
+			Bounce = 0.15,
+			Inertia = 0.2,
 			Stiffness = { 0.5, 0.35, 0.22, 0.15, 0.12 },
-			MaxBend = { 20, 18, 22, 25, 28 },
+			ShapeFollow = 0.3,
+			MaxBend = { 20, 18, 20, 22, 25 },
+			MaxSpeed = 25,
 			Wind = Vector3.zero,
 			WindGust = 0,
 			SelfCollision = true,
@@ -1036,17 +1141,29 @@ HairConfig.Hairs = {
 		Color = Color3.fromRGB(120, 80, 50),
 		Offset = CFrame.new(0, 0, 0),
 		Scale = 1,
+		ScaleToHead = true,
 		RemoveOtherHair = true,
 		Physics = {
 			Gravity = 30,
-			GravityCompensation = 0.85,
-			Damping = 0.12,
-			Inertia = 0.3,
+			GravityCompensation = 1,
+			Damping = 0.28,
+			Bounce = 0.15,
+			Inertia = 0.2,
 			Stiffness = { 0.35, 0.22, 0.15, 0.11, 0.09 },
-			MaxBend = { 22, 20, 24, 28, 32 },
+			ShapeFollow = 0.3,
+			MaxBend = { 20, 18, 20, 22, 25 },
+			MaxSpeed = 25,
+			-- the five strands down the back move together as one sheet of hair
+			SheetLinks = {
+				{ "BackL2", "BackL1" },
+				{ "BackL1", "BackC" },
+				{ "BackC", "BackR1" },
+				{ "BackR1", "BackR2" },
+			},
+			SheetSlack = 0.12,
 			ChainOverrides = {
 				-- the two front locks that rest on the chest
-				Lock = { Stiffness = { 0.4, 0.3, 0.2, 0.15 }, MaxBend = { 18, 18, 22, 28 } },
+				Lock = { Stiffness = { 0.4, 0.3, 0.2, 0.15 }, MaxBend = { 16, 16, 20, 24 } },
 			},
 			Wind = Vector3.zero,
 			WindGust = 0,
@@ -1064,6 +1181,7 @@ HairConfig.Hairs = {
 HairConfig.Layouts = {
 	Pigtails = {
 		Size = Vector3.new(2.8167, 1.7064, 1.5286), -- size of the whole hair mesh in studs (used to check the import scale)
+		HeadCenter = Vector3.new(0, -0.3, 0), -- the point in the rig that sits on the centre of the head
 		Chains = {
 			{ Name = "PigL", Bones = { "PigL_1", "PigL_2", "PigL_3", "PigL_4", "PigL_5" }, Tip = "PigL_End", Radii = { 0.17, 0.17, 0.16, 0.15, 0.13, 0.11 } },
 			{ Name = "PigR", Bones = { "PigR_1", "PigR_2", "PigR_3", "PigR_4", "PigR_5" }, Tip = "PigR_End", Radii = { 0.17, 0.17, 0.16, 0.15, 0.13, 0.11 } },
@@ -1087,6 +1205,7 @@ HairConfig.Layouts = {
 	},
 	LadyHair = {
 		Size = Vector3.new(2.076, 3.4076, 2.1828), -- size of the whole hair mesh in studs (used to check the import scale)
+		HeadCenter = Vector3.new(0, -0.3, 0), -- the point in the rig that sits on the centre of the head
 		Chains = {
 			{ Name = "BackL2", Bones = { "BackL2_1", "BackL2_2", "BackL2_3", "BackL2_4", "BackL2_5" }, Tip = "BackL2_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },
 			{ Name = "BackL1", Bones = { "BackL1_1", "BackL1_2", "BackL1_3", "BackL1_4", "BackL1_5" }, Tip = "BackL1_End", Radii = { 0.2, 0.19, 0.18, 0.17, 0.15, 0.13 } },
@@ -1382,6 +1501,13 @@ local function applyHair(rig: Model, hairName: string)
 	end
 	local fit = HairPhysics.FitRig(design, actual)
 	local wantScale = hairCfg.Scale or 1
+	if hairCfg.ScaleToHead and head:IsA("MeshPart") then
+		-- the hair was made for a head ReferenceHeadWidth wide: match this rig's head
+		local ratio = (head.Size.X + head.Size.Z) * 0.5 / (HairConfig.ReferenceHeadWidth or 1.2)
+		if ratio > 0.5 and ratio < 3 then
+			wantScale *= ratio
+		end
+	end
 	if math.abs(fit.Scale / wantScale - 1) > 0.02 then
 		-- the importer used a different unit size (or you changed Scale): resize the hair + bones
 		local holder = Instance.new("Model")
@@ -1392,7 +1518,7 @@ local function applyHair(rig: Model, hairName: string)
 		hairPart.Parent = nil
 		holder:Destroy()
 		if ok then
-			log(("resized the %s hair by x%.3f to match the rig"):format(hairName, wantScale / fit.Scale))
+			log(("resized the %s hair by x%.3f to fit %s's head"):format(hairName, wantScale / fit.Scale, rig.Name))
 			design, actual = collectBonePairs(hairPart, layout)
 			fit = HairPhysics.FitRig(design, actual)
 		else
@@ -1402,7 +1528,9 @@ local function applyHair(rig: Model, hairName: string)
 	if fit.Error > 0.05 * math.max(fit.Scale, 0.01) then
 		complain(("the %s hair's bones don't match the expected layout (off by %.2f studs on average). It may sit wrong — was the rig changed in Blender?"):format(hairName, fit.Error))
 	end
-	local headToHair = hairCfg.Offset * HairPhysics.HeadToPart(fit)
+	-- the rig's HeadCenter point goes on the centre of the head, then your Offset nudge on top
+	local headCenter = (layout.HeadCenter or Vector3.zero) * fit.Scale
+	local headToHair = hairCfg.Offset * CFrame.new(-headCenter) * HairPhysics.HeadToPart(fit)
 
 	-- wear it
 	removeOldHair(rig, hairCfg)
@@ -1471,8 +1599,9 @@ end
           <ProtectedString name="Source"><![CDATA[--[[
 	NPCRoam  (Script — lives in ServerScriptService)
 
-	Test script: makes the rigs walk to random spots, jump at random, pause, and
-	sometimes turn around sharply — so you can see the hair swing, bounce and settle.
+	Test script: makes the rigs walk to random spots (inside the TestArena, if it's in
+	Workspace), jump at random, pause, and sometimes turn around sharply — so you can see
+	the hair swing, bounce and settle.
 	It also plays Roblox's default walk / idle / jump / fall animations on them.
 
 	Delete this script (or set ENABLED = false) once you're happy with the hair.
@@ -1483,7 +1612,9 @@ end
 ----------------------------------------------------------------------------------------
 local ENABLED = true
 local RIGS = { "MrPigtails", "MrLady" } -- rigs in Workspace to move around
-local ROAM_RADIUS = 30 -- how far (studs) from their starting spot they wander
+local ARENA_NAME = "TestArena" -- if this model is in Workspace, they roam inside it
+local ARENA_MARGIN = 5 -- keep this far (studs) from the arena walls
+local ROAM_RADIUS = 30 -- with no arena: how far (studs) from their starting spot they wander
 local WALK_SPEED_MIN = 8 -- they pick a random speed between these for each walk
 local WALK_SPEED_MAX = 16
 local JUMPS_PER_SECOND = 0.35 -- average number of random jumps per second while walking
@@ -1598,15 +1729,26 @@ local function setupAnimations(humanoid: Humanoid)
 	play("idle")
 end
 
--- Random spot on the ground near home (raycasts down so they don't walk into the void).
+-- Random spot on the ground: inside the arena if there is one, otherwise near home
+-- (raycasts down so they don't walk into the void).
 local function pickGoal(home: Vector3, rng: Random): Vector3?
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = rigModels
+	local arena = Workspace:FindFirstChild(ARENA_NAME)
+	local floor = arena and arena:FindFirstChild("Floor")
 	for _ = 1, 12 do
-		local angle = rng:NextNumber(0, math.pi * 2)
-		local dist = rng:NextNumber(6, ROAM_RADIUS)
-		local probe = home + Vector3.new(math.cos(angle) * dist, 40, math.sin(angle) * dist)
+		local probe
+		if floor and floor:IsA("BasePart") then
+			local size = arena:GetAttribute("InteriorSize") or Vector3.new(64, 24, 64)
+			local top = floor.CFrame * CFrame.new(0, floor.Size.Y / 2, 0)
+			local hx, hz = size.X / 2 - ARENA_MARGIN, size.Z / 2 - ARENA_MARGIN
+			probe = top * Vector3.new(rng:NextNumber(-hx, hx), size.Y - 2, rng:NextNumber(-hz, hz))
+		else
+			local angle = rng:NextNumber(0, math.pi * 2)
+			local dist = rng:NextNumber(6, ROAM_RADIUS)
+			probe = home + Vector3.new(math.cos(angle) * dist, 40, math.sin(angle) * dist)
+		end
 		local hit = Workspace:Raycast(probe, Vector3.new(0, -120, 0), params)
 		if hit and hit.Instance.CanCollide then
 			return hit.Position
@@ -1659,8 +1801,8 @@ local function roam(rig: Model)
 	setupAnimations(humanoid)
 
 	local rng = Random.new()
+	task.wait(rng:NextNumber(1, 2)) -- lets ArenaSetup put them in the arena, and stops them moving in sync
 	local home = root.Position
-	task.wait(rng:NextNumber(0.5, 1.5)) -- so the two don't move in sync
 
 	while rig.Parent and humanoid.Health > 0 do
 		local goal = pickGoal(home, rng)
@@ -1696,12 +1838,147 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
+      <Item class="Script" referent="8">
+        <Properties>
+          <string name="Name">ArenaSetup</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	ArenaSetup  (Script — lives in ServerScriptService)
+
+	Runs the TestArena (the sealed glass-roofed box in Workspace):
+	  * moves MrPigtails and MrLady onto their spots inside it when the game starts,
+	  * makes every player spawn inside it (and puts them back in if they ever end up outside),
+	  * opens / closes the drain gate when a player presses Z (or taps "Gate" on a phone).
+
+	The arena keeps two attributes the upcoming water system will read:
+	  InteriorSize  size of the inside of the box (studs)
+	  GateOpen      true while the drain gate is open
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+----------------------------------------------------------------------------------------
+-- Settings
+----------------------------------------------------------------------------------------
+local ARENA_NAME = "TestArena"
+local RIGS = { "MrPigtails", "MrLady" } -- each goes to the part called RigSpot_<name>
+local GATE_TIME = 1.2 -- seconds the gate takes to slide open or shut
+local GATE_COOLDOWN = 0.4 -- ignore Z presses closer together than this
+----------------------------------------------------------------------------------------
+
+local arena = Workspace:WaitForChild(ARENA_NAME, 10)
+if not arena then
+	warn("[ArenaSetup] no model called " .. ARENA_NAME .. " in Workspace — drop the TestArena from the kit into Workspace")
+	return
+end
+
+local floor = arena:WaitForChild("Floor") :: BasePart
+local spawnPad = arena:FindFirstChild("ArenaSpawn")
+local drain = arena:FindFirstChild("Drain")
+local gate = drain and drain:FindFirstChild("Gate")
+
+-- The inside of the box as a CFrame (centre of the floor's top surface) plus its size.
+local function interior(): (CFrame, Vector3)
+	local size = arena:GetAttribute("InteriorSize") or Vector3.new(64, 24, 64)
+	local top = floor.CFrame * CFrame.new(0, floor.Size.Y / 2, 0)
+	return top, size
+end
+
+local function isInside(position: Vector3): boolean
+	local top, size = interior()
+	local p = top:PointToObjectSpace(position)
+	return math.abs(p.X) < size.X / 2 and math.abs(p.Z) < size.Z / 2 and p.Y > -1 and p.Y < size.Y
+end
+
+-- Stands a model on top of a spot part, facing the way the spot faces.
+local function standOn(model: Model, spot: BasePart)
+	local pivot = model:GetPivot()
+	local boxCF, boxSize = model:GetBoundingBox()
+	local feetBelowPivot = pivot.Position.Y - (boxCF.Position.Y - boxSize.Y / 2)
+	local base = spot.Position - Vector3.new(0, spot.Size.Y / 2, 0)
+	local facing = spot.CFrame.LookVector
+	model:PivotTo(CFrame.lookAt(base, base + Vector3.new(facing.X, 0, facing.Z)) + Vector3.new(0, feetBelowPivot + 0.05, 0))
+end
+
+-- 1) dummies into the arena
+for _, name in RIGS do
+	task.spawn(function()
+		local rig = Workspace:WaitForChild(name, 10)
+		local spot = arena:FindFirstChild("RigSpot_" .. name)
+		if rig and rig:IsA("Model") and spot and spot:IsA("BasePart") then
+			standOn(rig, spot)
+		elseif not rig then
+			warn("[ArenaSetup] no rig called " .. name .. " in Workspace")
+		end
+	end)
+end
+
+-- 2) players spawn inside
+local function onCharacter(player: Player, character: Model)
+	task.wait(0.2) -- let Roblox finish placing the character first
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if root and spawnPad and not isInside(root.Position) then
+		character:PivotTo(spawnPad.CFrame + Vector3.new(0, 3.5, 0))
+	end
+end
+
+local function onPlayer(player: Player)
+	if spawnPad and spawnPad:IsA("SpawnLocation") then
+		player.RespawnLocation = spawnPad
+	end
+	player.CharacterAdded:Connect(function(character)
+		onCharacter(player, character)
+	end)
+	if player.Character then
+		task.spawn(onCharacter, player, player.Character)
+	end
+end
+Players.PlayerAdded:Connect(onPlayer)
+for _, player in Players:GetPlayers() do
+	onPlayer(player)
+end
+
+-- 3) the drain gate
+local remote = ReplicatedStorage:FindFirstChild("ArenaGate")
+if not remote then
+	remote = Instance.new("RemoteEvent")
+	remote.Name = "ArenaGate"
+	remote.Parent = ReplicatedStorage
+end
+
+if gate and gate:IsA("BasePart") then
+	local closedCF = gate.CFrame
+	local openCF = closedCF + closedCF.UpVector * (gate.Size.Y + 0.1) -- slides up inside the wall
+	local lastToggle = 0
+	local function setGate(open: boolean)
+		arena:SetAttribute("GateOpen", open)
+		TweenService:Create(gate, TweenInfo.new(GATE_TIME, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+			CFrame = open and openCF or closedCF,
+		}):Play()
+	end
+	remote.OnServerEvent:Connect(function(player: Player, action)
+		if action ~= "Toggle" or os.clock() - lastToggle < GATE_COOLDOWN then
+			return
+		end
+		lastToggle = os.clock()
+		setGate(not arena:GetAttribute("GateOpen"))
+		print(("[ArenaSetup] %s %s the drain gate"):format(player.Name, arena:GetAttribute("GateOpen") and "opened" or "closed"))
+	end)
+	setGate(false)
+else
+	warn("[ArenaSetup] the arena has no Drain > Gate part")
+end
+]]></ProtectedString>
+        </Properties>
+      </Item>
     </Item>
-    <Item class="Folder" referent="8">
+    <Item class="Folder" referent="9">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="9">
+      <Item class="LocalScript" referent="10">
         <Properties>
           <string name="Name">HairPhysicsClient</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -1719,15 +1996,1910 @@ HairPhysics.StartClient()
 ]]></ProtectedString>
         </Properties>
       </Item>
+      <Item class="LocalScript" referent="11">
+        <Properties>
+          <string name="Name">HairFitTool</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairFitTool  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	A little panel for lining the hair up on the heads while the game is running.
+	Press H (or tap the "Fit" button on a phone) to open or close it.
+
+	  Prev / Next   pick which rig's hair you're moving (it gets an outline)
+	  Up, Down, Left, Right, Fwd, Back   move it 0.05 studs (hold Shift on a keyboard
+	                                      for 0.01)
+	  Reset         undo this session's nudges
+
+	The box at the bottom shows the Offset line for HairConfig, e.g.
+	    Offset = CFrame.new(0, 0.05, -0.02),
+	Copy it into that hair's entry in ReplicatedStorage > HairConfig to keep it.
+	(The nudges only change what you see in this play session.)
+
+	Turn the tool off with HairConfig.FitToolEnabled = false.
+]]
+
+local CollectionService = game:GetService("CollectionService")
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local HairConfig = require(ReplicatedStorage:WaitForChild("HairConfig"))
+local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
+
+if not HairConfig.FitToolEnabled then
+	return
+end
+
+local STEP = 0.05
+local FINE_STEP = 0.01
+
+local player = Players.LocalPlayer
+local nudges = {} -- [hair part] = total nudge this session (head space: right, up, back)
+local selectedIndex = 1
+local gui, title, readout, highlight
+
+local function tagged(): { BasePart }
+	local list = {}
+	for _, part in CollectionService:GetTagged(HairPhysics.TAG) do
+		if part:IsA("BasePart") and part:IsDescendantOf(workspace) then
+			table.insert(list, part)
+		end
+	end
+	table.sort(list, function(a, b)
+		return a:GetFullName() < b:GetFullName()
+	end)
+	return list
+end
+
+local function selectedHair(): BasePart?
+	local list = tagged()
+	if #list == 0 then
+		return nil
+	end
+	selectedIndex = (selectedIndex - 1) % #list + 1
+	return list[selectedIndex]
+end
+
+-- The weld holding the hair to the head, and the head.
+local function findWeld(hair: BasePart): (JointInstance?, BasePart?)
+	for _, child in hair:GetChildren() do
+		if child:IsA("JointInstance") then
+			local other = child.Part0 == hair and child.Part1 or child.Part0
+			if other and other.Name == "Head" then
+				return child, other
+			end
+		end
+	end
+	return nil
+end
+
+local function rigName(hair: BasePart): string
+	local node = hair.Parent
+	while node and not (node:IsA("Model") and node:FindFirstChildOfClass("Humanoid")) do
+		node = node.Parent
+	end
+	return node and node.Name or "?"
+end
+
+local function offsetLine(hair: BasePart): string
+	local preset = hair:GetAttribute("HairPreset")
+	local cfg = HairConfig.Hairs[preset]
+	local base = cfg and cfg.Offset or CFrame.identity
+	local p = base.Position + (nudges[hair] or Vector3.zero)
+	local function n(x: number): string
+		local str = string.format("%.2f", x)
+		if str == "0.00" or str == "-0.00" then
+			return "0"
+		end
+		return (str:gsub("0+$", ""):gsub("%.$", ""))
+	end
+	return ("Offset = CFrame.new(%s, %s, %s),"):format(n(p.X), n(p.Y), n(p.Z))
+end
+
+local function refresh()
+	if not gui then
+		return
+	end
+	local hair = selectedHair()
+	if hair then
+		title.Text = ("Hair fit: %s (%s)"):format(rigName(hair), tostring(hair:GetAttribute("HairPreset")))
+		readout.Text = offsetLine(hair)
+		highlight.Adornee = hair
+	else
+		title.Text = "Hair fit: no hair found yet"
+		readout.Text = ""
+		highlight.Adornee = nil
+	end
+end
+
+-- Moves a hair by delta (head space: right, up, back) by adjusting the weld that holds it.
+local function applyDelta(hair: BasePart, delta: Vector3)
+	local weld, head = findWeld(hair)
+	if not weld or not head then
+		warn("[HairFitTool] couldn't find the weld holding " .. hair:GetFullName())
+		return
+	end
+	if weld.Part0 == head then
+		local current = weld.C0 * weld.C1:Inverse()
+		weld.C0 = CFrame.new(delta) * current * weld.C1
+	else
+		local current = weld.C1 * weld.C0:Inverse()
+		weld.C1 = CFrame.new(delta) * current * weld.C0
+	end
+	nudges[hair] = (nudges[hair] or Vector3.zero) + delta
+	refresh()
+end
+
+local function nudge(direction: Vector3)
+	local hair = selectedHair()
+	if hair then
+		local fine = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+		applyDelta(hair, direction * (fine and FINE_STEP or STEP))
+	end
+end
+
+local function reset()
+	local hair = selectedHair()
+	if hair and nudges[hair] then
+		applyDelta(hair, -nudges[hair])
+		nudges[hair] = Vector3.zero
+		refresh()
+	end
+end
+
+local function makeButton(parent: Instance, text: string, pos: UDim2, size: UDim2, onClick: () -> ())
+	local b = Instance.new("TextButton")
+	b.Text = text
+	b.Position = pos
+	b.Size = size
+	b.BackgroundColor3 = Color3.fromRGB(45, 48, 56)
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Font = Enum.Font.GothamMedium
+	b.TextScaled = true
+	b.AutoButtonColor = true
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent = b
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 4)
+	pad.PaddingBottom = UDim.new(0, 4)
+	pad.Parent = b
+	b.Activated:Connect(onClick)
+	b.Parent = parent
+	return b
+end
+
+local function buildGui()
+	gui = Instance.new("ScreenGui")
+	gui.Name = "HairFitTool"
+	gui.ResetOnSpawn = false
+	gui.Enabled = false
+
+	local frame = Instance.new("Frame")
+	frame.AnchorPoint = Vector2.new(0, 1)
+	frame.Position = UDim2.new(0, 12, 1, -12)
+	frame.Size = UDim2.fromOffset(300, 250)
+	frame.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
+	frame.BackgroundTransparency = 0.1
+	frame.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = frame
+
+	title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.fromOffset(10, 6)
+	title.Size = UDim2.new(1, -20, 0, 24)
+	title.Font = Enum.Font.GothamBold
+	title.TextColor3 = Color3.new(1, 1, 1)
+	title.TextScaled = true
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = frame
+
+	local w, h = 88, 32
+	local function at(col: number, row: number)
+		return UDim2.fromOffset(10 + col * (w + 6), 36 + row * (h + 6))
+	end
+	local size = UDim2.fromOffset(w, h)
+	makeButton(frame, "Prev", at(0, 0), size, function()
+		selectedIndex -= 1
+		refresh()
+	end)
+	makeButton(frame, "Reset", at(1, 0), size, reset)
+	makeButton(frame, "Next", at(2, 0), size, function()
+		selectedIndex += 1
+		refresh()
+	end)
+	makeButton(frame, "Up", at(1, 1), size, function()
+		nudge(Vector3.yAxis)
+	end)
+	makeButton(frame, "Left", at(0, 2), size, function()
+		nudge(-Vector3.xAxis)
+	end)
+	makeButton(frame, "Down", at(1, 2), size, function()
+		nudge(-Vector3.yAxis)
+	end)
+	makeButton(frame, "Right", at(2, 2), size, function()
+		nudge(Vector3.xAxis)
+	end)
+	makeButton(frame, "Fwd", at(0, 1), size, function()
+		nudge(-Vector3.zAxis)
+	end)
+	makeButton(frame, "Back", at(2, 1), size, function()
+		nudge(Vector3.zAxis)
+	end)
+
+	-- a TextBox so the line can be selected and copied
+	readout = Instance.new("TextBox")
+	readout.ClearTextOnFocus = false
+	readout.TextEditable = false
+	readout.Position = UDim2.fromOffset(10, 36 + 3 * (h + 6) + 4)
+	readout.Size = UDim2.new(1, -20, 0, 30)
+	readout.BackgroundColor3 = Color3.fromRGB(12, 13, 16)
+	readout.TextColor3 = Color3.fromRGB(140, 220, 160)
+	readout.Font = Enum.Font.Code
+	readout.TextScaled = true
+	readout.Parent = frame
+	local rc = Instance.new("UICorner")
+	rc.CornerRadius = UDim.new(0, 6)
+	rc.Parent = readout
+
+	local hint = Instance.new("TextLabel")
+	hint.BackgroundTransparency = 1
+	hint.Position = UDim2.fromOffset(10, 36 + 3 * (h + 6) + 38)
+	hint.Size = UDim2.new(1, -20, 0, 16)
+	hint.Font = Enum.Font.Gotham
+	hint.TextColor3 = Color3.fromRGB(170, 175, 185)
+	hint.TextScaled = true
+	hint.Text = "Copy this line into HairConfig to keep it"
+	hint.Parent = frame
+
+	highlight = Instance.new("Highlight")
+	highlight.FillTransparency = 1
+	highlight.OutlineColor = Color3.fromRGB(255, 200, 60)
+	highlight.Enabled = false
+	highlight.Parent = gui
+
+	gui.Parent = player:WaitForChild("PlayerGui")
+end
+
+local function toggle(_, state: Enum.UserInputState)
+	if state ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Pass
+	end
+	if not gui then
+		buildGui()
+	end
+	gui.Enabled = not gui.Enabled
+	highlight.Enabled = gui.Enabled
+	refresh()
+	if gui.Enabled then
+		local hair = selectedHair()
+		if hair then
+			print("[HairFitTool] " .. tostring(hair:GetAttribute("HairPreset")) .. ": " .. offsetLine(hair))
+		end
+	end
+	return Enum.ContextActionResult.Sink
+end
+
+ContextActionService:BindAction("HairFitTool", toggle, true, HairConfig.FitToolKey or Enum.KeyCode.H)
+ContextActionService:SetTitle("HairFitTool", "Fit")
+ContextActionService:SetPosition("HairFitTool", UDim2.new(1, -70, 0, 10))
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="12">
+        <Properties>
+          <string name="Name">ArenaControls</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	ArenaControls  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Press Z (or tap the "Gate" button on a phone) to open / close the TestArena's drain gate.
+	A small label at the top of the screen shows whether it's open.
+]]
+
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local KEY = Enum.KeyCode.Z
+
+local remote = ReplicatedStorage:WaitForChild("ArenaGate")
+local arena = Workspace:WaitForChild("TestArena", 30)
+
+local label = Instance.new("TextLabel")
+do
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "ArenaControls"
+	gui.ResetOnSpawn = false
+	label.AnchorPoint = Vector2.new(0.5, 0)
+	label.Position = UDim2.new(0.5, 0, 0, 8)
+	label.Size = UDim2.fromOffset(300, 28)
+	label.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
+	label.BackgroundTransparency = 0.25
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.Font = Enum.Font.GothamMedium
+	label.TextScaled = true
+	label.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = label
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 5)
+	pad.PaddingBottom = UDim.new(0, 5)
+	pad.Parent = label
+	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local function refresh()
+	local open = arena and arena:GetAttribute("GateOpen")
+	label.Text = ("Drain gate: %s   (press Z)"):format(open and "OPEN" or "closed")
+	label.TextColor3 = open and Color3.fromRGB(120, 210, 255) or Color3.new(1, 1, 1)
+end
+
+if arena then
+	arena:GetAttributeChangedSignal("GateOpen"):Connect(refresh)
+end
+refresh()
+
+ContextActionService:BindAction("ArenaGate", function(_, state: Enum.UserInputState)
+	if state == Enum.UserInputState.Begin then
+		remote:FireServer("Toggle")
+		return Enum.ContextActionResult.Sink
+	end
+	return Enum.ContextActionResult.Pass
+end, true, KEY)
+ContextActionService:SetTitle("ArenaGate", "Gate")
+]]></ProtectedString>
+        </Properties>
+      </Item>
     </Item>
-    <Item class="Folder" referent="10">
+    <Item class="Folder" referent="13">
       <Properties>
         <string name="Name">ServerStorage</string>
       </Properties>
-      <Item class="Folder" referent="11">
+      <Item class="Folder" referent="14">
         <Properties>
           <string name="Name">HairModels</string>
         </Properties>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="15">
+      <Properties>
+        <string name="Name">Workspace</string>
+      </Properties>
+      <Item class="Model" referent="16">
+        <Properties>
+          <string name="Name">TestArena</string>
+          <BinaryString name="AttributesSerialize">AgAAAAgAAABHYXRlT3BlbgMADAAAAEludGVyaW9yU2l6ZREAAIBCAADAQQAAgEI=</BinaryString>
+        </Properties>
+        <Item class="Part" referent="17">
+          <Properties>
+            <string name="Name">Floor</string>
+            <bool name="Anchored">true</bool>
+            <token name="BottomSurface">0</token>
+            <CoordinateFrame name="CFrame">
+              <X>0</X>
+              <Y>7</Y>
+              <Z>-120</Z>
+              <R00>1</R00>
+              <R01>0</R01>
+              <R02>0</R02>
+              <R10>0</R10>
+              <R11>1</R11>
+              <R12>0</R12>
+              <R20>0</R20>
+              <R21>0</R21>
+              <R22>1</R22>
+            </CoordinateFrame>
+            <Color3uint8 name="Color3uint8">11714248</Color3uint8>
+            <token name="Material">816</token>
+            <Vector3 name="size">
+              <X>68</X>
+              <Y>2</Y>
+              <Z>68</Z>
+            </Vector3>
+            <token name="TopSurface">0</token>
+          </Properties>
+        </Item>
+        <Item class="Folder" referent="18">
+          <Properties>
+            <string name="Name">Walls</string>
+          </Properties>
+          <Item class="Part" referent="19">
+            <Properties>
+              <string name="Name">WallMinusX</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-33</X>
+                <Y>20</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>2</X>
+                <Y>24</Y>
+                <Z>68</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="20">
+            <Properties>
+              <string name="Name">WallMinusZ</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>0</X>
+                <Y>20</Y>
+                <Z>-153</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>64</X>
+                <Y>24</Y>
+                <Z>2</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="21">
+            <Properties>
+              <string name="Name">WallPlusZ</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>0</X>
+                <Y>20</Y>
+                <Z>-87</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>64</X>
+                <Y>24</Y>
+                <Z>2</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="22">
+            <Properties>
+              <string name="Name">WallPlusX_A</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>33</X>
+                <Y>20</Y>
+                <Z>-139</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>2</X>
+                <Y>24</Y>
+                <Z>30</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="23">
+            <Properties>
+              <string name="Name">WallPlusX_B</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>33</X>
+                <Y>20</Y>
+                <Z>-101</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>2</X>
+                <Y>24</Y>
+                <Z>30</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="24">
+            <Properties>
+              <string name="Name">WallPlusX_Top</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>33</X>
+                <Y>22</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>2</X>
+                <Y>20</Y>
+                <Z>8</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+        </Item>
+        <Item class="Folder" referent="25">
+          <Properties>
+            <string name="Name">Trim</string>
+          </Properties>
+          <Item class="Part" referent="26">
+            <Properties>
+              <string name="Name">TrimMinusX</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.949997</X>
+                <Y>8.300003</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.1000061</X>
+                <Y>0.6000061</Y>
+                <Z>64</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="27">
+            <Properties>
+              <string name="Name">TrimMinusZ</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>0</X>
+                <Y>8.300003</Y>
+                <Z>-151.95</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>64</X>
+                <Y>0.6000061</Y>
+                <Z>0.1000061</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="28">
+            <Properties>
+              <string name="Name">TrimPlusZ</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>0</X>
+                <Y>8.300003</Y>
+                <Z>-88.05</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>64</X>
+                <Y>0.6000061</Y>
+                <Z>0.1000061</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+        </Item>
+        <Item class="Part" referent="29">
+          <Properties>
+            <string name="Name">Ceiling</string>
+            <bool name="Anchored">true</bool>
+            <token name="BottomSurface">0</token>
+            <CoordinateFrame name="CFrame">
+              <X>0</X>
+              <Y>32.5</Y>
+              <Z>-120</Z>
+              <R00>1</R00>
+              <R01>0</R01>
+              <R02>0</R02>
+              <R10>0</R10>
+              <R11>1</R11>
+              <R12>0</R12>
+              <R20>0</R20>
+              <R21>0</R21>
+              <R22>1</R22>
+            </CoordinateFrame>
+            <Color3uint8 name="Color3uint8">13165040</Color3uint8>
+            <token name="Material">1568</token>
+            <Vector3 name="size">
+              <X>68</X>
+              <Y>1</Y>
+              <Z>68</Z>
+            </Vector3>
+            <token name="TopSurface">0</token>
+            <float name="Transparency">0.6</float>
+          </Properties>
+        </Item>
+        <Item class="Folder" referent="30">
+          <Properties>
+            <string name="Name">Drain</string>
+          </Properties>
+          <Item class="Part" referent="31">
+            <Properties>
+              <string name="Name">Gate</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>33</X>
+                <Y>10</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">5922921</Color3uint8>
+              <token name="Material">1056</token>
+              <Vector3 name="size">
+                <X>1.199997</X>
+                <Y>4</Y>
+                <Z>8</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="32">
+            <Properties>
+              <string name="Name">GateOpening</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>33</X>
+                <Y>10</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <bool name="CanTouch">false</bool>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>2</X>
+                <Y>4</Y>
+                <Z>8</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+              <float name="Transparency">1</float>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="33">
+            <Properties>
+              <string name="Name">Bar</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>34.199997</X>
+                <Y>10</Y>
+                <Z>-123.42857</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">3948358</Color3uint8>
+              <token name="Material">1088</token>
+              <Vector3 name="size">
+                <X>0.30000305</X>
+                <Y>4</Y>
+                <Z>0.30000305</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="34">
+            <Properties>
+              <string name="Name">Bar</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>34.199997</X>
+                <Y>10</Y>
+                <Z>-122.28572</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">3948358</Color3uint8>
+              <token name="Material">1088</token>
+              <Vector3 name="size">
+                <X>0.30000305</X>
+                <Y>4</Y>
+                <Z>0.30000305</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="35">
+            <Properties>
+              <string name="Name">Bar</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>34.199997</X>
+                <Y>10</Y>
+                <Z>-121.14287</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">3948358</Color3uint8>
+              <token name="Material">1088</token>
+              <Vector3 name="size">
+                <X>0.30000305</X>
+                <Y>4</Y>
+                <Z>0.30000305</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="36">
+            <Properties>
+              <string name="Name">Bar</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>34.199997</X>
+                <Y>10</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">3948358</Color3uint8>
+              <token name="Material">1088</token>
+              <Vector3 name="size">
+                <X>0.30000305</X>
+                <Y>4</Y>
+                <Z>0.30000305</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="37">
+            <Properties>
+              <string name="Name">Bar</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>34.199997</X>
+                <Y>10</Y>
+                <Z>-118.85715</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">3948358</Color3uint8>
+              <token name="Material">1088</token>
+              <Vector3 name="size">
+                <X>0.30000305</X>
+                <Y>4</Y>
+                <Z>0.30000305</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="38">
+            <Properties>
+              <string name="Name">Bar</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>34.199997</X>
+                <Y>10</Y>
+                <Z>-117.714294</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">3948358</Color3uint8>
+              <token name="Material">1088</token>
+              <Vector3 name="size">
+                <X>0.30000305</X>
+                <Y>4</Y>
+                <Z>0.30000305</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="39">
+            <Properties>
+              <string name="Name">Bar</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>34.199997</X>
+                <Y>10</Y>
+                <Z>-116.57143</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">3948358</Color3uint8>
+              <token name="Material">1088</token>
+              <Vector3 name="size">
+                <X>0.30000305</X>
+                <Y>4</Y>
+                <Z>0.30000305</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="40">
+            <Properties>
+              <string name="Name">Spout</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>35.5</X>
+                <Y>7.800003</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">11714248</Color3uint8>
+              <token name="Material">816</token>
+              <Vector3 name="size">
+                <X>3</X>
+                <Y>0.3999939</Y>
+                <Z>9</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+        </Item>
+        <Item class="Folder" referent="41">
+          <Properties>
+            <string name="Name">DepthGauge</string>
+          </Properties>
+          <Item class="Part" referent="42">
+            <Properties>
+              <string name="Name">Mark2</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>10</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.11999512</Y>
+                <Z>1.6000061</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="43">
+            <Properties>
+              <string name="Name">Mark4</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>12</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.19999695</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="44">
+            <Properties>
+              <string name="Name">Label4</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>12.899994</Y>
+                <Z>-117.2</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>1.3999939</Y>
+                <Z>2</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+              <float name="Transparency">1</float>
+            </Properties>
+            <Item class="SurfaceGui" referent="45">
+              <Properties>
+                <string name="Name">SurfaceGui</string>
+                <token name="Face">0</token>
+                <float name="PixelsPerStud">50</float>
+                <token name="SizingMode">1</token>
+              </Properties>
+              <Item class="TextLabel" referent="46">
+                <Properties>
+                  <string name="Name">TextLabel</string>
+                  <float name="BackgroundTransparency">1</float>
+                  <Font name="FontFace">
+                    <Family>
+                      <url>rbxasset://fonts/families/GothamSSm.json</url>
+                    </Family>
+                    <Weight>700</Weight>
+                    <Style>Normal</Style>
+                  </Font>
+                  <UDim2 name="Size">
+                    <XS>1</XS>
+                    <XO>0</XO>
+                    <YS>1</YS>
+                    <YO>0</YO>
+                  </UDim2>
+                  <string name="Text">4</string>
+                  <Color3 name="TextColor3">
+                    <R>0.15686275</R>
+                    <G>0.27450982</G>
+                    <B>0.47058824</B>
+                  </Color3>
+                  <bool name="TextScaled">true</bool>
+                </Properties>
+              </Item>
+            </Item>
+          </Item>
+          <Item class="Part" referent="47">
+            <Properties>
+              <string name="Name">Mark6</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>14</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.11999512</Y>
+                <Z>1.6000061</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="48">
+            <Properties>
+              <string name="Name">Mark8</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>16</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.19999695</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="49">
+            <Properties>
+              <string name="Name">Label8</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>16.899994</Y>
+                <Z>-117.2</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>1.3999939</Y>
+                <Z>2</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+              <float name="Transparency">1</float>
+            </Properties>
+            <Item class="SurfaceGui" referent="50">
+              <Properties>
+                <string name="Name">SurfaceGui</string>
+                <token name="Face">0</token>
+                <float name="PixelsPerStud">50</float>
+                <token name="SizingMode">1</token>
+              </Properties>
+              <Item class="TextLabel" referent="51">
+                <Properties>
+                  <string name="Name">TextLabel</string>
+                  <float name="BackgroundTransparency">1</float>
+                  <Font name="FontFace">
+                    <Family>
+                      <url>rbxasset://fonts/families/GothamSSm.json</url>
+                    </Family>
+                    <Weight>700</Weight>
+                    <Style>Normal</Style>
+                  </Font>
+                  <UDim2 name="Size">
+                    <XS>1</XS>
+                    <XO>0</XO>
+                    <YS>1</YS>
+                    <YO>0</YO>
+                  </UDim2>
+                  <string name="Text">8</string>
+                  <Color3 name="TextColor3">
+                    <R>0.15686275</R>
+                    <G>0.27450982</G>
+                    <B>0.47058824</B>
+                  </Color3>
+                  <bool name="TextScaled">true</bool>
+                </Properties>
+              </Item>
+            </Item>
+          </Item>
+          <Item class="Part" referent="52">
+            <Properties>
+              <string name="Name">Mark10</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>18</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.11999512</Y>
+                <Z>1.6000061</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="53">
+            <Properties>
+              <string name="Name">Mark12</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>20</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.19999695</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="54">
+            <Properties>
+              <string name="Name">Label12</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>20.899994</Y>
+                <Z>-117.2</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>1.3999939</Y>
+                <Z>2</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+              <float name="Transparency">1</float>
+            </Properties>
+            <Item class="SurfaceGui" referent="55">
+              <Properties>
+                <string name="Name">SurfaceGui</string>
+                <token name="Face">0</token>
+                <float name="PixelsPerStud">50</float>
+                <token name="SizingMode">1</token>
+              </Properties>
+              <Item class="TextLabel" referent="56">
+                <Properties>
+                  <string name="Name">TextLabel</string>
+                  <float name="BackgroundTransparency">1</float>
+                  <Font name="FontFace">
+                    <Family>
+                      <url>rbxasset://fonts/families/GothamSSm.json</url>
+                    </Family>
+                    <Weight>700</Weight>
+                    <Style>Normal</Style>
+                  </Font>
+                  <UDim2 name="Size">
+                    <XS>1</XS>
+                    <XO>0</XO>
+                    <YS>1</YS>
+                    <YO>0</YO>
+                  </UDim2>
+                  <string name="Text">12</string>
+                  <Color3 name="TextColor3">
+                    <R>0.15686275</R>
+                    <G>0.27450982</G>
+                    <B>0.47058824</B>
+                  </Color3>
+                  <bool name="TextScaled">true</bool>
+                </Properties>
+              </Item>
+            </Item>
+          </Item>
+          <Item class="Part" referent="57">
+            <Properties>
+              <string name="Name">Mark14</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>22</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.11999512</Y>
+                <Z>1.6000061</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="58">
+            <Properties>
+              <string name="Name">Mark16</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>24</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.19999695</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="59">
+            <Properties>
+              <string name="Name">Label16</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>24.899994</Y>
+                <Z>-117.2</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>1.3999939</Y>
+                <Z>2</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+              <float name="Transparency">1</float>
+            </Properties>
+            <Item class="SurfaceGui" referent="60">
+              <Properties>
+                <string name="Name">SurfaceGui</string>
+                <token name="Face">0</token>
+                <float name="PixelsPerStud">50</float>
+                <token name="SizingMode">1</token>
+              </Properties>
+              <Item class="TextLabel" referent="61">
+                <Properties>
+                  <string name="Name">TextLabel</string>
+                  <float name="BackgroundTransparency">1</float>
+                  <Font name="FontFace">
+                    <Family>
+                      <url>rbxasset://fonts/families/GothamSSm.json</url>
+                    </Family>
+                    <Weight>700</Weight>
+                    <Style>Normal</Style>
+                  </Font>
+                  <UDim2 name="Size">
+                    <XS>1</XS>
+                    <XO>0</XO>
+                    <YS>1</YS>
+                    <YO>0</YO>
+                  </UDim2>
+                  <string name="Text">16</string>
+                  <Color3 name="TextColor3">
+                    <R>0.15686275</R>
+                    <G>0.27450982</G>
+                    <B>0.47058824</B>
+                  </Color3>
+                  <bool name="TextScaled">true</bool>
+                </Properties>
+              </Item>
+            </Item>
+          </Item>
+          <Item class="Part" referent="62">
+            <Properties>
+              <string name="Name">Mark18</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>26</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.11999512</Y>
+                <Z>1.6000061</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="63">
+            <Properties>
+              <string name="Name">Mark20</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>28</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.19999695</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="64">
+            <Properties>
+              <string name="Name">Label20</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>28.899994</Y>
+                <Z>-117.2</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>1.3999939</Y>
+                <Z>2</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+              <float name="Transparency">1</float>
+            </Properties>
+            <Item class="SurfaceGui" referent="65">
+              <Properties>
+                <string name="Name">SurfaceGui</string>
+                <token name="Face">0</token>
+                <float name="PixelsPerStud">50</float>
+                <token name="SizingMode">1</token>
+              </Properties>
+              <Item class="TextLabel" referent="66">
+                <Properties>
+                  <string name="Name">TextLabel</string>
+                  <float name="BackgroundTransparency">1</float>
+                  <Font name="FontFace">
+                    <Family>
+                      <url>rbxasset://fonts/families/GothamSSm.json</url>
+                    </Family>
+                    <Weight>700</Weight>
+                    <Style>Normal</Style>
+                  </Font>
+                  <UDim2 name="Size">
+                    <XS>1</XS>
+                    <XO>0</XO>
+                    <YS>1</YS>
+                    <YO>0</YO>
+                  </UDim2>
+                  <string name="Text">20</string>
+                  <Color3 name="TextColor3">
+                    <R>0.15686275</R>
+                    <G>0.27450982</G>
+                    <B>0.47058824</B>
+                  </Color3>
+                  <bool name="TextScaled">true</bool>
+                </Properties>
+              </Item>
+            </Item>
+          </Item>
+          <Item class="Part" referent="67">
+            <Properties>
+              <string name="Name">Mark22</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31.970001</X>
+                <Y>30</Y>
+                <Z>-120</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <bool name="CanCollide">false</bool>
+              <bool name="CanQuery">false</bool>
+              <Color3uint8 name="Color3uint8">2639480</Color3uint8>
+              <token name="Material">272</token>
+              <Vector3 name="size">
+                <X>0.05999756</X>
+                <Y>0.11999512</Y>
+                <Z>1.6000061</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+        </Item>
+        <Item class="SpawnLocation" referent="68">
+          <Properties>
+            <string name="Name">ArenaSpawn</string>
+            <bool name="Anchored">true</bool>
+            <CoordinateFrame name="CFrame">
+              <X>-24</X>
+              <Y>8.199997</Y>
+              <Z>-120</Z>
+              <R00>1</R00>
+              <R01>0</R01>
+              <R02>0</R02>
+              <R10>0</R10>
+              <R11>1</R11>
+              <R12>0</R12>
+              <R20>0</R20>
+              <R21>0</R21>
+              <R22>1</R22>
+            </CoordinateFrame>
+            <Color3uint8 name="Color3uint8">7252710</Color3uint8>
+            <int name="Duration">0</int>
+            <token name="Material">272</token>
+            <bool name="Neutral">true</bool>
+            <Vector3 name="size">
+              <X>6</X>
+              <Y>0.3999939</Y>
+              <Z>6</Z>
+            </Vector3>
+            <token name="TopSurface">0</token>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="69">
+          <Properties>
+            <string name="Name">RigSpot_MrLady</string>
+            <bool name="Anchored">true</bool>
+            <token name="BottomSurface">0</token>
+            <CoordinateFrame name="CFrame">
+              <X>-14</X>
+              <Y>8.100006</Y>
+              <Z>-112</Z>
+              <R00>0</R00>
+              <R01>0</R01>
+              <R02>-1</R02>
+              <R10>0</R10>
+              <R11>1</R11>
+              <R12>0</R12>
+              <R20>1</R20>
+              <R21>0</R21>
+              <R22>0</R22>
+            </CoordinateFrame>
+            <bool name="CanCollide">false</bool>
+            <bool name="CanQuery">false</bool>
+            <bool name="CanTouch">false</bool>
+            <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+            <token name="Material">272</token>
+            <Vector3 name="size">
+              <X>2</X>
+              <Y>0.19999695</Y>
+              <Z>2</Z>
+            </Vector3>
+            <token name="TopSurface">0</token>
+            <float name="Transparency">1</float>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="70">
+          <Properties>
+            <string name="Name">RigSpot_MrPigtails</string>
+            <bool name="Anchored">true</bool>
+            <token name="BottomSurface">0</token>
+            <CoordinateFrame name="CFrame">
+              <X>-14</X>
+              <Y>8.100006</Y>
+              <Z>-128</Z>
+              <R00>0</R00>
+              <R01>0</R01>
+              <R02>-1</R02>
+              <R10>0</R10>
+              <R11>1</R11>
+              <R12>0</R12>
+              <R20>1</R20>
+              <R21>0</R21>
+              <R22>0</R22>
+            </CoordinateFrame>
+            <bool name="CanCollide">false</bool>
+            <bool name="CanQuery">false</bool>
+            <bool name="CanTouch">false</bool>
+            <Color3uint8 name="Color3uint8">14869994</Color3uint8>
+            <token name="Material">272</token>
+            <Vector3 name="size">
+              <X>2</X>
+              <Y>0.19999695</Y>
+              <Z>2</Z>
+            </Vector3>
+            <token name="TopSurface">0</token>
+            <float name="Transparency">1</float>
+          </Properties>
+        </Item>
+        <Item class="Folder" referent="71">
+          <Properties>
+            <string name="Name">Legs</string>
+          </Properties>
+          <Item class="Part" referent="72">
+            <Properties>
+              <string name="Name">Leg</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31</X>
+                <Y>3</Y>
+                <Z>-151</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">9870240</Color3uint8>
+              <token name="Material">816</token>
+              <Vector3 name="size">
+                <X>3</X>
+                <Y>6</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="73">
+            <Properties>
+              <string name="Name">Leg</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>-31</X>
+                <Y>3</Y>
+                <Z>-89</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">9870240</Color3uint8>
+              <token name="Material">816</token>
+              <Vector3 name="size">
+                <X>3</X>
+                <Y>6</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="74">
+            <Properties>
+              <string name="Name">Leg</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>31</X>
+                <Y>3</Y>
+                <Z>-151</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">9870240</Color3uint8>
+              <token name="Material">816</token>
+              <Vector3 name="size">
+                <X>3</X>
+                <Y>6</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+          <Item class="Part" referent="75">
+            <Properties>
+              <string name="Name">Leg</string>
+              <bool name="Anchored">true</bool>
+              <token name="BottomSurface">0</token>
+              <CoordinateFrame name="CFrame">
+                <X>31</X>
+                <Y>3</Y>
+                <Z>-89</Z>
+                <R00>1</R00>
+                <R01>0</R01>
+                <R02>0</R02>
+                <R10>0</R10>
+                <R11>1</R11>
+                <R12>0</R12>
+                <R20>0</R20>
+                <R21>0</R21>
+                <R22>1</R22>
+              </CoordinateFrame>
+              <Color3uint8 name="Color3uint8">9870240</Color3uint8>
+              <token name="Material">816</token>
+              <Vector3 name="size">
+                <X>3</X>
+                <Y>6</Y>
+                <Z>3</Z>
+              </Vector3>
+              <token name="TopSurface">0</token>
+            </Properties>
+          </Item>
+        </Item>
       </Item>
     </Item>
   </Item>
