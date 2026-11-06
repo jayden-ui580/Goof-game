@@ -1,0 +1,3126 @@
+<roblox version="4">
+  <Item class="Folder" referent="0">
+    <Properties>
+      <string name="Name">DragonWishKit</string>
+    </Properties>
+    <Item class="Script" referent="1">
+      <Properties>
+        <string name="Name">README</string>
+        <bool name="Disabled">true</bool>
+        <ProtectedString name="Source"><![CDATA[--[[
+	============================================================================
+	 DRAGON WISH: ONLINE — CHARACTER + POWER-UP KIT   (this script is switched off; it's notes)
+	============================================================================
+
+	WHAT'S IN HERE
+	  ReplicatedStorage      -> HairPhysics  (moves hair and belt ribbons)
+	                            HairConfig   (hair/belt settings: colours, stiffness, aura reaction)
+	                            PowerConfig  (power-up settings: keys, charge speed, aura colours)
+	  ServerScriptService    -> CharacterSetup (every player becomes the Base rig with hair + belt)
+	                            PowerUpServer  (referee for powering up / Super Saiyan)
+	  StarterPlayerScripts   -> HairPhysicsClient (runs the hair + belt physics on each screen)
+	                            PowerUpClient     (R / Space controls, front camera, power bar)
+	                            PowerFX           (aura, stance, dust, rocks, transformation burst)
+	                            HairFitTool       (press H: nudge hair/belt into place)
+	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
+
+	SETUP (once)
+	  1. Your R15 rig must be in ReplicatedStorage and called "Base".
+	  2. Import the three rigged pieces with File > Import 3D:
+	       BaseHair_Rigged.fbx, SSJHair_Rigged.fbx, Belt_Rigged.fbx
+	     (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones").
+	     Drag all three imported models into ServerStorage > CharacterParts.
+	  3. Move the contents of each folder in this kit into the service with the same name
+	     (StarterPlayerScripts is inside StarterPlayer). Then delete this kit folder.
+	  4. In StarterPlayer's properties, untick LoadCharacterAppearance (the script tries to do
+	     this itself, but some places don't allow it from a script).
+	  5. Press Play (F5).
+
+	CONTROLS (in Play)
+	  R       power up: the camera swings round to face you and you take a ready stance.
+	          R again cancels. As a Super Saiyan, R powers back down to base.
+	          (phones: the round POWER button on the right does the same as R)
+	  Space   spam it to fill the power bar (phones: the big TAP button).
+	          The aura grows bigger and faster, hair and belt blow upward. Once the bar is
+	          full it stays full, and (after at least 2.5 s of charging) you burst into
+	          Super Saiyan; the golden hair then flows calmly.
+	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
+
+	TWEAKING
+	  HairConfig: hair/belt colours (Color), textures (TextureId), placement (Offset),
+	              how stiff/floppy, and how hard the aura blows them (AuraLift / AuraSwirl).
+	  PowerConfig: keys, how fast the bar fills/drains, minimum charge time, aura colours and
+	               size, camera distance and shake.
+]]
+]]></ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="Folder" referent="2">
+      <Properties>
+        <string name="Name">ReplicatedStorage</string>
+      </Properties>
+      <Item class="ModuleScript" referent="3">
+        <Properties>
+          <string name="Name">HairPhysics</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairPhysics  (ModuleScript — lives in ReplicatedStorage)
+
+	The hair simulator. It runs on each player's computer (the LocalScript
+	"HairPhysicsClient" starts it), because bone movement is purely visual and
+	Roblox intentionally does not send Bone.Transform changes over the network.
+
+	How it works, in plain English:
+	  * Every hair strand is a "chain" of bones (PigL_1 -> PigL_2 -> ... -> PigL_End).
+	    Each joint between bones is treated like a little bead on a string.
+	  * Each frame the beads keep their momentum, get pulled down by gravity, and
+	    get dragged along when the head moves (that's the swing / lag).
+	  * Then rules are applied to the beads, in order:
+	      1. Length   – the string never stretches.
+	      2. Shape    – each bone springs back toward the shape the hair was modeled in.
+	      3. Bend cap – no joint can bend more than MaxBend degrees, so a strand can never
+	                    fold back on itself.
+	      4. Body     – beads are pushed out of the head / torso / upper arms.
+	      5. Hair     – every bone is a capsule (a pill shape); capsules from different
+	                    strands (and far-apart parts of the same strand) push each other
+	                    apart, so strands can't pass through each other or bunch into one spot.
+	  * Finally the bones are rotated to point at their beads, which bends the mesh.
+
+	Every tunable lives in HairConfig — you shouldn't need to edit this file.
+]]
+
+local HairPhysics = {}
+
+HairPhysics.TAG = "HairPhysics" -- CollectionService tag the server puts on hair parts
+
+local STEP = 1 / 60 -- the simulation always runs in fixed 60 Hz slices, so it behaves the
+-- same at any frame rate; frames in between are smoothed (see WriteBones)
+local MAX_SUBSTEPS = 4 -- most slices per frame (protects low frame rates)
+local TELEPORT_DISTANCE = 8 -- head moved further than this in one frame? reset the hair
+local EPS = 1e-6
+
+-- Used for anything a hair's Physics table in HairConfig leaves out.
+local DEFAULTS = {
+	Gravity = 30,
+	GravityCompensation = 1,
+	Damping = 0.3,
+	Inertia = 0.25,
+	Stiffness = { 0.3, 0.2, 0.14, 0.1, 0.08 },
+	MaxBend = { 20, 18, 20, 22, 25 },
+	ShapeFollow = 0.3,
+	Bounce = 0.1,
+	MaxSpeed = 25,
+	InertiaSmoothing = 0.06,
+	-- power-up "aura wind": the wearer's character carries an AuraWind attribute (0..1); at 1 the
+	-- hair is pushed up with AuraLift (studs/s²) and whipped around with AuraSwirl
+	AuraAttribute = "AuraWind",
+	AuraLift = 0,
+	AuraSwirl = 0,
+	AuraSwirlSpeed = 3,
+	AuraResponse = 4, -- how quickly the hair reacts when the aura changes (per second)
+	SheetLinks = {},
+	SheetSlack = 0.12,
+	Wind = Vector3.zero,
+	WindGust = 0,
+	SelfCollision = true,
+	SelfCollisionRadiusScale = 1,
+	SelfCollisionRange = 1.2,
+	CollisionIterations = 2,
+	BodyColliders = { "Head", "UpperTorso", "Torso", "LeftUpperArm", "RightUpperArm" },
+	TorsoExtendDown = 0.4,
+	HeadColliderScale = 1.05,
+	BodyColliderScale = 0.95,
+	BodyRadiusScale = 0.8,
+	SimulationDistance = 150,
+	ChainOverrides = {},
+}
+HairPhysics.DEFAULTS = DEFAULTS
+
+----------------------------------------------------------------------------------------
+-- small vector helpers (no CFrames in the hot loop: they're slower than plain vectors)
+----------------------------------------------------------------------------------------
+
+-- Rotates v by the rotation that turns unit vector a into unit vector b.
+local function rotateByArc(v: Vector3, a: Vector3, b: Vector3): Vector3
+	local axis = a:Cross(b)
+	local s2 = axis:Dot(axis)
+	local c = a:Dot(b)
+	if s2 < EPS then
+		if c > 0 then
+			return v
+		end
+		-- a and b point opposite ways: spin 180 degrees around any axis at right angles to a
+		local perp = (math.abs(a.X) < 0.9 and Vector3.xAxis or Vector3.yAxis):Cross(a).Unit
+		return perp * (2 * perp:Dot(v)) - v
+	end
+	return v * c + axis:Cross(v) + axis * (axis:Dot(v) * (1 - c) / s2)
+end
+
+-- Rotation-only CFrame that turns unit vector a into unit vector b.
+local function arcCFrame(a: Vector3, b: Vector3): CFrame
+	local axis = a:Cross(b)
+	local w = 1 + a:Dot(b)
+	if w < EPS then
+		local perp = (math.abs(a.X) < 0.9 and Vector3.xAxis or Vector3.yAxis):Cross(a).Unit
+		return CFrame.new(0, 0, 0, perp.X, perp.Y, perp.Z, 0)
+	end
+	local m = math.sqrt(axis:Dot(axis) + w * w)
+	return CFrame.new(0, 0, 0, axis.X / m, axis.Y / m, axis.Z / m, w / m)
+end
+
+-- If dir points more than maxAngle away from target, swing it back onto the edge of that cone.
+local function clampToCone(dir: Vector3, target: Vector3, cosMax: number, sinMax: number): Vector3
+	if dir:Dot(target) >= cosMax then
+		return dir
+	end
+	local axis = target:Cross(dir)
+	local s = axis.Magnitude
+	if s < EPS then
+		axis = (math.abs(target.X) < 0.9 and Vector3.xAxis or Vector3.yAxis):Cross(target)
+		s = axis.Magnitude
+	end
+	return target * cosMax + (axis / s):Cross(target) * sinMax
+end
+
+-- Closest points between segments p1-q1 and p2-q2 (Ericson, Real-Time Collision Detection 5.1.9).
+-- Returns s, t: how far along each segment (0..1) the closest points are.
+local function closestSegSeg(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3): (number, number)
+	local d1, d2, r = q1 - p1, q2 - p2, p1 - p2
+	local a, e, f = d1:Dot(d1), d2:Dot(d2), d2:Dot(r)
+	if a <= EPS and e <= EPS then
+		return 0, 0
+	end
+	if a <= EPS then
+		return 0, math.clamp(f / e, 0, 1)
+	end
+	local c = d1:Dot(r)
+	if e <= EPS then
+		return math.clamp(-c / a, 0, 1), 0
+	end
+	local b = d1:Dot(d2)
+	local denom = a * e - b * b
+	local s = denom > EPS and math.clamp((b * f - c * e) / denom, 0, 1) or 0
+	local t = (b * s + f) / e
+	if t < 0 then
+		return math.clamp(-c / a, 0, 1), 0
+	elseif t > 1 then
+		return math.clamp((b - c) / a, 0, 1), 1
+	end
+	return s, t
+end
+
+HairPhysics.rotateByArc = rotateByArc
+HairPhysics.closestSegSeg = closestSegSeg
+
+-- Value for bone index k from a per-bone list; lists shorter than the chain reuse their last value.
+local function pick(list, k: number): number
+	if type(list) ~= "table" then
+		return list
+	end
+	return list[math.min(k, #list)]
+end
+
+-- A bone's CFrame relative to the MeshPart it lives in (walks up through parent bones).
+local function partSpaceCFrame(inst: Instance, part: BasePart): CFrame?
+	if inst == part then
+		return CFrame.identity
+	end
+	local cf = CFrame.identity
+	local node: Instance? = inst
+	while node ~= part do
+		if node == nil or not node:IsA("Bone") then
+			return nil
+		end
+		cf = (node :: Bone).CFrame * cf
+		node = node.Parent
+	end
+	return cf
+end
+
+HairPhysics.PartSpaceCFrame = partSpaceCFrame
+
+----------------------------------------------------------------------------------------
+-- Rig fitting (used by the server when it puts hair on a head)
+----------------------------------------------------------------------------------------
+
+-- The 24 ways a model can be turned so its sides still line up with the axes (what an
+-- importer's "which way is up/forward" setting can do to a mesh).
+local AXIS_ROTATIONS = {}
+do
+	local axes = { Vector3.xAxis, -Vector3.xAxis, Vector3.yAxis, -Vector3.yAxis, Vector3.zAxis, -Vector3.zAxis }
+	for _, x in axes do
+		for _, y in axes do
+			if math.abs(x:Dot(y)) < 0.5 then
+				table.insert(AXIS_ROTATIONS, CFrame.fromMatrix(Vector3.zero, x, y, x:Cross(y)))
+			end
+		end
+	end
+end
+
+-- Works out how the imported hair relates to the rig as designed: compares where each bone
+-- was modeled (design, head space) with where it actually ended up inside the MeshPart
+-- (actual, part space). Returns the scale, turn and shift that map one onto the other, plus
+-- Error = average mismatch in studs (should be ~0).
+function HairPhysics.FitRig(design: { Vector3 }, actual: { Vector3 })
+	local n = #design
+	local cd, ca = Vector3.zero, Vector3.zero
+	for i = 1, n do
+		cd += design[i]
+		ca += actual[i]
+	end
+	cd /= n
+	ca /= n
+	local spread = 0
+	for i = 1, n do
+		local d = design[i] - cd
+		spread += d:Dot(d)
+	end
+	local best
+	for _, rot in AXIS_ROTATIONS do
+		local num = 0
+		for i = 1, n do
+			num += rot:VectorToWorldSpace(design[i] - cd):Dot(actual[i] - ca)
+		end
+		local scale = num / spread
+		if scale > 0 then
+			local err = 0
+			for i = 1, n do
+				local e = rot:VectorToWorldSpace(design[i] - cd) * scale - (actual[i] - ca)
+				err += e:Dot(e)
+			end
+			if not best or err < best.err then
+				best = { err = err, rot = rot, scale = scale }
+			end
+		end
+	end
+	return {
+		Scale = best.scale,
+		Rotation = best.rot,
+		Translation = ca - best.rot:VectorToWorldSpace(cd) * best.scale,
+		Error = math.sqrt(best.err / n),
+	}
+end
+
+-- CFrame of the hair part relative to the head, from a FitRig result: puts the modeled head
+-- centre of the hair on the head's centre, facing the same way.
+function HairPhysics.HeadToPart(fit): CFrame
+	return (CFrame.new(fit.Translation) * fit.Rotation):Inverse()
+end
+
+local function mergeSettings(overrides)
+	local s = table.clone(DEFAULTS)
+	for key, value in overrides or {} do
+		s[key] = value
+	end
+	return s
+end
+HairPhysics.mergeSettings = mergeSettings
+
+----------------------------------------------------------------------------------------
+-- Sim: one simulated hair (one MeshPart with bone chains)
+----------------------------------------------------------------------------------------
+
+local Sim = {}
+Sim.__index = Sim
+HairPhysics.Sim = Sim
+
+local function buildChain(part: BasePart, spec, settings)
+	local bones = {}
+	for _, name in spec.Bones do
+		local bone = part:FindFirstChild(name, true)
+		if not (bone and bone:IsA("Bone")) then
+			return nil, ("bone '%s' missing"):format(name)
+		end
+		table.insert(bones, bone)
+	end
+	local n = #bones
+	local parentRest = partSpaceCFrame(bones[1].Parent :: Instance, part)
+	if not parentRest then
+		return nil, ("bone '%s' is not inside the hair part"):format(spec.Bones[1])
+	end
+
+	-- joint positions in the part's own space; joint n+1 is the strand tip
+	local J, restCF = {}, {}
+	for k, bone in bones do
+		restCF[k] = partSpaceCFrame(bone, part) :: CFrame
+		J[k] = restCF[k].Position
+	end
+	local tip = spec.Tip and part:FindFirstChild(spec.Tip, true)
+	if tip and tip:IsA("Bone") and partSpaceCFrame(tip, part) then
+		J[n + 1] = (partSpaceCFrame(tip, part) :: CFrame).Position
+	elseif n >= 2 then
+		-- tip bone didn't survive import: extend the last bone by the length of the one before
+		J[n + 1] = J[n] + (J[n] - J[n - 1])
+	else
+		J[n + 1] = J[n] + Vector3.new(0, -0.4, 0)
+	end
+
+	-- per-chain overrides (e.g. "Lock" = both front locks) on top of the hair's settings
+	local stiff, bend = settings.Stiffness, settings.MaxBend
+	for prefix, ov in settings.ChainOverrides do
+		if spec.Name:sub(1, #prefix) == prefix then
+			stiff = ov.Stiffness or stiff
+			bend = ov.MaxBend or bend
+		end
+	end
+
+	local chain = {
+		Name = spec.Name,
+		Bones = bones,
+		N = n,
+		BoneCF = {},
+		ParentRest = parentRest,
+		J = J,
+		RestLen = {},
+		RestDir = {},
+		ChildOffset = {},
+		Radius = {},
+		SegRadius = {},
+		Stiffness = {},
+		CosMax = {},
+		SinMax = {},
+		Pos = {},
+		Prev = {},
+		Phase = (#spec.Name * 1.37 + string.byte(spec.Name, -1) * 0.71) % (math.pi * 2), -- each strand flutters differently
+		LocalPrev = {}, -- bead positions relative to the hair part, previous slice
+		LocalCur = {}, -- ... and latest slice (drawn frames blend between the two)
+		BodyRadius = {},
+	}
+	for k = 1, n do
+		chain.BoneCF[k] = bones[k].CFrame
+		local d = J[k + 1] - J[k]
+		chain.RestLen[k] = math.max(d.Magnitude, 0.01)
+		chain.RestDir[k] = d.Magnitude > EPS and d.Unit or Vector3.new(0, -1, 0)
+		chain.ChildOffset[k] = restCF[k]:PointToObjectSpace(J[k + 1])
+		chain.Stiffness[k] = math.clamp(pick(stiff, k), 0, 1)
+		local maxBend = math.rad(math.clamp(pick(bend, k), 1, 179))
+		chain.CosMax[k] = math.cos(maxBend)
+		chain.SinMax[k] = math.sin(maxBend)
+	end
+	for k = 1, n + 1 do
+		chain.Radius[k] = pick(spec.Radii or 0.15, k)
+	end
+	for k = 1, n do
+		chain.SegRadius[k] = (chain.Radius[k] + chain.Radius[k + 1]) * 0.5 * settings.SelfCollisionRadiusScale
+	end
+	return chain
+end
+
+-- Hair-vs-hair capsule pairs. The allowed gap is shrunk wherever two capsules already
+-- overlap in the modeled pose, so the collision never fights the hair's own shape.
+local function buildPairs(chains, range: number)
+	local pairsList = {}
+	for ia, A in chains do
+		for ib = ia, #chains do
+			local B = chains[ib]
+			for a = 1, A.N do
+				for b = (ia == ib) and a + 2 or 1, B.N do
+					local s, t = closestSegSeg(A.J[a], A.J[a + 1], B.J[b], B.J[b + 1])
+					local pa = A.J[a]:Lerp(A.J[a + 1], s)
+					local pb = B.J[b]:Lerp(B.J[b + 1], t)
+					local restGap = (pa - pb).Magnitude
+					local minDist = math.min(A.SegRadius[a] + B.SegRadius[b], restGap * 0.9)
+					if minDist > 0.03 and restGap < range then
+						table.insert(pairsList, {
+							A = A,
+							a = a,
+							B = B,
+							b = b,
+							MinDist = minDist,
+							Reach = (A.RestLen[a] + B.RestLen[b]) * 0.5 + minDist,
+						})
+					end
+				end
+			end
+		end
+	end
+	return pairsList
+end
+
+function Sim.new(part: BasePart, layout, settings)
+	local self = setmetatable({}, Sim)
+	self.Part = part
+	self.Settings = settings
+	self.Chains = {}
+	self.Colliders = {}
+	self.Awake = false
+	self.Time = 0
+	local problems = {}
+	for _, spec in layout.Chains do
+		local chain, err = buildChain(part, spec, settings)
+		if chain then
+			table.insert(self.Chains, chain)
+		else
+			table.insert(problems, err)
+		end
+	end
+	if #self.Chains == 0 then
+		return nil, "no usable bone chains (" .. table.concat(problems, ", ") .. ")"
+	end
+	self.Problems = problems
+	self.Pairs = settings.SelfCollision and buildPairs(self.Chains, settings.SelfCollisionRange) or {}
+	self.Links = {}
+	local byName = {}
+	for _, chain in self.Chains do
+		byName[chain.Name] = chain
+	end
+	for _, pair in settings.SheetLinks do
+		local A, B = byName[pair[1]], byName[pair[2]]
+		if A and B then
+			local link = { A = A, B = B, Count = math.min(A.N, B.N) + 1, Rest = {} }
+			for k = 1, link.Count do
+				link.Rest[k] = math.max((A.J[k] - B.J[k]).Magnitude, 0.01)
+			end
+			table.insert(self.Links, link)
+		end
+	end
+	return self
+end
+
+-- Finds the character this hair is worn by (first ancestor Model that has a Humanoid).
+local function findCharacter(part: Instance): Model?
+	local node = part.Parent
+	while node do
+		if node:IsA("Model") and node:FindFirstChildOfClass("Humanoid") then
+			return node
+		end
+		node = node.Parent
+	end
+	return nil
+end
+
+-- Body collider shapes: Head = sphere, everything else = box. The UpperTorso box is stretched
+-- down over the LowerTorso (TorsoExtendDown) — two stacked boxes would keep shoving a strand
+-- that sits at the seam back and forth between them.
+function Sim:BuildColliders(character: Model?)
+	local s = self.Settings
+	self.Colliders = {}
+	if not character then
+		return
+	end
+	for _, name in s.BodyColliders do
+		local bp = character:FindFirstChild(name)
+		if bp and bp:IsA("BasePart") then
+			if name == "Head" then
+				local size = bp.Size
+				table.insert(self.Colliders, {
+					Part = bp,
+					Sphere = true,
+					Radius = math.min(size.X, size.Y, size.Z) * 0.5 * s.HeadColliderScale,
+					Offset = CFrame.identity,
+				})
+			else
+				local half = bp.Size * 0.5 * s.BodyColliderScale
+				local offset = CFrame.identity
+				if name == "UpperTorso" and s.TorsoExtendDown > 0 then
+					half += Vector3.new(0, s.TorsoExtendDown * 0.5, 0)
+					offset = CFrame.new(0, -s.TorsoExtendDown * 0.5, 0)
+				end
+				table.insert(self.Colliders, { Part = bp, Sphere = false, Half = half, Offset = offset })
+			end
+		end
+	end
+end
+
+-- Signed distance from point p to a collider's surface (negative = inside).
+local function colliderDistance(col, p: Vector3): number
+	local cf = col.Part.CFrame * col.Offset
+	if col.Sphere then
+		return (p - cf.Position).Magnitude - col.Radius
+	end
+	local lp = cf:PointToObjectSpace(p)
+	local q = Vector3.new(math.abs(lp.X), math.abs(lp.Y), math.abs(lp.Z)) - col.Half
+	local outside = Vector3.new(math.max(q.X, 0), math.max(q.Y, 0), math.max(q.Z, 0)).Magnitude
+	return outside + math.min(math.max(q.X, q.Y, q.Z), 0)
+end
+
+HairPhysics.colliderDistance = colliderDistance
+
+-- Puts every bead back at its modeled position (used on start and after teleports).
+function Sim:ResetToRest(partCF: CFrame)
+	for _, chain in self.Chains do
+		for k = 1, chain.N + 1 do
+			local p = partCF * chain.J[k]
+			chain.Pos[k] = p
+			chain.Prev[k] = p
+			chain.LocalPrev[k] = chain.J[k]
+			chain.LocalCur[k] = chain.J[k]
+		end
+	end
+	self.AnchorCF = partCF
+	self.SmoothCF = partCF
+	self.LastCF = partCF
+	self.LastH = STEP
+	self.Accum = 0
+	for _, col in self.Colliders do
+		col.To = nil -- don't sweep body parts across a teleport
+	end
+end
+
+function Sim:Wake(partCF: CFrame)
+	self.Character = findCharacter(self.Part)
+	self.Aura = 0
+	self:BuildColliders(self.Character)
+	for _, col in self.Colliders do
+		col.From = col.Part.CFrame
+		col.To = col.From
+	end
+	self:ResetToRest(partCF)
+	-- How far each bead may get from each body part. A bead that already sits closer than its
+	-- radius in the modeled pose gets a smaller radius, and one that starts inside ignores that
+	-- part, so the body never shoves the hair out of its own resting shape.
+	local s = self.Settings
+	for _, chain in self.Chains do
+		for k = 2, chain.N + 1 do
+			local radii = {}
+			for ci, col in self.Colliders do
+				local gap = colliderDistance(col, chain.Pos[k])
+				radii[ci] = gap > 0.01 and math.min(chain.Radius[k] * s.BodyRadiusScale, gap * 0.9) or false
+			end
+			chain.BodyRadius[k] = radii
+		end
+	end
+	self.Awake = true
+end
+
+function Sim:Sleep()
+	self.Awake = false
+	for _, chain in self.Chains do
+		for _, bone in chain.Bones do
+			if bone.Parent then
+				bone.Transform = CFrame.identity
+			end
+		end
+	end
+end
+
+-- Rules 1-3: length, spring back to the modeled shape, bend cap. Works root -> tip.
+-- The bend cap is measured against the bone above (so a strand can never fold), while the
+-- spring pulls mostly toward the modeled direction relative to the head (ShapeFollow).
+--
+-- gravityStep (optional) is this slice's pull of gravity. The modeled shape is how the hair
+-- already hangs under gravity, so without help gravity would sag it below that shape at rest.
+-- Gravity compensation aims the spring a little above the modeled shape by exactly the amount
+-- gravity drags it down, so a still character's hair sits in its modeled pose, while swings,
+-- jumps and falls still move it.
+function Sim:SolveShape(chain, rot: CFrame, stiffnessFactor: number, gravityStep: Vector3?)
+	local s = self.Settings
+	local follow = s.ShapeFollow
+	local keepBounce = 1 - s.Bounce
+	local pos, prev = chain.Pos, chain.Prev
+	local prevRest, prevDir
+	for k = 1, chain.N do
+		local restW = rot:VectorToWorldSpace(chain.RestDir[k])
+		-- the direction the bone would have if it just followed the bone above it
+		local relative = (k == 1) and restW or rotateByArc(restW, prevRest, prevDir)
+		local d = pos[k + 1] - pos[k]
+		local len = d.Magnitude
+		local dir = len > EPS and d / len or relative
+		if stiffnessFactor > 0 then
+			-- spring target: mostly the modeled direction relative to the HEAD (holds the hairstyle),
+			-- a little relative to the bone above (lets the strand curve as it swings)
+			local target = relative
+			if follow < 1 then
+				local blend = restW * (1 - follow) + relative * follow
+				local bm = blend.Magnitude
+				target = bm > EPS and blend / bm or relative
+			end
+			local st = 1 - (1 - chain.Stiffness[k]) ^ stiffnessFactor
+			local aim = target
+			if gravityStep and st > 0.01 then
+				-- at rest the spring has to cancel gravity every slice; because most of the spring's
+				-- push is kept out of the speed (Bounce), it has to push harder than gravity alone
+				local gain = 1 / math.max(1 - (self.StepKeep or 0) * keepBounce, 0.05)
+				local sideways = gravityStep - target * gravityStep:Dot(target)
+				aim = (target - sideways * (gain * (1 - st) / (st * chain.RestLen[k]))).Unit
+			end
+			local before = dir
+			dir = dir + (aim - dir) * st
+			local m = dir.Magnitude
+			dir = m > EPS and dir / m or target
+			-- the spring's push mostly doesn't turn into speed, so the hair eases back into shape
+			-- instead of overshooting and wobbling (that wobble is what looks like jelly)
+			prev[k + 1] += (dir - before) * (chain.RestLen[k] * keepBounce)
+		end
+		dir = clampToCone(dir, relative, chain.CosMax[k], chain.SinMax[k])
+		pos[k + 1] = pos[k] + dir * chain.RestLen[k]
+		prevRest, prevDir = restW, dir
+	end
+end
+
+-- Neighbouring strands of one sheet of hair (the long hair's back) are tied together like
+-- cloth: the gap between them may only grow or shrink by SheetSlack. Without this, strands
+-- drift apart or bunch up and the mesh stretched between them squishes like jelly.
+function Sim:SolveLinks()
+	local slack = self.Settings.SheetSlack
+	for _, link in self.Links do
+		local A, B = link.A, link.B
+		local PA, PB = A.Pos, B.Pos
+		for k = 2, link.Count do
+			local d = PA[k] - PB[k]
+			local m = d.Magnitude
+			local rest = link.Rest[k]
+			local hi, lo = rest * (1 + slack), rest * (1 - slack)
+			local fix = 0
+			if m > hi then
+				fix = m - hi
+			elseif m < lo then
+				fix = m - lo
+			end
+			if fix ~= 0 and m > EPS then
+				local push = d * (0.5 * fix / m)
+				PA[k] -= push
+				PB[k] += push
+			end
+		end
+	end
+end
+
+-- Rule 4: push beads out of the body parts. Body parts are placed where they were at the same
+-- moment as the slice being simulated (between last frame and this one), not where they are now.
+function Sim:CollideBody()
+	local colliders = self.Colliders
+	if #colliders == 0 then
+		return
+	end
+	local frames = {}
+	local alpha = self.SliceAlpha or 1
+	for ci, col in colliders do
+		frames[ci] = col.From:Lerp(col.To, alpha) * col.Offset
+	end
+	for _, chain in self.Chains do
+		local pos, prev = chain.Pos, chain.Prev
+		for k = 2, chain.N + 1 do
+			local radii = chain.BodyRadius[k]
+			local p = pos[k]
+			for ci, col in colliders do
+				local r = radii[ci]
+				if r then
+					local cf = frames[ci]
+					if col.Sphere then
+						local c = cf.Position
+						local d = p - c
+						local m = d.Magnitude
+						local reach = col.Radius + r
+						if m < reach and m > EPS then
+							p = c + d * (reach / m)
+						end
+					else
+						-- box with rounded edges (the bead is a ball of radius r)
+						local lp = cf:PointToObjectSpace(p)
+						local half = col.Half
+						local ax, ay, az = math.abs(lp.X), math.abs(lp.Y), math.abs(lp.Z)
+						if ax < half.X + r and ay < half.Y + r and az < half.Z + r then
+							local cx = math.clamp(lp.X, -half.X, half.X)
+							local cy = math.clamp(lp.Y, -half.Y, half.Y)
+							local cz = math.clamp(lp.Z, -half.Z, half.Z)
+							local out = lp - Vector3.new(cx, cy, cz)
+							local m = out.Magnitude
+							if m > EPS then
+								-- outside the box but too close to it: push straight away
+								if m < r then
+									p = cf:PointToWorldSpace(Vector3.new(cx, cy, cz) + out * (r / m))
+								end
+							else
+								-- inside: leave through the nearest face, unless the bead was outside
+								-- the opposite face last slice (it moved so fast it went past the
+								-- middle) - then send it back out the side it came from
+								local px, py, pz = half.X - ax, half.Y - ay, half.Z - az
+								local lq = cf:PointToObjectSpace(prev[k])
+								local axis, side, lqc, h
+								if px <= py and px <= pz then
+									axis, side, lqc, h = 1, lp.X, lq.X, half.X
+								elseif py <= pz then
+									axis, side, lqc, h = 2, lp.Y, lq.Y, half.Y
+								else
+									axis, side, lqc, h = 3, lp.Z, lq.Z, half.Z
+								end
+								if math.abs(lqc) > h and (lqc >= 0) ~= (side >= 0) then
+									side = lqc
+								end
+								local face = (side >= 0 and 1 or -1) * (h + r)
+								if axis == 1 then
+									lp = Vector3.new(face, lp.Y, lp.Z)
+								elseif axis == 2 then
+									lp = Vector3.new(lp.X, face, lp.Z)
+								else
+									lp = Vector3.new(lp.X, lp.Y, face)
+								end
+								p = cf:PointToWorldSpace(lp)
+							end
+						end
+					end
+				end
+			end
+			pos[k] = p
+		end
+	end
+end
+
+-- Rule 5: bone capsules push each other apart (joint 1 of every chain is pinned to the head).
+function Sim:CollideSelf()
+	for _, pr in self.Pairs do
+		local A, a, B, b = pr.A, pr.a, pr.B, pr.b
+		local PA, PB = A.Pos, B.Pos
+		local a0, a1, b0, b1 = PA[a], PA[a + 1], PB[b], PB[b + 1]
+		if ((a0 + a1) - (b0 + b1)).Magnitude * 0.5 < pr.Reach then
+			local s, t = closestSegSeg(a0, a1, b0, b1)
+			local ca = a0 + (a1 - a0) * s
+			local cb = b0 + (b1 - b0) * t
+			local d = ca - cb
+			local m = d.Magnitude
+			local minDist = pr.MinDist
+			if m < minDist then
+				local normal = m > EPS and d / m or (a1 - b1).Unit
+				-- how much each end can move (pinned root joints can't)
+				local wa0 = a > 1 and (1 - s) or 0
+				local wa1 = s
+				local wb0 = b > 1 and (1 - t) or 0
+				local wb1 = t
+				local denom = wa0 * wa0 + wa1 * wa1 + wb0 * wb0 + wb1 * wb1
+				if denom > 0.05 then
+					local lambda = (minDist - m) / denom
+					if wa0 > 0 then
+						PA[a] += normal * (lambda * wa0)
+					end
+					PA[a + 1] += normal * (lambda * wa1)
+					if wb0 > 0 then
+						PB[b] -= normal * (lambda * wb0)
+					end
+					PB[b + 1] -= normal * (lambda * wb1)
+				end
+			end
+		end
+	end
+end
+
+function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
+	local s = self.Settings
+	self.SliceAlpha = sliceAlpha or 1
+	-- The hair is carried along with the head, minus a share (Inertia) of the head's movement
+	-- that gets left behind — that's what makes it trail and swing. The left-behind share is
+	-- taken from a smoothed copy of the head's path, so tiny shakes (network jitter on NPCs,
+	-- animation noise) move the hair together with the head instead of making it shiver.
+	local delta = anchorCF * self.AnchorCF:Inverse()
+	self.AnchorCF = anchorCF
+	local smoothOld = self.SmoothCF
+	self.SmoothCF = smoothOld:Lerp(anchorCF, 1 - math.exp(-h / s.InertiaSmoothing))
+	local smoothDelta = self.SmoothCF * smoothOld:Inverse()
+	local inertia = s.Inertia
+	local rot = anchorCF.Rotation
+
+	local ratio = math.clamp(h / self.LastH, 0.5, 2)
+	self.LastH = h
+	local keep = (1 - s.Damping) ^ (h * 60)
+	self.StepKeep = keep
+	local maxStep = s.MaxSpeed * h
+	self.Time += h
+	local wind = s.Wind
+	if s.WindGust > 0 then
+		wind *= 1 + s.WindGust * math.sin(self.Time * 1.7) * math.sin(self.Time * 0.63 + 1)
+	end
+	local gravity = Vector3.new(0, -s.Gravity, 0) * (h * h)
+	local aura = self.Aura or 0
+	local accel = gravity + (wind + Vector3.new(0, s.AuraLift * aura, 0)) * (h * h)
+	local compensation = s.GravityCompensation > 0 and gravity * s.GravityCompensation or nil
+	local swirl = s.AuraSwirl * aura * h * h
+
+	for _, chain in self.Chains do
+		local pos, prev = chain.Pos, chain.Prev
+		pos[1] = anchorCF * chain.J[1]
+		prev[1] = pos[1]
+		local chainAccel = accel
+		if swirl > 0 then
+			-- turbulent wind from the aura: every strand gets its own flutter
+			local t = self.Time * s.AuraSwirlSpeed + chain.Phase
+			chainAccel += Vector3.new(math.sin(t), 0.4 * math.sin(t * 1.7 + 1), math.cos(t * 1.3)) * swirl
+		end
+		for k = 2, chain.N + 1 do
+			local p, q = pos[k], prev[k]
+			p = delta * p - (smoothDelta * p - p) * inertia
+			q = delta * q - (smoothDelta * q - q) * inertia
+			local vel = (p - q) * (keep * ratio)
+			local speed = vel.Magnitude
+			if speed > maxStep then
+				vel *= maxStep / speed -- no strand whips faster than MaxSpeed
+			end
+			prev[k] = p
+			pos[k] = p + vel + chainAccel
+		end
+		self:SolveShape(chain, rot, h * 60, compensation)
+	end
+
+	-- collisions go last so nothing is left inside the body or another strand; the small
+	-- length error this can leave is fixed by the next slice and never shows (bones only aim)
+	for i = 1, s.CollisionIterations do
+		if i > 1 then
+			for _, chain in self.Chains do
+				self:SolveShape(chain, rot, 0)
+			end
+		end
+		if #self.Links > 0 then
+			self:SolveLinks()
+		end
+		self:CollideBody()
+		if #self.Pairs > 0 then
+			self:CollideSelf()
+		end
+	end
+	-- the body gets the very last word: hair poking into a body part is the most visible error
+	self:CollideBody()
+end
+
+-- Turns each bone so it points at the next bead. Only Bone.Transform is touched, so the
+-- modeled pose (Bone.CFrame) is never changed.
+-- alpha (0..1) blends between the last two simulation slices for frames that land between them.
+function Sim:WriteBones(partCF: CFrame, alpha: number)
+	for _, chain in self.Chains do
+		local lprev, lcur = chain.LocalPrev, chain.LocalCur
+		local parentWorld = partCF * chain.ParentRest
+		for k = 1, chain.N do
+			local restWorld = parentWorld * chain.BoneCF[k]
+			local restDir = restWorld:VectorToWorldSpace(chain.ChildOffset[k])
+			local bead = partCF * lprev[k + 1]:Lerp(lcur[k + 1], alpha)
+			local simDir = bead - restWorld.Position
+			local newWorld = restWorld
+			if simDir.Magnitude > EPS and restDir.Magnitude > EPS then
+				local arc = arcCFrame(restDir.Unit, simDir.Unit)
+				newWorld = CFrame.new(restWorld.Position) * arc * restWorld.Rotation
+			end
+			chain.Bones[k].Transform = restWorld:ToObjectSpace(newWorld)
+			parentWorld = newWorld
+		end
+	end
+end
+
+-- Call once per rendered frame.
+function Sim:Update(dt: number, cameraPosition: Vector3?)
+	-- a hidden hair (e.g. the Super Saiyan hair while in base form) isn't simulated at all
+	if self.Part.Transparency >= 0.99 then
+		if self.Awake then
+			self:Sleep()
+		end
+		return
+	end
+	local partCF = self.Part.CFrame
+	if cameraPosition and (partCF.Position - cameraPosition).Magnitude > self.Settings.SimulationDistance then
+		if self.Awake then
+			self:Sleep()
+		end
+		return
+	end
+	if not self.Awake then
+		self:Wake(partCF)
+	elseif (partCF.Position - self.LastCF.Position).Magnitude > TELEPORT_DISTANCE then
+		self:ResetToRest(partCF)
+	end
+
+	dt = math.clamp(dt, 1e-4, 0.25)
+	local character = self.Character
+	local auraTarget = character and character:GetAttribute(self.Settings.AuraAttribute) or 0
+	self.Aura += (auraTarget - self.Aura) * (1 - math.exp(-dt * self.Settings.AuraResponse))
+	for _, col in self.Colliders do
+		col.From = col.To or col.Part.CFrame
+		col.To = col.Part.CFrame
+	end
+	local carried = self.Accum
+	self.Accum += dt
+	local from = self.LastCF
+	local steps = 0
+	while self.Accum >= STEP and steps < MAX_SUBSTEPS do
+		steps += 1
+		self.Accum -= STEP
+		-- where the head was at the moment this slice ends (somewhere inside this frame)
+		local alpha = math.clamp((steps * STEP - carried) / dt, 0, 1)
+		local anchor = from:Lerp(partCF, alpha)
+		self:Substep(STEP, anchor, alpha)
+		for _, chain in self.Chains do
+			local lprev, lcur, pos = chain.LocalPrev, chain.LocalCur, chain.Pos
+			for k = 1, chain.N + 1 do
+				lprev[k] = lcur[k]
+				lcur[k] = anchor:PointToObjectSpace(pos[k])
+			end
+		end
+	end
+	if self.Accum >= STEP then
+		self.Accum = 0 -- the game is running too slowly to keep up; skip ahead rather than spiral
+	end
+	self.LastCF = partCF
+	self:WriteBones(partCF, self.Accum / STEP)
+end
+
+----------------------------------------------------------------------------------------
+-- Client runner: simulates every part tagged "HairPhysics"
+----------------------------------------------------------------------------------------
+
+local started = false
+
+function HairPhysics.StartClient()
+	if started then
+		return
+	end
+	started = true
+
+	local RunService = game:GetService("RunService")
+	local CollectionService = game:GetService("CollectionService")
+	local Workspace = game:GetService("Workspace")
+	local HairConfig = require(script.Parent:WaitForChild("HairConfig"))
+
+	local sims = {} -- [part] = Sim
+	local waiting = {} -- [part] = time we started waiting for its bones to arrive
+
+	-- returns true when done with the part (started, or hopeless), false to try again later
+	local function tryStart(part: Instance): (boolean, string?)
+		if not part:IsA("BasePart") then
+			return true
+		end
+		if not part:IsDescendantOf(Workspace) then
+			return false, "not in Workspace"
+		end
+		local presetName = part:GetAttribute("HairPreset")
+		local layout = HairConfig.Layouts[presetName]
+		local hair = HairConfig.Hairs[presetName]
+		if not layout then
+			warn(("[HairPhysics] %s has unknown HairPreset '%s'"):format(part:GetFullName(), tostring(presetName)))
+			return true -- give up on it
+		end
+		local sim, err = Sim.new(part, layout, mergeSettings(hair and hair.Physics))
+		if not sim then
+			return false, err
+		end
+		if #sim.Problems > 0 then
+			warn("[HairPhysics] " .. part:GetFullName() .. ": skipped " .. table.concat(sim.Problems, ", "))
+		end
+		sims[part] = sim
+		return true
+	end
+
+	local function add(part: Instance)
+		if sims[part] then
+			return
+		end
+		local ok = tryStart(part)
+		if not ok then
+			waiting[part] = os.clock() -- bones may still be streaming in; retry for a bit
+		end
+	end
+
+	local function remove(part: Instance)
+		waiting[part] = nil
+		local sim = sims[part]
+		if sim then
+			sims[part] = nil
+			sim:Sleep()
+		end
+	end
+
+	CollectionService:GetInstanceAddedSignal(HairPhysics.TAG):Connect(add)
+	CollectionService:GetInstanceRemovedSignal(HairPhysics.TAG):Connect(remove)
+	for _, part in CollectionService:GetTagged(HairPhysics.TAG) do
+		add(part)
+	end
+
+	-- PreRender runs after Roblox has played animations for the frame and right before it
+	-- draws, so our bone rotations are what ends up on screen.
+	local ok, renderSignal = pcall(function()
+		return RunService.PreRender
+	end)
+	if not ok or not renderSignal then
+		renderSignal = RunService.RenderStepped
+	end
+
+	local retryClock = 0
+	renderSignal:Connect(function(dt: number)
+		retryClock += dt
+		if retryClock > 0.5 then
+			retryClock = 0
+			for part, since in waiting do
+				if part.Parent == nil then
+					waiting[part] = nil
+				else
+					local done, err = tryStart(part)
+					if done then
+						waiting[part] = nil
+					elseif not part:IsDescendantOf(Workspace) then
+						waiting[part] = os.clock() -- stored away (e.g. ReplicatedStorage): keep watching quietly
+					elseif os.clock() - since > 15 then
+						waiting[part] = nil
+						warn(("[HairPhysics] gave up on %s: %s"):format(part:GetFullName(), tostring(err)))
+					end
+				end
+			end
+		end
+
+		local camera = Workspace.CurrentCamera
+		local camPos = camera and camera.CFrame.Position
+		for part, sim in sims do
+			if part.Parent == nil then
+				sims[part] = nil
+			else
+				local success, err = pcall(sim.Update, sim, dt, camPos)
+				if not success then
+					sims[part] = nil
+					warn("[HairPhysics] stopped simulating " .. part:GetFullName() .. ": " .. tostring(err))
+				end
+			end
+		end
+	end)
+end
+
+return HairPhysics
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
+          <string name="Name">HairConfig</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairConfig  (ModuleScript — lives in ReplicatedStorage)
+
+	Settings for everything on the character that moves with physics: the base hair, the
+	Super Saiyan hair and the belt's ribbons. Read by CharacterSetup (which puts them on) and by
+	HairPhysics on every player's computer (which moves them).
+
+	Quick guide to the physics numbers (per piece, under Physics):
+	  Stiffness     One number per bone, root first: how strongly each bone springs back to its
+	                modeled shape. Spiky hair = high, ribbons = low.
+	  MaxBend       One number per bone, in degrees: the most a joint can bend. Stops folding.
+	  Damping       0..1: how fast movement dies out. Bounce: how much it overshoots (keep low).
+	  Inertia       0..1: how much it gets left behind when the body moves.
+	  AuraLift      How hard the power-up aura blows it upward (studs/s² at full power).
+	  AuraSwirl     How hard the aura whips it around sideways (studs/s² at full power).
+	  AuraSwirlSpeed  How fast that whipping wobbles.
+	  BodyColliders Body parts it bumps into ("Head" is a ball, the rest are boxes).
+]]
+
+local HairConfig = {}
+
+-- Folder the imported rigged models go in (looked for in ServerStorage, then ReplicatedStorage,
+-- then Workspace).
+HairConfig.ModelFolder = "CharacterParts"
+
+-- The hair was made for a head this wide (studs); on a bigger/smaller head it's resized to match.
+HairConfig.ReferenceHeadWidth = 1.2
+
+-- Press this key (or the "Fit" button on phones) in Play to nudge the hair/belt into place.
+HairConfig.FitToolKey = Enum.KeyCode.H
+HairConfig.FitToolEnabled = true
+
+HairConfig.Hairs = {
+	BaseHair = {
+		SignatureBone = "BS01_1", -- how the imported model is recognised
+		TextureId = "", -- paste the original hair texture id here (optional)
+		Color = Color3.fromRGB(24, 22, 28),
+		Material = Enum.Material.SmoothPlastic,
+		Offset = CFrame.new(0, 0, 0), -- nudge: CFrame.new(right, up, back) in studs
+		Scale = 1,
+		ScaleToHead = true,
+		VisibleIn = "Base", -- which form shows this piece ("Base", "SSJ" or "Both")
+		Physics = {
+			Gravity = 30,
+			GravityCompensation = 1,
+			Damping = 0.3,
+			Bounce = 0.15,
+			Inertia = 0.15,
+			Stiffness = { 0.5, 0.4, 0.3 },
+			ShapeFollow = 0.25,
+			MaxBend = { 22, 22, 25 },
+			MaxSpeed = 30,
+			AuraLift = 600,
+			AuraSwirl = 160,
+			AuraSwirlSpeed = 9,
+			SelfCollision = false,
+			BodyColliders = { "Head", "UpperTorso" },
+			SimulationDistance = 150,
+		},
+	},
+
+	SSJHair = {
+		SignatureBone = "SS01_1",
+		TextureId = "",
+		Color = Color3.fromRGB(255, 214, 80),
+		Material = Enum.Material.SmoothPlastic,
+		Offset = CFrame.new(0, 0, 0),
+		Scale = 1,
+		ScaleToHead = true,
+		VisibleIn = "SSJ",
+		Physics = {
+			Gravity = 30,
+			GravityCompensation = 1,
+			Damping = 0.25,
+			Bounce = 0.2,
+			Inertia = 0.15,
+			Stiffness = { 0.45, 0.35, 0.28 },
+			ShapeFollow = 0.25,
+			MaxBend = { 20, 20, 24 },
+			MaxSpeed = 30,
+			AuraLift = 500,
+			AuraSwirl = 200,
+			AuraSwirlSpeed = 3.5, -- slow: the Super Saiyan hair "flows calmly"
+			SelfCollision = false,
+			BodyColliders = { "Head", "UpperTorso" },
+			SimulationDistance = 150,
+		},
+	},
+
+	Belt = {
+		SignatureBone = "RibbonL_1",
+		TextureId = "",
+		Color = Color3.fromRGB(38, 70, 170),
+		Material = Enum.Material.Fabric,
+		Offset = CFrame.new(0, 0, 0),
+		Scale = 1,
+		ScaleToHead = false,
+		VisibleIn = "Both",
+		Physics = {
+			Gravity = 30,
+			GravityCompensation = 0.6, -- cloth ribbons hang a bit under their own weight
+			Damping = 0.18,
+			Bounce = 0.3,
+			Inertia = 0.35,
+			Stiffness = { 0.25, 0.15, 0.1 },
+			ShapeFollow = 0.6,
+			MaxBend = { 40, 45, 50 },
+			MaxSpeed = 40,
+			AuraLift = 220,
+			AuraSwirl = 160,
+			AuraSwirlSpeed = 11,
+			SelfCollision = true,
+			BodyColliders = { "LowerTorso", "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg" },
+			SimulationDistance = 150,
+		},
+	},
+}
+
+--------------------------------------------------------------------------------------------
+-- Rig layouts (generated from the Blender rigs — only change these if you re-rig).
+--------------------------------------------------------------------------------------------
+HairConfig.Layouts = {
+	BaseHair = {
+		Attach = "Head", -- the body part it is fixed to
+		Size = Vector3.new(2.989, 2.1756, 2.858),
+		HeadCenter = Vector3.zero, -- the rig point that sits on the centre of that body part
+		Chains = {
+			{ Name = "BS01", Bones = { "BS01_1", "BS01_2" }, Tip = "BS01_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS02", Bones = { "BS02_1", "BS02_2", "BS02_3" }, Tip = "BS02_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "BS03", Bones = { "BS03_1", "BS03_2", "BS03_3" }, Tip = "BS03_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "BS04", Bones = { "BS04_1", "BS04_2" }, Tip = "BS04_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS05", Bones = { "BS05_1", "BS05_2", "BS05_3" }, Tip = "BS05_End", Radii = { 0.12, 0.12, 0.12, 0.12 } },
+			{ Name = "BS06", Bones = { "BS06_1", "BS06_2", "BS06_3" }, Tip = "BS06_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "BS07", Bones = { "BS07_1", "BS07_2" }, Tip = "BS07_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS08", Bones = { "BS08_1", "BS08_2" }, Tip = "BS08_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS09", Bones = { "BS09_1", "BS09_2" }, Tip = "BS09_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS10", Bones = { "BS10_1", "BS10_2", "BS10_3" }, Tip = "BS10_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "BS11", Bones = { "BS11_1", "BS11_2", "BS11_3" }, Tip = "BS11_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "BS12", Bones = { "BS12_1", "BS12_2" }, Tip = "BS12_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS13", Bones = { "BS13_1", "BS13_2" }, Tip = "BS13_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS14", Bones = { "BS14_1", "BS14_2" }, Tip = "BS14_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS15", Bones = { "BS15_1", "BS15_2" }, Tip = "BS15_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "BS16", Bones = { "BS16_1", "BS16_2", "BS16_3" }, Tip = "BS16_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "BS17", Bones = { "BS17_1", "BS17_2", "BS17_3" }, Tip = "BS17_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+		},
+		Bones = {
+			HairRoot = Vector3.new(0, 0, 0),
+			BS01_1 = Vector3.new(-0.202, -0.0945, 0.6431),
+			BS01_2 = Vector3.new(-0.2758, -0.122, 1.0165),
+			BS01_End = Vector3.new(-0.4116, -0.1307, 1.4653),
+			BS02_1 = Vector3.new(-0.3541, 0.0453, 0.6764),
+			BS02_2 = Vector3.new(-0.4882, 0.0653, 1.0161),
+			BS02_3 = Vector3.new(-0.5644, 0.0919, 1.3883),
+			BS02_End = Vector3.new(-0.7006, 0.108, 1.7363),
+			BS03_1 = Vector3.new(-0.3902, 0.149, 0.431),
+			BS03_2 = Vector3.new(-0.5912, 0.1758, 0.7788),
+			BS03_3 = Vector3.new(-0.7332, 0.3101, 1.1363),
+			BS03_End = Vector3.new(-0.8756, 0.4639, 1.4323),
+			BS04_1 = Vector3.new(-0.5037, -0.1674, 0.3663),
+			BS04_2 = Vector3.new(-0.9384, -0.1833, 0.3116),
+			BS04_End = Vector3.new(-1.3556, -0.1364, 0.2863),
+			BS05_1 = Vector3.new(-0.5011, 0.1416, 0.2878),
+			BS05_2 = Vector3.new(-0.8646, 0.0177, 0.3561),
+			BS05_3 = Vector3.new(-1.1297, 0.2494, 0.3014),
+			BS05_End = Vector3.new(-1.5016, 0.3351, 0.2163),
+			BS06_1 = Vector3.new(-0.4077, 0.3873, 0.1365),
+			BS06_2 = Vector3.new(-0.7729, 0.5159, 0.1935),
+			BS06_3 = Vector3.new(-1.1349, 0.6196, 0.2123),
+			BS06_End = Vector3.new(-1.5016, 0.7099, 0.2233),
+			BS07_1 = Vector3.new(-0.3502, 0.4687, 0.1361),
+			BS07_2 = Vector3.new(-0.7538, 0.6814, 0.2004),
+			BS07_End = Vector3.new(-1.2026, 0.7879, 0.2133),
+			BS08_1 = Vector3.new(-0.1652, 0.988, -0.0729),
+			BS08_2 = Vector3.new(-0.0694, 1.3999, -0.2529),
+			BS08_End = Vector3.new(0.1244, 1.7516, -0.4717),
+			BS09_1 = Vector3.new(0.1037, 0.5093, -0.4568),
+			BS09_2 = Vector3.new(0.3096, 0.6658, -0.7783),
+			BS09_End = Vector3.new(0.7154, 0.1373, -1.1167),
+			BS10_1 = Vector3.new(0.1045, 0.5939, -0.0192),
+			BS10_2 = Vector3.new(0.1558, 1.0696, -0.1705),
+			BS10_3 = Vector3.new(0.3618, 1.5076, -0.3036),
+			BS10_End = Vector3.new(0.7354, 1.7515, -0.5557),
+			BS11_1 = Vector3.new(0.3317, 0.5005, -0.3174),
+			BS11_2 = Vector3.new(0.6928, 0.7685, -0.3999),
+			BS11_3 = Vector3.new(1.0527, 1.0563, -0.6003),
+			BS11_End = Vector3.new(1.4874, 0.9908, -0.8818),
+			BS12_1 = Vector3.new(0.428, -0.1755, 0.4068),
+			BS12_2 = Vector3.new(0.8486, -0.17, 0.2771),
+			BS12_End = Vector3.new(1.2614, -0.1428, 0.1033),
+			BS13_1 = Vector3.new(0.5791, 0.1939, 0.2275),
+			BS13_2 = Vector3.new(1.0133, 0.3374, 0.1928),
+			BS13_End = Vector3.new(1.4874, 0.3053, -0.0837),
+			BS14_1 = Vector3.new(0.6056, 0.4328, 0.1774),
+			BS14_2 = Vector3.new(1.0248, 0.6767, 0.0664),
+			BS14_End = Vector3.new(1.4854, 0.7338, -0.1007),
+			BS15_1 = Vector3.new(0.5113, -0.1764, 0.5061),
+			BS15_2 = Vector3.new(0.7293, -0.1995, 0.778),
+			BS15_End = Vector3.new(0.8934, -0.1917, 1.1603),
+			BS16_1 = Vector3.new(0.4, 0.0944, 0.5696),
+			BS16_2 = Vector3.new(0.5914, 0.0656, 0.9322),
+			BS16_3 = Vector3.new(0.7205, 0.0497, 1.3143),
+			BS16_End = Vector3.new(0.8794, 0.0108, 1.6522),
+			BS17_1 = Vector3.new(0.4871, 0.2009, 0.5535),
+			BS17_2 = Vector3.new(0.7449, 0.233, 0.8611),
+			BS17_3 = Vector3.new(0.8778, 0.1862, 1.2324),
+			BS17_End = Vector3.new(1.0254, 0.151, 1.6153),
+		},
+	},
+	SSJHair = {
+		Attach = "Head", -- the body part it is fixed to
+		Size = Vector3.new(2.82, 2.9528, 3.1868),
+		HeadCenter = Vector3.zero, -- the rig point that sits on the centre of that body part
+		Chains = {
+			{ Name = "SS01", Bones = { "SS01_1", "SS01_2", "SS01_3" }, Tip = "SS01_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS02", Bones = { "SS02_1", "SS02_2", "SS02_3" }, Tip = "SS02_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS03", Bones = { "SS03_1", "SS03_2", "SS03_3" }, Tip = "SS03_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS04", Bones = { "SS04_1", "SS04_2", "SS04_3" }, Tip = "SS04_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS05", Bones = { "SS05_1", "SS05_2", "SS05_3" }, Tip = "SS05_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS06", Bones = { "SS06_1", "SS06_2", "SS06_3" }, Tip = "SS06_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS07", Bones = { "SS07_1", "SS07_2", "SS07_3" }, Tip = "SS07_End", Radii = { 0.12, 0.12, 0.12, 0.12 } },
+			{ Name = "SS08", Bones = { "SS08_1", "SS08_2", "SS08_3" }, Tip = "SS08_End", Radii = { 0.12, 0.12, 0.12, 0.12 } },
+			{ Name = "SS09", Bones = { "SS09_1", "SS09_2" }, Tip = "SS09_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "SS10", Bones = { "SS10_1", "SS10_2" }, Tip = "SS10_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "SS11", Bones = { "SS11_1", "SS11_2" }, Tip = "SS11_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "SS12", Bones = { "SS12_1", "SS12_2", "SS12_3" }, Tip = "SS12_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS13", Bones = { "SS13_1", "SS13_2", "SS13_3" }, Tip = "SS13_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS14", Bones = { "SS14_1", "SS14_2", "SS14_3" }, Tip = "SS14_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS15", Bones = { "SS15_1", "SS15_2" }, Tip = "SS15_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "SS16", Bones = { "SS16_1", "SS16_2", "SS16_3" }, Tip = "SS16_End", Radii = { 0.12, 0.12, 0.12, 0.12 } },
+			{ Name = "SS17", Bones = { "SS17_1", "SS17_2", "SS17_3" }, Tip = "SS17_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS18", Bones = { "SS18_1", "SS18_2", "SS18_3" }, Tip = "SS18_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS19", Bones = { "SS19_1", "SS19_2" }, Tip = "SS19_End", Radii = { 0.12, 0.12, 0.12 } },
+			{ Name = "SS20", Bones = { "SS20_1", "SS20_2", "SS20_3" }, Tip = "SS20_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "SS21", Bones = { "SS21_1", "SS21_2", "SS21_3" }, Tip = "SS21_End", Radii = { 0.12, 0.12, 0.12, 0.12 } },
+			{ Name = "SS22", Bones = { "SS22_1", "SS22_2", "SS22_3" }, Tip = "SS22_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+		},
+		Bones = {
+			HairRoot = Vector3.new(0, 0, 0),
+			SS01_1 = Vector3.new(-0.5884, 1.2323, -0.1123),
+			SS01_2 = Vector3.new(-0.0136, 1.5285, 0.546),
+			SS01_3 = Vector3.new(-0.4082, 2.0635, 0.7624),
+			SS01_End = Vector3.new(-0.369, 2.7406, 1.3788),
+			SS02_1 = Vector3.new(-0.2625, -0.0673, 0.4878),
+			SS02_2 = Vector3.new(-0.4263, 0.1364, 0.7988),
+			SS02_3 = Vector3.new(-0.637, 0.4434, 0.934),
+			SS02_End = Vector3.new(-0.839, 0.5598, 1.2981),
+			SS03_1 = Vector3.new(-0.5673, 0.1345, 0.3817),
+			SS03_2 = Vector3.new(-0.8717, 0.5933, 0.4295),
+			SS03_3 = Vector3.new(-0.8632, 0.7539, 0.873),
+			SS03_End = Vector3.new(-0.95, 1.0731, 1.3914),
+			SS04_1 = Vector3.new(-0.567, 0.9062, 0.6521),
+			SS04_2 = Vector3.new(-0.5471, 1.3695, 0.8346),
+			SS04_3 = Vector3.new(-0.5316, 1.758, 1.1378),
+			SS04_End = Vector3.new(-0.623, 2.1704, 1.3242),
+			SS05_1 = Vector3.new(-0.5134, 0.3304, -0.4534),
+			SS05_2 = Vector3.new(-0.8624, 0.7321, 0.0019),
+			SS05_3 = Vector3.new(-1.0398, 1.2276, 0.298),
+			SS05_End = Vector3.new(-1.15, 1.7561, 0.6038),
+			SS06_1 = Vector3.new(-0.533, 0.0832, -0.2112),
+			SS06_2 = Vector3.new(-0.8424, 0.2581, 0.0656),
+			SS06_3 = Vector3.new(-1.1409, 0.4728, 0.316),
+			SS06_End = Vector3.new(-1.41, 0.785, 0.4974),
+			SS07_1 = Vector3.new(-0.563, 0.759, -0.4886),
+			SS07_2 = Vector3.new(-0.6977, 1.1098, -0.4499),
+			SS07_3 = Vector3.new(-0.8622, 1.4267, -0.3032),
+			SS07_End = Vector3.new(-0.958, 1.8544, -0.1884),
+			SS08_1 = Vector3.new(-0.1959, 0.8546, -0.7933),
+			SS08_2 = Vector3.new(-0.0942, 1.3294, -0.6614),
+			SS08_3 = Vector3.new(-0.2886, 1.6909, -0.5895),
+			SS08_End = Vector3.new(-0.191, 2.2185, -0.3497),
+			SS09_1 = Vector3.new(-0.3262, 0.6085, -0.7405),
+			SS09_2 = Vector3.new(-0.4687, 0.6122, -1.0081),
+			SS09_End = Vector3.new(-0.403, 0.6884, -1.2252),
+			SS10_1 = Vector3.new(-0.1667, 0.5752, -0.7883),
+			SS10_2 = Vector3.new(-0.368, 0.7763, -0.9677),
+			SS10_End = Vector3.new(-0.413, 0.9363, -1.0871),
+			SS11_1 = Vector3.new(0.0672, 0.5781, -0.8141),
+			SS11_2 = Vector3.new(0.3266, 0.6639, -1.157),
+			SS11_End = Vector3.new(0.246, 0.8778, -1.3128),
+			SS12_1 = Vector3.new(0.2472, 0.8367, -0.753),
+			SS12_2 = Vector3.new(0.4766, 1.134, -0.9568),
+			SS12_3 = Vector3.new(0.6507, 1.4071, -1.0899),
+			SS12_End = Vector3.new(0.91, 1.4422, -1.4187),
+			SS13_1 = Vector3.new(0.5969, 0.7532, -0.4864),
+			SS13_2 = Vector3.new(0.7691, 1.1858, -0.39),
+			SS13_3 = Vector3.new(0.794, 1.625, -0.3037),
+			SS13_End = Vector3.new(0.861, 2.0641, -0.2332),
+			SS14_1 = Vector3.new(0.5911, 0.3399, -0.439),
+			SS14_2 = Vector3.new(0.9278, 0.4261, 0.0444),
+			SS14_3 = Vector3.new(1.0584, 0.9398, 0.0867),
+			SS14_End = Vector3.new(1.41, 1.3869, 0.2468),
+			SS15_1 = Vector3.new(0.546, -0.1279, 0.0092),
+			SS15_2 = Vector3.new(0.8301, 0.1123, 0.2869),
+			SS15_End = Vector3.new(1.137, 0.1646, 0.5025),
+			SS16_1 = Vector3.new(0.6295, 0.0771, -0.1413),
+			SS16_2 = Vector3.new(0.8993, 0.2437, 0.1181),
+			SS16_3 = Vector3.new(1.1236, 0.4173, 0.3028),
+			SS16_End = Vector3.new(1.387, 0.7009, 0.4151),
+			SS17_1 = Vector3.new(0.414, 0.0748, 0.4637),
+			SS17_2 = Vector3.new(0.63, 0.3368, 0.8211),
+			SS17_3 = Vector3.new(0.7338, 0.7006, 1.0604),
+			SS17_End = Vector3.new(0.989, 0.9215, 1.4),
+			SS18_1 = Vector3.new(0.632, 0.144, 0.24),
+			SS18_2 = Vector3.new(0.6538, 0.7049, 0.6446),
+			SS18_3 = Vector3.new(0.8875, 1.0269, 0.9281),
+			SS18_End = Vector3.new(1.057, 1.5728, 1.3089),
+			SS19_1 = Vector3.new(0.396, -0.1056, 0.3684),
+			SS19_2 = Vector3.new(0.3941, 0.1522, 0.8314),
+			SS19_End = Vector3.new(0.498, 0.2878, 1.3276),
+			SS20_1 = Vector3.new(0.8343, 0.9175, 0.1651),
+			SS20_2 = Vector3.new(0.5965, 1.3659, 0.5662),
+			SS20_3 = Vector3.new(0.6023, 1.678, 0.7969),
+			SS20_End = Vector3.new(0.481, 2.1338, 1.2438),
+			SS21_1 = Vector3.new(0.2466, 1.3057, -0.5375),
+			SS21_2 = Vector3.new(0.4982, 1.6225, 0.0252),
+			SS21_3 = Vector3.new(0.2974, 1.9441, -0.046),
+			SS21_End = Vector3.new(0.149, 2.4732, 0.3849),
+			SS22_1 = Vector3.new(-0.134, 0.2652, 0.7066),
+			SS22_2 = Vector3.new(0.1562, 0.8166, 1.1274),
+			SS22_3 = Vector3.new(0.0933, 1.404, 1.357),
+			SS22_End = Vector3.new(0.083, 1.9593, 1.7681),
+		},
+	},
+	Belt = {
+		Attach = "LowerTorso", -- the body part it is fixed to
+		Size = Vector3.new(2.1584, 1.5278, 1.3154),
+		HeadCenter = Vector3.zero, -- the rig point that sits on the centre of that body part
+		Chains = {
+			{ Name = "RibbonL", Bones = { "RibbonL_1", "RibbonL_2", "RibbonL_3" }, Tip = "RibbonL_End", Radii = { 0.12, 0.11, 0.1, 0.09 } },
+			{ Name = "RibbonR", Bones = { "RibbonR_1", "RibbonR_2", "RibbonR_3" }, Tip = "RibbonR_End", Radii = { 0.12, 0.11, 0.1, 0.09 } },
+		},
+		Bones = {
+			BeltRoot = Vector3.new(0, 0, 0),
+			RibbonL_1 = Vector3.new(-0.0599, -0.0362, -0.5875),
+			RibbonL_2 = Vector3.new(-0.3441, -0.2849, -0.6367),
+			RibbonL_3 = Vector3.new(-0.376, -0.5028, -0.6831),
+			RibbonL_End = Vector3.new(-0.3753, -0.8674, -0.6786),
+			RibbonR_1 = Vector3.new(0.0011, 0.0313, -0.5735),
+			RibbonR_2 = Vector3.new(0.2298, -0.3562, -0.6256),
+			RibbonR_3 = Vector3.new(0.4271, -0.7697, -0.6787),
+			RibbonR_End = Vector3.new(0.4635, -1.2052, -0.6707),
+		},
+	},
+}
+
+return HairConfig
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="5">
+        <Properties>
+          <string name="Name">PowerConfig</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	PowerConfig  (ModuleScript — lives in ReplicatedStorage)
+
+	Settings for powering up and turning Super Saiyan.
+	How it plays: press R -> the camera swings round in front of you and you drop into a ready
+	stance -> spam Space (or tap the TAP button on a phone) -> the aura appears, then grows
+	bigger and faster, your hair and belt get blown upward -> fill the bar and you burst into
+	Super Saiyan; the golden hair then flows calmly. Press R again as a Super Saiyan to power down.
+]]
+
+local PowerConfig = {}
+
+PowerConfig.BaseRigName = "Base" -- the R15 rig in ReplicatedStorage every player becomes
+
+-- controls
+PowerConfig.PowerKey = Enum.KeyCode.R -- start powering up / cancel / power down
+PowerConfig.TapKey = Enum.KeyCode.Space -- spam this to charge
+
+-- charging
+PowerConfig.ChargePerTap = 0.05 -- how much each tap fills the bar (0..1)
+PowerConfig.ChargeDecay = 0.16 -- how much the bar drains per second if you stop tapping
+PowerConfig.MinChargeTime = 2.5 -- you have to charge at least this long before transforming
+PowerConfig.AuraStart = 0.06 -- bar level where the aura flickers on
+PowerConfig.HairStart = 0.25 -- bar level where the hair and belt start lifting
+PowerConfig.LockMovement = true -- you can't walk or jump while powering up
+
+-- the transformation
+PowerConfig.BurstTime = 2.4 -- seconds the burst lasts before you get control back
+PowerConfig.SSJCalmWind = 0.35 -- how strongly the Super Saiyan hair keeps flowing afterwards (0..1)
+PowerConfig.SSJIdleAura = 0.22 -- a soft golden aura stays on after transforming (0 = none)
+
+-- looks
+PowerConfig.BaseAuraColor = Color3.fromRGB(200, 228, 255)
+PowerConfig.SSJAuraColor = Color3.fromRGB(255, 210, 70)
+PowerConfig.AuraSize = 1 -- scales the whole aura
+
+-- camera (front view while powering up)
+PowerConfig.CameraDistance = 9 -- studs in front of you
+PowerConfig.CameraHeight = 0.8 -- studs above your waist
+PowerConfig.CameraLookHeight = 1.4 -- the camera looks at this height above your waist
+PowerConfig.CameraShake = 0.22 -- strongest shake (studs) at full power
+
+return PowerConfig
+]]></ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="6">
+      <Properties>
+        <string name="Name">ServerScriptService</string>
+      </Properties>
+      <Item class="Script" referent="7">
+        <Properties>
+          <string name="Name">CharacterSetup</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	CharacterSetup  (Script — lives in ServerScriptService)
+
+	Turns every player into the "Base" rig (ReplicatedStorage > Base) with the base hair and
+	the belt on:
+	  1. When the server starts it copies Base, puts the rigged base hair, the (hidden) Super
+	     Saiyan hair and the belt on it, and makes that copy the StarterCharacter — Roblox's
+	     built-in way of giving every player a custom character.
+	  2. Players' own avatars are not loaded onto it, and anything that still sneaks on
+	     (clothing, accessories, body colours from their avatar) is stripped off when they spawn.
+
+	The rigged pieces are found in ServerStorage > CharacterParts (import the three .fbx files
+	there). Settings: ReplicatedStorage > HairConfig and PowerConfig.
+]]
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local StarterPlayer = game:GetService("StarterPlayer")
+local Workspace = game:GetService("Workspace")
+
+local HairConfig = require(ReplicatedStorage:WaitForChild("HairConfig"))
+local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+
+local PIECES = { "BaseHair", "SSJHair", "Belt" }
+local OWNED = "DWOwned" -- marks things that belong to the Base rig (never stripped)
+
+local function log(message: string)
+	print("[CharacterSetup] " .. message)
+end
+
+local function complain(message: string)
+	warn("[CharacterSetup] " .. message)
+end
+
+----------------------------------------------------------------------------------------
+-- finding and copying the imported rigged pieces
+----------------------------------------------------------------------------------------
+local function partOfBone(bone: Instance): BasePart?
+	local node = bone.Parent
+	while node and not node:IsA("BasePart") do
+		node = node.Parent
+	end
+	return node :: BasePart?
+end
+
+local function findSource(signature: string): (Bone?, string?)
+	for _, container in { ServerStorage, ReplicatedStorage, Workspace } do
+		local folder = container:FindFirstChild(HairConfig.ModelFolder)
+		if folder then
+			local bone = folder:FindFirstChild(signature, true)
+			if bone and bone:IsA("Bone") then
+				return bone, folder:GetFullName()
+			end
+		end
+	end
+	-- forgiving: imported but left loose in Workspace / ServerStorage
+	for _, container in { Workspace, ServerStorage } do
+		for _, d in container:GetDescendants() do
+			if d.Name == signature and d:IsA("Bone") then
+				return d, container.Name
+			end
+		end
+	end
+	return nil
+end
+
+-- A copy of the mesh with all its bones inside it (moves bones in if the importer put them
+-- in a separate part — same place in the world, so the skinning is unchanged).
+local function copyMesh(signatureBone: Bone): BasePart?
+	local original = partOfBone(signatureBone)
+	if not original then
+		return nil
+	end
+	local holder: Instance = signatureBone:FindFirstAncestorWhichIsA("Model") or original
+	if holder:IsA("Workspace") then
+		holder = original
+	end
+	local copy = holder:Clone() or original:Clone()
+	if not copy then
+		return nil
+	end
+	local bone = copy:FindFirstChild(signatureBone.Name, true)
+	local bonePart = bone and partOfBone(bone)
+	if not bonePart then
+		copy:Destroy()
+		return nil
+	end
+	local mesh = bonePart
+	if not bonePart:IsA("MeshPart") then
+		local found = copy:IsA("MeshPart") and copy or copy:FindFirstChildWhichIsA("MeshPart", true)
+		if found then
+			mesh = found
+			for _, child in bonePart:GetChildren() do
+				if child:IsA("Bone") then
+					child.CFrame = mesh.CFrame:ToObjectSpace(bonePart.CFrame * child.CFrame)
+					child.Parent = mesh
+				end
+			end
+		end
+	end
+	if mesh ~= copy then
+		mesh.Parent = nil
+		copy:Destroy()
+	end
+	for _, d in mesh:GetDescendants() do
+		if d.Parent and not (d:IsA("Bone") or d:IsA("SurfaceAppearance")) then
+			d:Destroy()
+		end
+	end
+	return mesh
+end
+
+local function bonePairs(mesh: BasePart, layout)
+	local design, actual = {}, {}
+	for name, modeled in layout.Bones do
+		local bone = mesh:FindFirstChild(name, true)
+		if bone and bone:IsA("Bone") then
+			local cf = HairPhysics.PartSpaceCFrame(bone, mesh)
+			if cf then
+				table.insert(design, modeled)
+				table.insert(actual, cf.Position)
+			end
+		end
+	end
+	return design, actual
+end
+
+----------------------------------------------------------------------------------------
+-- putting one piece on the rig
+----------------------------------------------------------------------------------------
+local function attachPiece(rig: Model, name: string): boolean
+	local cfg = HairConfig.Hairs[name]
+	local layout = HairConfig.Layouts[name]
+	local attachPart = rig:FindFirstChild(layout.Attach)
+	if not (attachPart and attachPart:IsA("BasePart")) then
+		complain(("the Base rig has no %s part to put the %s on"):format(layout.Attach, name))
+		return false
+	end
+	local bone, where = findSource(cfg.SignatureBone)
+	if not bone then
+		complain(
+			("couldn't find the rigged %s. Import %s_Rigged.fbx (File > Import 3D) and put it in ServerStorage > %s."):format(
+				name,
+				name,
+				HairConfig.ModelFolder
+			)
+		)
+		return false
+	end
+	local mesh = copyMesh(bone)
+	if not mesh then
+		complain(("found the %s bones in %s but no mesh next to them"):format(name, where or "?"))
+		return false
+	end
+	mesh.Name = name
+	mesh.Anchored = false
+	mesh.CanCollide = false
+	mesh.CanTouch = false
+	mesh.CanQuery = false
+	mesh.Massless = true
+	if mesh:IsA("MeshPart") and cfg.TextureId and cfg.TextureId ~= "" then
+		mesh.TextureID = cfg.TextureId
+	end
+	if cfg.Color then
+		mesh.Color = cfg.Color
+	end
+	if cfg.Material then
+		mesh.Material = cfg.Material
+	end
+
+	-- where it goes: compare the modeled bone positions with the imported ones
+	local design, actual = bonePairs(mesh, layout)
+	if #design < 3 then
+		complain(("the %s is missing its bones (found %d) — re-import it and keep the rig"):format(name, #design))
+		mesh:Destroy()
+		return false
+	end
+	local fit = HairPhysics.FitRig(design, actual)
+	local wantScale = cfg.Scale or 1
+	if cfg.ScaleToHead and attachPart:IsA("MeshPart") then
+		local ratio = (attachPart.Size.X + attachPart.Size.Z) * 0.5 / (HairConfig.ReferenceHeadWidth or 1.2)
+		if ratio > 0.5 and ratio < 3 then
+			wantScale *= ratio
+		end
+	end
+	if math.abs(fit.Scale / wantScale - 1) > 0.02 then
+		local temp = Instance.new("Model")
+		mesh.Parent = temp
+		local ok, err = pcall(function()
+			temp:ScaleTo(temp:GetScale() * wantScale / fit.Scale)
+		end)
+		mesh.Parent = nil
+		temp:Destroy()
+		if ok then
+			design, actual = bonePairs(mesh, layout)
+			fit = HairPhysics.FitRig(design, actual)
+		else
+			complain("couldn't resize the " .. name .. ": " .. tostring(err))
+		end
+	end
+	if fit.Error > 0.05 * math.max(fit.Scale, 0.01) then
+		complain(("the %s's bones don't match the expected layout (off by %.2f studs)"):format(name, fit.Error))
+	end
+	local centre = (layout.HeadCenter or Vector3.zero) * fit.Scale
+	local attachToMesh = cfg.Offset * CFrame.new(-centre) * HairPhysics.HeadToPart(fit)
+
+	local holder = Instance.new("Model")
+	holder.Name = "DW_" .. name
+	holder:SetAttribute(OWNED, true)
+	mesh.CFrame = attachPart.CFrame * attachToMesh
+	mesh.Parent = holder
+	local weld = Instance.new("Weld")
+	weld.Name = "DWWeld"
+	weld.Part0 = attachPart
+	weld.Part1 = mesh
+	weld.C0 = attachToMesh
+	weld.Parent = mesh
+	mesh:SetAttribute("HairPreset", name)
+	mesh:SetAttribute("VisibleIn", cfg.VisibleIn or "Both")
+	mesh.Transparency = (cfg.VisibleIn == "SSJ") and 1 or 0
+	CollectionService:AddTag(mesh, HairPhysics.TAG)
+	holder.Parent = rig
+	log(("put the %s on the %s (%d bones lined up)"):format(name, layout.Attach, #design))
+	return true
+end
+
+----------------------------------------------------------------------------------------
+-- build the StarterCharacter
+----------------------------------------------------------------------------------------
+local base = ReplicatedStorage:WaitForChild(PowerConfig.BaseRigName, 20)
+if not (base and base:IsA("Model") and base:FindFirstChildOfClass("Humanoid")) then
+	complain(("there's no R15 rig called '%s' (with a Humanoid) in ReplicatedStorage"):format(PowerConfig.BaseRigName))
+	return
+end
+
+local template = base:Clone()
+for _, d in template:GetDescendants() do
+	-- the rig's own clothes / accessories are kept; only the players' avatar items get stripped
+	if d:IsA("Accessory") or d:IsA("Clothing") or d:IsA("ShirtGraphic") or d:IsA("BodyColors") or d:IsA("CharacterMesh") then
+		d:SetAttribute(OWNED, true)
+	end
+	if d:IsA("BasePart") then
+		d.Anchored = false
+	end
+end
+for _, name in PIECES do
+	local ok, err = pcall(attachPiece, template, name)
+	if not ok then
+		complain(("putting on the %s failed: %s"):format(name, tostring(err)))
+	end
+end
+template:SetAttribute("Form", "Base")
+template:SetAttribute("PowerState", "Idle")
+template:SetAttribute("Charge", 0)
+template:SetAttribute("AuraWind", 0)
+template.Name = "StarterCharacter"
+
+local old = StarterPlayer:FindFirstChild("StarterCharacter")
+if old then
+	old:Destroy()
+end
+template.Parent = StarterPlayer
+
+-- players' own avatars shouldn't be loaded onto the rig
+local okAppearance = pcall(function()
+	StarterPlayer.LoadCharacterAppearance = false
+end)
+if not okAppearance then
+	complain("couldn't switch off StarterPlayer.LoadCharacterAppearance from a script — untick it in StarterPlayer's properties")
+end
+log("players now spawn as " .. PowerConfig.BaseRigName)
+
+----------------------------------------------------------------------------------------
+-- strip anything from the player's avatar that still gets added
+----------------------------------------------------------------------------------------
+local function isAvatarItem(inst: Instance): boolean
+	return (
+		inst:IsA("Accessory")
+		or inst:IsA("Clothing")
+		or inst:IsA("ShirtGraphic")
+		or inst:IsA("BodyColors")
+		or inst:IsA("CharacterMesh")
+	) and not inst:GetAttribute(OWNED)
+end
+
+local function onCharacter(character: Model)
+	for _, d in character:GetDescendants() do
+		if isAvatarItem(d) then
+			d:Destroy()
+		end
+	end
+	-- avatar items can arrive a moment after spawning
+	local connection = character.DescendantAdded:Connect(function(d)
+		if isAvatarItem(d) then
+			task.defer(function()
+				if d.Parent then
+					d:Destroy()
+				end
+			end)
+		end
+	end)
+	task.delay(15, function()
+		connection:Disconnect()
+	end)
+end
+
+local function onPlayer(player: Player)
+	player.CharacterAdded:Connect(onCharacter)
+	if player.Character then
+		-- spawned before the morph was ready (can happen when testing in Studio): respawn
+		if not player.Character:FindFirstChild("DW_Belt") and not player.Character:FindFirstChild("DW_BaseHair") then
+			player:LoadCharacter()
+		else
+			onCharacter(player.Character)
+		end
+	end
+end
+Players.PlayerAdded:Connect(onPlayer)
+for _, player in Players:GetPlayers() do
+	task.spawn(onPlayer, player)
+end
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="8">
+        <Properties>
+          <string name="Name">PowerUpServer</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	PowerUpServer  (Script — lives in ServerScriptService)
+
+	The referee for powering up. Players' computers tell it "I started charging", "my bar is at
+	X", "I'm full — transform", "cancel" and "power down"; it checks those make sense and sets
+	attributes on the character that every player's screen reads to draw the aura, pose and
+	hair:
+	  Form        "Base" or "SSJ"
+	  PowerState  "Idle", "Charging" or "Bursting" (the moment of transformation)
+	  Charge      0..1, how full the power bar is
+	  AuraWind    0..1, how hard the aura blows the hair and belt upward
+	It also swaps the visible hair (base <-> Super Saiyan) and stops you walking while charging.
+	Settings: ReplicatedStorage > PowerConfig.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+
+local remote = ReplicatedStorage:FindFirstChild("PowerUp")
+if not remote then
+	remote = Instance.new("RemoteEvent")
+	remote.Name = "PowerUp"
+	remote.Parent = ReplicatedStorage
+end
+
+local MAX_TAPS_PER_SECOND = 16 -- nobody taps faster than this, so the bar can't rise faster either
+local STALE_SECONDS = 4 -- a charging player who goes quiet this long is cancelled
+
+local info = {} -- [character] = { Started, LastUpdate, WalkSpeed, JumpPower, JumpHeight }
+
+local function smoothstep(a: number, b: number, x: number): number
+	local t = math.clamp((x - a) / (b - a), 0, 1)
+	return t * t * (3 - 2 * t)
+end
+
+-- shows the pieces that belong to a form and hides the rest
+local function applyForm(character: Model, form: string)
+	character:SetAttribute("Form", form)
+	for _, d in character:GetDescendants() do
+		if d:IsA("BasePart") then
+			local visibleIn = d:GetAttribute("VisibleIn")
+			if visibleIn and visibleIn ~= "Both" then
+				d.Transparency = (visibleIn == form) and 0 or 1
+			end
+		end
+	end
+end
+
+local function lockMovement(character: Model, lock: boolean)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local st = info[character]
+	if not humanoid or not st or not PowerConfig.LockMovement then
+		return
+	end
+	if lock then
+		st.WalkSpeed = st.WalkSpeed or humanoid.WalkSpeed
+		st.JumpPower = st.JumpPower or humanoid.JumpPower
+		st.JumpHeight = st.JumpHeight or humanoid.JumpHeight
+		humanoid.WalkSpeed = 0
+		humanoid.JumpPower = 0
+		humanoid.JumpHeight = 0
+	else
+		if st.WalkSpeed then
+			humanoid.WalkSpeed = st.WalkSpeed
+			humanoid.JumpPower = st.JumpPower
+			humanoid.JumpHeight = st.JumpHeight
+		end
+		st.WalkSpeed, st.JumpPower, st.JumpHeight = nil, nil, nil
+	end
+end
+
+local function idleWind(character: Model): number
+	return character:GetAttribute("Form") == "SSJ" and PowerConfig.SSJCalmWind or 0
+end
+
+local function stopCharging(character: Model)
+	character:SetAttribute("PowerState", "Idle")
+	character:SetAttribute("Charge", 0)
+	character:SetAttribute("AuraWind", idleWind(character))
+	lockMovement(character, false)
+end
+
+local function burst(character: Model)
+	character:SetAttribute("PowerState", "Bursting")
+	character:SetAttribute("Charge", 1)
+	character:SetAttribute("AuraWind", 1)
+	applyForm(character, "SSJ")
+	task.delay(PowerConfig.BurstTime, function()
+		if character.Parent and character:GetAttribute("PowerState") == "Bursting" then
+			stopCharging(character)
+		end
+	end)
+end
+
+remote.OnServerEvent:Connect(function(player: Player, action, value)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not (character and humanoid and humanoid.Health > 0) then
+		return
+	end
+	local state = character:GetAttribute("PowerState") or "Idle"
+	local form = character:GetAttribute("Form") or "Base"
+	local now = os.clock()
+	info[character] = info[character] or {}
+	local st = info[character]
+
+	if action == "Start" then
+		if state == "Idle" and form == "Base" then
+			st.Started, st.LastUpdate = now, now
+			character:SetAttribute("PowerState", "Charging")
+			character:SetAttribute("Charge", 0)
+			lockMovement(character, true)
+		end
+	elseif action == "Charge" then
+		if state == "Charging" and typeof(value) == "number" and value == value then
+			local previous = character:GetAttribute("Charge") or 0
+			local allowedRise = PowerConfig.ChargePerTap * MAX_TAPS_PER_SECOND * (now - (st.LastUpdate or now)) + 0.02
+			local charge = math.clamp(math.min(value, previous + allowedRise), 0, 1)
+			st.LastUpdate = now
+			character:SetAttribute("Charge", math.floor(charge * 100 + 0.5) / 100)
+			character:SetAttribute("AuraWind", smoothstep(PowerConfig.HairStart, 1, charge))
+		end
+	elseif action == "Transform" then
+		local charge = character:GetAttribute("Charge") or 0
+		if state == "Charging" and charge >= 0.95 and now - (st.Started or now) >= PowerConfig.MinChargeTime - 0.2 then
+			burst(character)
+		end
+	elseif action == "Cancel" then
+		if state == "Charging" then
+			stopCharging(character)
+		end
+	elseif action == "PowerDown" then
+		if state == "Idle" and form == "SSJ" then
+			applyForm(character, "Base")
+			character:SetAttribute("AuraWind", 0)
+		end
+	end
+end)
+
+-- a charging player who stopped talking (closed the game, lagged out) is cancelled
+RunService.Heartbeat:Connect(function()
+	local now = os.clock()
+	for character, st in info do
+		if not character.Parent then
+			info[character] = nil
+		elseif character:GetAttribute("PowerState") == "Charging" and now - (st.LastUpdate or now) > STALE_SECONDS then
+			stopCharging(character)
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if player.Character then
+		info[player.Character] = nil
+	end
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="9">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="LocalScript" referent="10">
+        <Properties>
+          <string name="Name">HairPhysicsClient</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairPhysicsClient  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Starts the hair simulation on this player's screen. Every hair the server tagged
+	"HairPhysics" gets simulated here. Nothing to change in this script — the settings
+	are in ReplicatedStorage > HairConfig.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
+HairPhysics.StartClient()
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="11">
+        <Properties>
+          <string name="Name">PowerUpClient</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	PowerUpClient  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Your controls, camera and screen for powering up:
+	  R      start powering up (the camera swings round to face you, you drop into a stance)
+	         R again while charging cancels; R as a Super Saiyan powers down
+	  Space  spam it to fill the power bar (phones: the big TAP button)
+	When the bar is full you burst into Super Saiyan: the screen flashes, the camera kicks back,
+	then hands control back to you. The aura, pose and hair are drawn by PowerFX and HairPhysics
+	for everyone, using the attributes PowerUpServer sets.
+	Settings: ReplicatedStorage > PowerConfig.
+]]
+
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+local remote = ReplicatedStorage:WaitForChild("PowerUp")
+local player = Players.LocalPlayer
+
+local SEND_EVERY = 0.1 -- seconds between bar updates sent to the server
+
+----------------------------------------------------------------------------------------
+-- screen
+----------------------------------------------------------------------------------------
+local gui = Instance.new("ScreenGui")
+gui.Name = "PowerUpUI"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local function label(parent: Instance, props): TextLabel
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.GothamBlack
+	l.TextColor3 = Color3.new(1, 1, 1)
+	l.TextScaled = true
+	l.TextStrokeTransparency = 0.4
+	for k, v in props do
+		l[k] = v
+	end
+	l.Parent = parent
+	return l
+end
+
+local hint = label(gui, {
+	Name = "Hint",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -18),
+	Size = UDim2.fromOffset(360, 26),
+	Font = Enum.Font.GothamMedium,
+	TextTransparency = 0.15,
+})
+
+local panel = Instance.new("Frame")
+panel.Name = "Charge"
+panel.AnchorPoint = Vector2.new(0.5, 1)
+panel.Position = UDim2.new(0.5, 0, 1, -60)
+panel.Size = UDim2.fromOffset(420, 130)
+panel.BackgroundTransparency = 1
+panel.Visible = false
+panel.Parent = gui
+local prompt = label(panel, {
+	Name = "Prompt",
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 0),
+	Size = UDim2.new(1, 0, 0, 52),
+	Text = "SPAM  SPACE!",
+})
+local promptScale = Instance.new("UIScale")
+promptScale.Parent = prompt
+local stage = label(panel, {
+	Name = "Stage",
+	Position = UDim2.new(0, 0, 0, 56),
+	Size = UDim2.new(1, 0, 0, 22),
+	Font = Enum.Font.GothamBold,
+	Text = "",
+})
+local barBack = Instance.new("Frame")
+barBack.Position = UDim2.new(0, 0, 0, 88)
+barBack.Size = UDim2.new(1, 0, 0, 24)
+barBack.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+barBack.BackgroundTransparency = 0.2
+barBack.Parent = panel
+Instance.new("UICorner").Parent = barBack
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.new(1, 1, 1)
+stroke.Thickness = 2
+stroke.Parent = barBack
+local barFill = Instance.new("Frame")
+barFill.Size = UDim2.new(0, 0, 1, 0)
+barFill.BackgroundColor3 = PowerConfig.BaseAuraColor
+barFill.Parent = barBack
+Instance.new("UICorner").Parent = barFill
+
+local tapButton = Instance.new("TextButton")
+tapButton.Name = "Tap"
+tapButton.AnchorPoint = Vector2.new(1, 1)
+tapButton.Position = UDim2.new(1, -30, 1, -40)
+tapButton.Size = UDim2.fromOffset(150, 150)
+tapButton.BackgroundColor3 = Color3.fromRGB(255, 190, 40)
+tapButton.Text = "TAP!"
+tapButton.Font = Enum.Font.GothamBlack
+tapButton.TextScaled = true
+tapButton.TextColor3 = Color3.fromRGB(40, 20, 0)
+tapButton.Visible = false
+tapButton.Parent = gui
+local tapCorner = Instance.new("UICorner")
+tapCorner.CornerRadius = UDim.new(1, 0)
+tapCorner.Parent = tapButton
+
+local flash = Instance.new("Frame")
+flash.Name = "Flash"
+flash.Size = UDim2.fromScale(1, 1)
+flash.BackgroundColor3 = Color3.new(1, 1, 1)
+flash.BackgroundTransparency = 1
+flash.ZIndex = 10
+flash.Parent = gui
+local bigText = label(gui, {
+	Name = "Title",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.3),
+	Size = UDim2.fromOffset(700, 90),
+	Text = "SUPER SAIYAN!",
+	TextColor3 = PowerConfig.SSJAuraColor,
+	TextTransparency = 1,
+	TextStrokeTransparency = 1,
+	ZIndex = 11,
+})
+
+----------------------------------------------------------------------------------------
+-- state
+----------------------------------------------------------------------------------------
+local character: Model? = nil
+local charging = false
+local bursting = false
+local charge = 0
+local full = false -- the bar filled up: it stays full until you transform
+local startedAt = 0
+local lastSend = 0
+local transformSentAt = -math.huge
+local savedCamera = nil
+local camShake = 0
+local fovKick = 0
+
+local function attr(name: string)
+	return character and character:GetAttribute(name)
+end
+
+local function refreshHint()
+	if charging or bursting then
+		hint.Text = ""
+	elseif attr("Form") == "SSJ" then
+		hint.Text = UserInputService.TouchEnabled and "POWER button  —  power down" or "R  —  power down"
+	else
+		hint.Text = UserInputService.TouchEnabled and "POWER button  —  power up" or "R  —  power up"
+	end
+end
+
+----------------------------------------------------------------------------------------
+-- camera: swings round in front of you while you power up
+----------------------------------------------------------------------------------------
+local function takeCamera()
+	local camera = Workspace.CurrentCamera
+	if not savedCamera then
+		savedCamera = { Type = camera.CameraType, FOV = camera.FieldOfView }
+	end
+	camera.CameraType = Enum.CameraType.Scriptable
+end
+
+local function releaseCamera()
+	local camera = Workspace.CurrentCamera
+	if savedCamera then
+		camera.CameraType = savedCamera.Type == Enum.CameraType.Scriptable and Enum.CameraType.Custom or savedCamera.Type
+		TweenService:Create(camera, TweenInfo.new(0.4), { FieldOfView = savedCamera.FOV }):Play()
+		savedCamera = nil
+	end
+end
+
+RunService:BindToRenderStep("DWPowerCamera", Enum.RenderPriority.Camera.Value + 1, function(dt)
+	if not savedCamera or not character then
+		return
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local camera = Workspace.CurrentCamera
+	if not root then
+		return
+	end
+	local intensity = bursting and 1 or charge
+	local distance = PowerConfig.CameraDistance * (bursting and 1.25 or (1 - 0.18 * charge))
+	local base = root.CFrame
+	local eye = base * Vector3.new(0, PowerConfig.CameraHeight - 0.3 * intensity, -distance) -- in front (characters face -Z)
+	local look = base.Position + Vector3.new(0, PowerConfig.CameraLookHeight, 0)
+	camShake = math.max(camShake - dt * 2, intensity * PowerConfig.CameraShake)
+	local shake = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * (2 * camShake)
+	local target = CFrame.lookAt(eye + shake, look)
+	camera.CFrame = camera.CFrame:Lerp(target, 1 - math.exp(-dt * 7))
+	fovKick = math.max(0, fovKick - dt * 12)
+	camera.FieldOfView = (savedCamera.FOV or 70) + fovKick
+end)
+
+----------------------------------------------------------------------------------------
+-- charging
+----------------------------------------------------------------------------------------
+local function tap()
+	if not charging then
+		return
+	end
+	charge = math.min(1, charge + PowerConfig.ChargePerTap)
+	if charge >= 1 then
+		full = true
+	end
+	promptScale.Scale = 1.18
+end
+
+local function setTapBinding(on: boolean)
+	if on then
+		-- higher priority than the jump button, and "Sink" so spamming Space doesn't jump
+		ContextActionService:BindActionAtPriority("DWTap", function(_, state)
+			if state == Enum.UserInputState.Begin then
+				tap()
+			end
+			return Enum.ContextActionResult.Sink
+		end, false, Enum.ContextActionPriority.High.Value + 10, PowerConfig.TapKey)
+	else
+		ContextActionService:UnbindAction("DWTap")
+	end
+	tapButton.Visible = on and UserInputService.TouchEnabled
+end
+
+local function startCharging()
+	charging = true
+	charge = 0
+	full = false
+	startedAt = os.clock()
+	transformSentAt = -math.huge
+	remote:FireServer("Start")
+	takeCamera()
+	panel.Visible = true
+	prompt.Text = UserInputService.TouchEnabled and "TAP!  TAP!  TAP!" or "SPAM  SPACE!"
+	setTapBinding(true)
+	refreshHint()
+end
+
+local function stopCharging(sendCancel: boolean)
+	if charging and sendCancel then
+		remote:FireServer("Cancel")
+	end
+	charging = false
+	charge = 0
+	full = false
+	panel.Visible = false
+	setTapBinding(false)
+	if not bursting then
+		releaseCamera()
+	end
+	refreshHint()
+end
+
+local function playBurst()
+	bursting = true
+	charging = false
+	panel.Visible = false
+	setTapBinding(false)
+	camShake = PowerConfig.CameraShake * 4
+	fovKick = 18
+	flash.BackgroundTransparency = 0
+	TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
+	bigText.TextTransparency = 0
+	bigText.TextStrokeTransparency = 0.2
+	bigText.Size = UDim2.fromOffset(500, 70)
+	TweenService:Create(bigText, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(760, 100) }):Play()
+	task.delay(1.6, function()
+		TweenService:Create(bigText, TweenInfo.new(0.6), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+	end)
+	task.delay(PowerConfig.BurstTime, function()
+		bursting = false
+		releaseCamera()
+		refreshHint()
+	end)
+end
+
+local function onPowerKey(_, state)
+	if state ~= Enum.UserInputState.Begin or not character then
+		return Enum.ContextActionResult.Pass
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 or bursting then
+		return Enum.ContextActionResult.Sink
+	end
+	if charging then
+		stopCharging(true)
+	elseif attr("Form") == "SSJ" then
+		remote:FireServer("PowerDown")
+	else
+		startCharging()
+	end
+	return Enum.ContextActionResult.Sink
+end
+ContextActionService:BindAction("DWPower", onPowerKey, true, PowerConfig.PowerKey)
+ContextActionService:SetTitle("DWPower", "Power")
+
+tapButton.Activated:Connect(tap)
+
+local STAGES = {
+	{ 0.0, "Gather your energy..." },
+	{ PowerConfig.AuraStart, "Aura rising!" },
+	{ PowerConfig.HairStart, "Power surging!" },
+	{ 0.6, "Faster!!" },
+	{ 0.85, "BREAK THROUGH!!!" },
+}
+
+RunService.RenderStepped:Connect(function(dt)
+	if not charging then
+		return
+	end
+	if os.clock() - startedAt > 1.2 and attr("PowerState") ~= "Charging" then
+		stopCharging(false) -- the server didn't accept (e.g. already transforming)
+		return
+	end
+	if full then
+		charge = 1
+	else
+		charge = math.max(0, charge - PowerConfig.ChargeDecay * dt)
+	end
+	promptScale.Scale += (1 - promptScale.Scale) * math.min(1, dt * 10)
+	barFill.Size = UDim2.new(charge, 0, 1, 0)
+	barFill.BackgroundColor3 = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, charge)
+	local text = STAGES[1][2]
+	for _, s in STAGES do
+		if charge >= s[1] then
+			text = s[2]
+		end
+	end
+	stage.Text = text
+	local now = os.clock()
+	if now - lastSend >= SEND_EVERY then
+		lastSend = now
+		remote:FireServer("Charge", charge)
+	end
+	if full and now - startedAt >= PowerConfig.MinChargeTime and now - transformSentAt > 0.6 then
+		transformSentAt = now
+		remote:FireServer("Charge", 1)
+		remote:FireServer("Transform")
+	end
+end)
+
+----------------------------------------------------------------------------------------
+-- follow the character and the server's verdicts
+----------------------------------------------------------------------------------------
+local function onCharacter(newCharacter: Model)
+	character = newCharacter
+	charging, bursting = false, false
+	panel.Visible = false
+	setTapBinding(false)
+	releaseCamera()
+	newCharacter:GetAttributeChangedSignal("PowerState"):Connect(function()
+		local state = newCharacter:GetAttribute("PowerState")
+		if state == "Bursting" and not bursting then
+			playBurst()
+		elseif state == "Idle" and charging then
+			stopCharging(false) -- the server cancelled us
+		end
+		refreshHint()
+	end)
+	newCharacter:GetAttributeChangedSignal("Form"):Connect(refreshHint)
+	local humanoid = newCharacter:WaitForChild("Humanoid", 10)
+	if humanoid then
+		humanoid.Died:Connect(function()
+			stopCharging(false)
+			bursting = false
+			releaseCamera()
+		end)
+	end
+	refreshHint()
+end
+player.CharacterAdded:Connect(onCharacter)
+if player.Character then
+	onCharacter(player.Character)
+end
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="12">
+        <Properties>
+          <string name="Name">PowerFX</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	PowerFX  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Draws powering up for EVERY character on this player's screen, from the attributes
+	PowerUpServer sets (so everyone sees everyone's aura):
+	  * the ready stance while charging (knees bent, fists clenched, trembling with power) and a
+	    head-back, arms-out "scream" pose at the moment of transformation,
+	  * the aura — flames licking upward around the body that get bigger, faster and denser
+	    the fuller the power bar is; white for base form, gold for Super Saiyan,
+	  * a glow that lights up the surroundings, dust blasting off the ground and rocks lifting
+	    up at high power,
+	  * the transformation burst: a flash, a shockwave ring across the ground and a big spray.
+	The hair and belt being blown upward is HairPhysics reacting to the AuraWind attribute.
+	Settings: ReplicatedStorage > PowerConfig.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+
+local FIRE = "rbxasset://textures/particles/fire_main.dds"
+local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
+local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
+local ROCKS = 8
+local S = PowerConfig.AuraSize
+
+local folder = Instance.new("Folder")
+folder.Name = "PowerFX"
+folder.Parent = Workspace
+
+----------------------------------------------------------------------------------------
+-- the stance (rotations of each R15 joint; characters face -Z, so +X rotation = forward)
+----------------------------------------------------------------------------------------
+local STANCE = {
+	Root = CFrame.new(0, -0.18, 0),
+	Waist = CFrame.Angles(-0.14, 0, 0), -- hunched slightly forward, straining
+	Neck = CFrame.Angles(0.08, 0, 0),
+	LeftShoulder = CFrame.Angles(-0.25, 0, -0.38), -- upper arms back and out
+	RightShoulder = CFrame.Angles(-0.25, 0, 0.38),
+	LeftElbow = CFrame.Angles(1.05, 0, 0), -- forearms up, fists clenched by the hips
+	RightElbow = CFrame.Angles(1.05, 0, 0),
+	LeftWrist = CFrame.Angles(0.15, 0, 0),
+	RightWrist = CFrame.Angles(0.15, 0, 0),
+	LeftHip = CFrame.Angles(0.32, 0, -0.28), -- feet apart, knees bent
+	RightHip = CFrame.Angles(0.32, 0, 0.28),
+	LeftKnee = CFrame.Angles(-0.6, 0, 0),
+	RightKnee = CFrame.Angles(-0.6, 0, 0),
+	LeftAnkle = CFrame.Angles(0.28, 0, 0.1),
+	RightAnkle = CFrame.Angles(0.28, 0, -0.1),
+}
+local SCREAM = { -- the moment of transformation: chest out, head back, arms flung wide
+	Root = CFrame.new(0, -0.1, 0),
+	Waist = CFrame.Angles(0.28, 0, 0),
+	Neck = CFrame.Angles(0.45, 0, 0),
+	LeftShoulder = CFrame.Angles(0.15, 0, -1.25),
+	RightShoulder = CFrame.Angles(0.15, 0, 1.25),
+	LeftElbow = CFrame.Angles(0.35, 0, 0),
+	RightElbow = CFrame.Angles(0.35, 0, 0),
+	LeftWrist = CFrame.identity,
+	RightWrist = CFrame.identity,
+	LeftHip = CFrame.Angles(0.25, 0, -0.32),
+	RightHip = CFrame.Angles(0.25, 0, 0.32),
+	LeftKnee = CFrame.Angles(-0.45, 0, 0),
+	RightKnee = CFrame.Angles(-0.45, 0, 0),
+	LeftAnkle = CFrame.Angles(0.2, 0, 0.1),
+	RightAnkle = CFrame.Angles(0.2, 0, -0.1),
+}
+
+----------------------------------------------------------------------------------------
+-- building one character's effects
+----------------------------------------------------------------------------------------
+local function fxPart(name: string, size: Vector3): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Transparency = 1
+	p.Size = size
+	p.Parent = folder
+	return p
+end
+
+local function emitter(parent: Instance, props): ParticleEmitter
+	local e = Instance.new("ParticleEmitter")
+	e.Rate = 0
+	e.LightInfluence = 0
+	for k, v in props do
+		e[k] = v
+	end
+	e.Parent = parent
+	return e
+end
+
+local function newFX(character: Model)
+	local fx = { Character = character, Intensity = 0, Pose = 0, Scream = 0, Color = PowerConfig.BaseAuraColor }
+	fx.Aura = fxPart("Aura", Vector3.new(3.2, 5.6, 3.2) * S)
+	fx.Flame = emitter(fx.Aura, {
+		Texture = FIRE,
+		LightEmission = 1,
+		Shape = Enum.ParticleEmitterShape.Cylinder,
+		ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface,
+		ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+		EmissionDirection = Enum.NormalId.Top,
+		Lifetime = NumberRange.new(0.35, 0.65),
+		Acceleration = Vector3.new(0, 14, 0),
+		Drag = 0.5,
+		SpreadAngle = Vector2.new(6, 6),
+		Rotation = NumberRange.new(-30, 30),
+		RotSpeed = NumberRange.new(-90, 90),
+		Squash = NumberSequence.new(-0.6),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.75),
+			NumberSequenceKeypoint.new(0.2, 0.25),
+			NumberSequenceKeypoint.new(0.75, 0.55),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+	})
+	fx.Haze = emitter(fx.Aura, {
+		Texture = SMOKE,
+		LightEmission = 1,
+		EmissionDirection = Enum.NormalId.Top,
+		Lifetime = NumberRange.new(0.6, 1),
+		Speed = NumberRange.new(1, 3),
+		SpreadAngle = Vector2.new(20, 20),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.85), NumberSequenceKeypoint.new(1, 1) }),
+	})
+	fx.Sparks = emitter(fx.Aura, {
+		Texture = SPARK,
+		LightEmission = 1,
+		Shape = Enum.ParticleEmitterShape.Cylinder,
+		ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+		EmissionDirection = Enum.NormalId.Top,
+		Lifetime = NumberRange.new(0.3, 0.6),
+		Speed = NumberRange.new(12, 22),
+		SpreadAngle = Vector2.new(30, 30),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35 * S), NumberSequenceKeypoint.new(1, 0) }),
+	})
+	fx.Light = Instance.new("PointLight")
+	fx.Light.Shadows = false
+	fx.Light.Brightness = 0
+	fx.Light.Parent = fx.Aura
+
+	fx.Ground = fxPart("GroundFX", Vector3.new(1, 0.2, 1))
+	fx.Dust = emitter(fx.Ground, {
+		Texture = SMOKE,
+		Color = ColorSequence.new(Color3.fromRGB(190, 180, 165)),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(88, 88),
+		Speed = NumberRange.new(18, 28),
+		Drag = 3,
+		Acceleration = Vector3.new(0, 3, 0),
+		Lifetime = NumberRange.new(0.8, 1.4),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.5 * S), NumberSequenceKeypoint.new(1, 5 * S) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 1) }),
+		LightInfluence = 1,
+	})
+
+	fx.Rocks = {}
+	local rng = Random.new()
+	for i = 1, ROCKS do
+		local rock = fxPart("Rock", Vector3.new(1, 1, 1) * rng:NextNumber(0.35, 0.8) * S)
+		rock.Material = Enum.Material.Slate
+		rock.Color = Color3.fromRGB(110, 104, 98)
+		table.insert(fx.Rocks, {
+			Part = rock,
+			Angle = (i / ROCKS) * math.pi * 2 + rng:NextNumber(-0.3, 0.3),
+			Radius = rng:NextNumber(3, 5.5) * S,
+			Top = rng:NextNumber(1.2, 3.8),
+			Height = 0,
+			Spin = rng:NextNumber(-1.5, 1.5),
+			Bob = rng:NextNumber(0, 6),
+		})
+	end
+
+	-- the stance needs the character's joints (looked up once)
+	fx.Motors = {}
+	for _, d in character:GetDescendants() do
+		if d:IsA("Motor6D") and STANCE[d.Name] then
+			fx.Motors[d.Name] = d
+		end
+	end
+	fx.LastWritten = {}
+	return fx
+end
+
+-- true if two joint angles are the same (reading one back can lose a hair of precision)
+local function sameFrame(a: CFrame, b: CFrame): boolean
+	local ca = { a:GetComponents() }
+	local cb = { b:GetComponents() }
+	for k = 1, 12 do
+		if math.abs(ca[k] - cb[k]) > 1e-4 then
+			return false
+		end
+	end
+	return true
+end
+
+local function destroyFX(fx)
+	fx.Aura:Destroy()
+	fx.Ground:Destroy()
+	for _, r in fx.Rocks do
+		r.Part:Destroy()
+	end
+	for name, motor in fx.Motors do
+		if motor.Parent and fx.LastWritten[name] and sameFrame(motor.Transform, fx.LastWritten[name]) then
+			motor.Transform = CFrame.identity
+		end
+	end
+end
+
+----------------------------------------------------------------------------------------
+-- the transformation burst
+----------------------------------------------------------------------------------------
+local function playBurst(fx, root: BasePart, groundY: number)
+	fx.Flame:Emit(120)
+	fx.Sparks:Emit(80)
+	fx.Dust:Emit(60)
+	fx.Light.Brightness = 14
+	local color = PowerConfig.SSJAuraColor
+	local ring = fxPart("Shockwave", Vector3.new(0.3, 2, 2))
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Material = Enum.Material.Neon
+	ring.Color = color
+	ring.Transparency = 0.15
+	ring.CFrame = CFrame.new(root.Position.X, groundY + 0.15, root.Position.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	TweenService:Create(ring, TweenInfo.new(0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.3, 36 * S, 36 * S),
+		Transparency = 1,
+	}):Play()
+	local ball = fxPart("Flash", Vector3.new(2, 2, 2))
+	ball.Shape = Enum.PartType.Ball
+	ball.Material = Enum.Material.Neon
+	ball.Color = Color3.new(1, 1, 0.9)
+	ball.Transparency = 0.1
+	ball.CFrame = root.CFrame
+	TweenService:Create(ball, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(16, 16, 16) * S,
+		Transparency = 1,
+	}):Play()
+	task.delay(0.9, function()
+		ring:Destroy()
+		ball:Destroy()
+	end)
+	fx.Scream = 1
+end
+
+----------------------------------------------------------------------------------------
+-- every frame
+----------------------------------------------------------------------------------------
+local active = {} -- [character] = fx
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Exclude
+groundParams.IgnoreWater = true
+
+local function targetIntensity(character: Model): number
+	local state = character:GetAttribute("PowerState")
+	if state == "Charging" then
+		local c = character:GetAttribute("Charge") or 0
+		return c >= PowerConfig.AuraStart and math.max(c, 0.12) or 0
+	elseif state == "Bursting" then
+		return 1.3
+	elseif character:GetAttribute("Form") == "SSJ" then
+		return PowerConfig.SSJIdleAura
+	end
+	return 0
+end
+
+local function characters()
+	local list = {}
+	for _, p in Players:GetPlayers() do
+		if p.Character then
+			table.insert(list, p.Character)
+		end
+	end
+	return list
+end
+
+local moveParts, moveFrames = {}, {}
+
+RunService.RenderStepped:Connect(function(dt)
+	dt = math.min(dt, 0.1)
+	table.clear(moveParts)
+	table.clear(moveFrames)
+	local seen = {}
+	local finished = {}
+	local filter = characters()
+	table.insert(filter, folder)
+	groundParams.FilterDescendantsInstances = filter
+	local now = os.clock()
+
+	for _, character in characters() do
+		seen[character] = true
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local want = targetIntensity(character)
+		local state = character:GetAttribute("PowerState")
+		local fx = active[character]
+		if not fx and (want > 0 or state == "Charging") and root then
+			fx = newFX(character)
+			active[character] = fx
+		end
+		if fx and root then
+			-- smooth ramps: fast up, slower down
+			local rate = want > fx.Intensity and 5 or 2
+			fx.Intensity += (want - fx.Intensity) * (1 - math.exp(-dt * rate))
+			local i = fx.Intensity
+			local gold = character:GetAttribute("Form") == "SSJ" or state == "Bursting"
+			local targetColor = gold and PowerConfig.SSJAuraColor or PowerConfig.BaseAuraColor
+			fx.Color = fx.Color:Lerp(targetColor, 1 - math.exp(-dt * 6))
+
+			if state == "Bursting" and not fx.Burst then
+				fx.Burst = true
+				local hit = Workspace:Raycast(root.Position, Vector3.new(0, -12, 0), groundParams)
+				playBurst(fx, root, hit and hit.Position.Y or root.Position.Y - 3)
+			elseif state ~= "Bursting" then
+				fx.Burst = false
+			end
+
+			-- aura
+			local visible = i > 0.02
+			local sizeMul = (0.8 + 0.9 * i) * S
+			fx.Aura.Size = Vector3.new(3 * sizeMul, (4.8 + 2.4 * i) * S, 3 * sizeMul)
+			table.insert(moveParts, fx.Aura)
+			table.insert(moveFrames, root.CFrame * CFrame.new(0, -0.4 + 0.5 * i, 0))
+			fx.Flame.Rate = visible and (30 + 300 * i) or 0
+			fx.Flame.Speed = NumberRange.new(4 + 11 * i, 8 + 18 * i)
+			fx.Flame.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.9 * sizeMul),
+				NumberSequenceKeypoint.new(0.4, 1.7 * sizeMul),
+				NumberSequenceKeypoint.new(1, 0.15),
+			})
+			fx.Flame.Color = ColorSequence.new(Color3.new(1, 1, 1), fx.Color)
+			fx.Haze.Rate = visible and (6 + 20 * i) or 0
+			fx.Haze.Size = NumberSequence.new(4 * sizeMul)
+			fx.Haze.Color = ColorSequence.new(fx.Color)
+			fx.Sparks.Rate = i > 0.5 and 60 * (i - 0.5) or 0
+			fx.Sparks.Color = ColorSequence.new(fx.Color)
+			fx.Light.Color = fx.Color
+			fx.Light.Range = visible and (6 + 14 * i) or 0
+			fx.Light.Brightness += ((visible and (0.8 + 4 * i) or 0) - fx.Light.Brightness) * (1 - math.exp(-dt * 6))
+
+			-- ground: dust and lifting rocks (only if there's ground close below)
+			local hit = Workspace:Raycast(root.Position, Vector3.new(0, -8, 0), groundParams)
+			local groundY = hit and hit.Position.Y
+			if groundY then
+				table.insert(moveParts, fx.Ground)
+				table.insert(moveFrames, CFrame.new(root.Position.X, groundY + 0.2, root.Position.Z))
+			end
+			fx.Dust.Rate = (groundY and i > 0.55) and 40 * (i - 0.55) / 0.45 or 0
+			for _, rock in fx.Rocks do
+				local lift = (groundY and i > 0.7) and rock.Top * math.clamp((i - 0.7) / 0.3, 0, 1) or 0
+				if lift > rock.Height then
+					rock.Height += (lift - rock.Height) * (1 - math.exp(-dt * 1.5))
+				else
+					rock.Height = math.max(lift, rock.Height - dt * 6) -- falls back down
+				end
+				if rock.Height > 0.02 and groundY then
+					rock.Part.Transparency = 0
+					rock.Angle += dt * 0.25
+					local pos = root.Position + Vector3.new(math.cos(rock.Angle), 0, math.sin(rock.Angle)) * rock.Radius
+					local bob = math.sin(now * 2 + rock.Bob) * 0.15 * math.min(1, rock.Height)
+					table.insert(moveParts, rock.Part)
+					table.insert(moveFrames, CFrame.new(pos.X, groundY + rock.Part.Size.Y / 2 + rock.Height + bob, pos.Z)
+						* CFrame.Angles(now * rock.Spin, now * rock.Spin * 0.7, 0))
+				else
+					rock.Part.Transparency = 1
+				end
+			end
+
+			-- stance blending
+			local wantPose = (state == "Charging" or state == "Bursting") and 1 or 0
+			fx.Pose += (wantPose - fx.Pose) * (1 - math.exp(-dt * 7))
+			fx.Scream = (state == "Bursting") and math.max(fx.Scream - dt * 0.6, 0) or math.max(fx.Scream - dt * 3, 0)
+			fx.Tremble = i
+
+			-- tidy up once fully calm
+			if want <= 0 and fx.Intensity < 0.01 and fx.Pose < 0.01 and state ~= "Charging" then
+				table.insert(finished, fx)
+				active[character] = nil
+			end
+		end
+	end
+	for character, fx in active do
+		if not seen[character] or not character.Parent then
+			table.insert(finished, fx)
+			active[character] = nil
+		end
+	end
+	if #moveParts > 0 then
+		Workspace:BulkMoveTo(moveParts, moveFrames, Enum.BulkMoveMode.FireCFrameChanged)
+	end
+	-- removed only after this frame's moves, so nothing moves a part that's already gone
+	for _, fx in finished do
+		destroyFX(fx)
+	end
+end)
+
+-- The pose goes on after Roblox has played the character's animations for this frame, blended
+-- with them by how far into the stance we are.
+RunService.Stepped:Connect(function()
+	local t = os.clock()
+	for _, fx in active do
+		if fx.Pose > 0.001 then
+			local w = math.min(fx.Pose, 1)
+			local tremble = (fx.Tremble or 0) * 0.025
+			for name, motor in fx.Motors do
+				if motor.Parent then
+					local current = motor.Transform
+					-- if the animator didn't touch this joint since our last write, blend from rest
+					if fx.LastWritten[name] and sameFrame(current, fx.LastWritten[name]) then
+						current = CFrame.identity
+					end
+					local pose = STANCE[name]:Lerp(SCREAM[name], fx.Scream)
+					if tremble > 0 and (name == "Waist" or name == "Neck" or name == "Root") then
+						pose *= CFrame.Angles(math.sin(t * 41) * tremble, math.sin(t * 37) * tremble, math.sin(t * 29) * tremble)
+					end
+					local final = current:Lerp(pose, w)
+					motor.Transform = final
+					fx.LastWritten[name] = final
+				end
+			end
+		else
+			table.clear(fx.LastWritten)
+		end
+	end
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="13">
+        <Properties>
+          <string name="Name">HairFitTool</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HairFitTool  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	A little panel for lining the hair and belt up on your character while the game is running.
+	Press H (or tap the "Fit" button on a phone) to open or close it.
+
+	  Prev / Next   pick which piece you're moving: base hair, Super Saiyan hair or belt
+	                (it gets an outline; the Super Saiyan hair only shows once you transform)
+	  Up, Down, Left, Right, Fwd, Back   move it 0.05 studs (hold Shift on a keyboard
+	                                      for 0.01)
+	  Reset         undo this session's nudges
+
+	The box at the bottom shows the Offset line for HairConfig, e.g.
+	    Offset = CFrame.new(0, 0.05, -0.02),
+	Copy it into that piece's entry in ReplicatedStorage > HairConfig to keep it.
+	(The nudges only change what you see in this play session.) Directions are relative to
+	the body part the piece is fixed to (the head for hair, the waist for the belt).
+
+	Turn the tool off with HairConfig.FitToolEnabled = false.
+]]
+
+local CollectionService = game:GetService("CollectionService")
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local HairConfig = require(ReplicatedStorage:WaitForChild("HairConfig"))
+local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
+
+if not HairConfig.FitToolEnabled then
+	return
+end
+
+local STEP = 0.05
+local FINE_STEP = 0.01
+
+local player = Players.LocalPlayer
+local nudges = {} -- [hair part] = total nudge this session (head space: right, up, back)
+local selectedIndex = 1
+local gui, title, readout, highlight
+
+local function tagged(): { BasePart }
+	local list = {}
+	local character = player.Character
+	for _, part in CollectionService:GetTagged(HairPhysics.TAG) do
+		if part:IsA("BasePart") and character and part:IsDescendantOf(character) then
+			table.insert(list, part)
+		end
+	end
+	table.sort(list, function(a, b)
+		return a:GetFullName() < b:GetFullName()
+	end)
+	return list
+end
+
+local function selectedHair(): BasePart?
+	local list = tagged()
+	if #list == 0 then
+		return nil
+	end
+	selectedIndex = (selectedIndex - 1) % #list + 1
+	return list[selectedIndex]
+end
+
+-- The weld holding the piece on, and the body part it's fixed to.
+local function findWeld(hair: BasePart): (JointInstance?, BasePart?)
+	for _, child in hair:GetChildren() do
+		if child:IsA("JointInstance") then
+			local other = child.Part0 == hair and child.Part1 or child.Part0
+			if other then
+				return child, other
+			end
+		end
+	end
+	return nil
+end
+
+local function offsetLine(hair: BasePart): string
+	local preset = hair:GetAttribute("HairPreset")
+	local cfg = HairConfig.Hairs[preset]
+	local base = cfg and cfg.Offset or CFrame.identity
+	local p = base.Position + (nudges[hair] or Vector3.zero)
+	local function n(x: number): string
+		local str = string.format("%.2f", x)
+		if str == "0.00" or str == "-0.00" then
+			return "0"
+		end
+		return (str:gsub("0+$", ""):gsub("%.$", ""))
+	end
+	return ("Offset = CFrame.new(%s, %s, %s),"):format(n(p.X), n(p.Y), n(p.Z))
+end
+
+local function refresh()
+	if not gui then
+		return
+	end
+	local hair = selectedHair()
+	if hair then
+		title.Text = ("Fit: %s"):format(tostring(hair:GetAttribute("HairPreset")))
+		readout.Text = offsetLine(hair)
+		highlight.Adornee = hair
+	else
+		title.Text = "Fit: nothing to fit yet"
+		readout.Text = ""
+		highlight.Adornee = nil
+	end
+end
+
+-- Moves a hair by delta (head space: right, up, back) by adjusting the weld that holds it.
+local function applyDelta(hair: BasePart, delta: Vector3)
+	local weld, head = findWeld(hair)
+	if not weld or not head then
+		warn("[HairFitTool] couldn't find the weld holding " .. hair:GetFullName())
+		return
+	end
+	if weld.Part0 == head then
+		local current = weld.C0 * weld.C1:Inverse()
+		weld.C0 = CFrame.new(delta) * current * weld.C1
+	else
+		local current = weld.C1 * weld.C0:Inverse()
+		weld.C1 = CFrame.new(delta) * current * weld.C0
+	end
+	nudges[hair] = (nudges[hair] or Vector3.zero) + delta
+	refresh()
+end
+
+local function nudge(direction: Vector3)
+	local hair = selectedHair()
+	if hair then
+		local fine = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+		applyDelta(hair, direction * (fine and FINE_STEP or STEP))
+	end
+end
+
+local function reset()
+	local hair = selectedHair()
+	if hair and nudges[hair] then
+		applyDelta(hair, -nudges[hair])
+		nudges[hair] = Vector3.zero
+		refresh()
+	end
+end
+
+local function makeButton(parent: Instance, text: string, pos: UDim2, size: UDim2, onClick: () -> ())
+	local b = Instance.new("TextButton")
+	b.Text = text
+	b.Position = pos
+	b.Size = size
+	b.BackgroundColor3 = Color3.fromRGB(45, 48, 56)
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Font = Enum.Font.GothamMedium
+	b.TextScaled = true
+	b.AutoButtonColor = true
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent = b
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 4)
+	pad.PaddingBottom = UDim.new(0, 4)
+	pad.Parent = b
+	b.Activated:Connect(onClick)
+	b.Parent = parent
+	return b
+end
+
+local function buildGui()
+	gui = Instance.new("ScreenGui")
+	gui.Name = "HairFitTool"
+	gui.ResetOnSpawn = false
+	gui.Enabled = false
+
+	local frame = Instance.new("Frame")
+	frame.AnchorPoint = Vector2.new(0, 1)
+	frame.Position = UDim2.new(0, 12, 1, -12)
+	frame.Size = UDim2.fromOffset(300, 250)
+	frame.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
+	frame.BackgroundTransparency = 0.1
+	frame.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = frame
+
+	title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.fromOffset(10, 6)
+	title.Size = UDim2.new(1, -20, 0, 24)
+	title.Font = Enum.Font.GothamBold
+	title.TextColor3 = Color3.new(1, 1, 1)
+	title.TextScaled = true
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = frame
+
+	local w, h = 88, 32
+	local function at(col: number, row: number)
+		return UDim2.fromOffset(10 + col * (w + 6), 36 + row * (h + 6))
+	end
+	local size = UDim2.fromOffset(w, h)
+	makeButton(frame, "Prev", at(0, 0), size, function()
+		selectedIndex -= 1
+		refresh()
+	end)
+	makeButton(frame, "Reset", at(1, 0), size, reset)
+	makeButton(frame, "Next", at(2, 0), size, function()
+		selectedIndex += 1
+		refresh()
+	end)
+	makeButton(frame, "Up", at(1, 1), size, function()
+		nudge(Vector3.yAxis)
+	end)
+	makeButton(frame, "Left", at(0, 2), size, function()
+		nudge(-Vector3.xAxis)
+	end)
+	makeButton(frame, "Down", at(1, 2), size, function()
+		nudge(-Vector3.yAxis)
+	end)
+	makeButton(frame, "Right", at(2, 2), size, function()
+		nudge(Vector3.xAxis)
+	end)
+	makeButton(frame, "Fwd", at(0, 1), size, function()
+		nudge(-Vector3.zAxis)
+	end)
+	makeButton(frame, "Back", at(2, 1), size, function()
+		nudge(Vector3.zAxis)
+	end)
+
+	-- a TextBox so the line can be selected and copied
+	readout = Instance.new("TextBox")
+	readout.ClearTextOnFocus = false
+	readout.TextEditable = false
+	readout.Position = UDim2.fromOffset(10, 36 + 3 * (h + 6) + 4)
+	readout.Size = UDim2.new(1, -20, 0, 30)
+	readout.BackgroundColor3 = Color3.fromRGB(12, 13, 16)
+	readout.TextColor3 = Color3.fromRGB(140, 220, 160)
+	readout.Font = Enum.Font.Code
+	readout.TextScaled = true
+	readout.Parent = frame
+	local rc = Instance.new("UICorner")
+	rc.CornerRadius = UDim.new(0, 6)
+	rc.Parent = readout
+
+	local hint = Instance.new("TextLabel")
+	hint.BackgroundTransparency = 1
+	hint.Position = UDim2.fromOffset(10, 36 + 3 * (h + 6) + 38)
+	hint.Size = UDim2.new(1, -20, 0, 16)
+	hint.Font = Enum.Font.Gotham
+	hint.TextColor3 = Color3.fromRGB(170, 175, 185)
+	hint.TextScaled = true
+	hint.Text = "Copy this line into HairConfig to keep it"
+	hint.Parent = frame
+
+	highlight = Instance.new("Highlight")
+	highlight.FillTransparency = 1
+	highlight.OutlineColor = Color3.fromRGB(255, 200, 60)
+	highlight.Enabled = false
+	highlight.Parent = gui
+
+	gui.Parent = player:WaitForChild("PlayerGui")
+end
+
+local function toggle(_, state: Enum.UserInputState)
+	if state ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Pass
+	end
+	if not gui then
+		buildGui()
+	end
+	gui.Enabled = not gui.Enabled
+	highlight.Enabled = gui.Enabled
+	refresh()
+	if gui.Enabled then
+		local hair = selectedHair()
+		if hair then
+			print("[HairFitTool] " .. tostring(hair:GetAttribute("HairPreset")) .. ": " .. offsetLine(hair))
+		end
+	end
+	return Enum.ContextActionResult.Sink
+end
+
+ContextActionService:BindAction("HairFitTool", toggle, true, HairConfig.FitToolKey or Enum.KeyCode.H)
+ContextActionService:SetTitle("HairFitTool", "Fit")
+ContextActionService:SetPosition("HairFitTool", UDim2.new(1, -70, 0, 10))
+]]></ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="14">
+      <Properties>
+        <string name="Name">ServerStorage</string>
+      </Properties>
+      <Item class="Folder" referent="15">
+        <Properties>
+          <string name="Name">CharacterParts</string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+</roblox>
