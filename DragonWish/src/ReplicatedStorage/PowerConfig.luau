@@ -37,6 +37,8 @@ PowerConfig.SSJAuraColor = Color3.fromRGB(255, 210, 70)
 PowerConfig.SSJAuraEdge = Color3.fromRGB(255, 125, 25)
 PowerConfig.AuraSize = 1 -- scales the whole aura
 PowerConfig.AuraFlames = 1 -- how many flame tongues (1 = normal; lower it if lots of players lag)
+PowerConfig.AuraFrameRate = 15 -- how many times a second the aura's flames change shape. Low
+-- (12-15) flickers like hand-drawn anime frames; 60 is smooth
 
 -- camera (front view while powering up)
 PowerConfig.CameraDistance = 9 -- studs in front of you

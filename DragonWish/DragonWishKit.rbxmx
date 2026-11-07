@@ -1562,6 +1562,8 @@ PowerConfig.SSJAuraColor = Color3.fromRGB(255, 210, 70)
 PowerConfig.SSJAuraEdge = Color3.fromRGB(255, 125, 25)
 PowerConfig.AuraSize = 1 -- scales the whole aura
 PowerConfig.AuraFlames = 1 -- how many flame tongues (1 = normal; lower it if lots of players lag)
+PowerConfig.AuraFrameRate = 15 -- how many times a second the aura's flames change shape. Low
+-- (12-15) flickers like hand-drawn anime frames; 60 is smooth
 
 -- camera (front view while powering up)
 PowerConfig.CameraDistance = 9 -- studs in front of you
@@ -2604,10 +2606,11 @@ end
 	                elbows thrown wide, trembling with effort
 	      release   at the transformation you lean back, head up, arms lowered and spread, and
 	                hold it until you get control back
-	  * the aura, anime style: tongues of flame licking up and fanning out around you (big
-	    outer flames, tall thin spikes and a white-hot core), energy streaks swirling upward,
-	    light streaks shooting up and a glow on the surroundings. It grows taller and faster
-	    as the bar fills; white-blue in base form, gold as a Super Saiyan.
+	  * the aura, Dragon Ball style: a flame-shaped shell that surrounds you (widest near the
+	    ground with flares sticking out sideways, narrowing to a spiky top), filled with
+	    see-through flames and a white-hot core, flickering in steps like hand-drawn anime
+	    frames. Energy streaks swirl up and light streaks shoot past. It grows bigger and
+	    faster as the bar fills; white-blue in base form, gold as a Super Saiyan.
 	  * dust blasting off the ground and rocks lifting at high power,
 	  * the transformation burst: a pillar of light, a flash, a shockwave ring and a spray.
 	The hair and belt being blown upward is HairPhysics reacting to the AuraWind attribute.
@@ -2725,37 +2728,51 @@ local function colours(points): ColorSequence
 	return ColorSequence.new(keys)
 end
 
--- Per layer: how many flames, how far from the body they start (studs), how tall, how wide at
--- the base and how far the tips lean outward (each {at no power, at full power}), how many
--- times a second each flame licks up, how high above the feet they start (lowest, highest),
--- and how much they bulge upward before curving out. The tips leaning out is what gives the
--- aura its teardrop shape: narrow at the feet, flaring wide above the head.
-local LAYERS = {
-	{ -- big flames fanning out around the body
-		Count = 14, Radius = { 1.1, 1.7 }, Height = { 3, 8.5 }, Width = { 1.2, 2.4 }, Lean = { 0.8, 3.6 },
-		Speed = { 0.9, 2.4 }, Base = { 0, 1.2 }, Bulge = 0.4,
-		Transparency = seq({ { 0, 0.88 }, { 0.25, 0.35 }, { 0.75, 0.45 }, { 1, 0.9 } }),
+-- The aura is a flame-shaped shell around the body, drawn from the reference: widest near the
+-- ground, bulging, then narrowing to a spiky top. PROFILE is its outline: at each height (0 =
+-- feet, 1 = top of the shell) how far out it reaches, as a share of its widest point.
+local PROFILE = { { 0, 0.5 }, { 0.1, 1 }, { 0.3, 0.9 }, { 0.55, 0.68 }, { 0.8, 0.42 }, { 1, 0.12 } }
+local SHELL_HEIGHT = { 5.5, 8 } -- studs from the feet to the top of the shell {no power, full power}
+local SHELL_WIDTH = { 2.8, 3.8 } -- studs from the middle out to its widest point
+
+local function outline(u: number): number
+	u = math.clamp(u, 0, 1)
+	for k = 2, #PROFILE do
+		local a, b = PROFILE[k - 1], PROFILE[k]
+		if u <= b[1] then
+			return lerp(a[2], b[2], (u - a[1]) / (b[1] - a[1]))
+		end
+	end
+	return PROFILE[#PROFILE][2]
+end
+
+-- The flames, as Beams. Per group: how many, how many times a second each one licks up
+-- {no power, full power}, how wide at the base, how see-through from base (0) to tip (1),
+-- and its colours.
+local GROUPS = {
+	{ -- jagged spikes sticking out of the shell: sideways at the bottom, straight up on top
+		Kind = "Spike", Count = 36, Speed = { 1.6, 3.6 }, Width = { 0.7, 1.4 },
+		Transparency = seq({ { 0, 0.65 }, { 0.35, 0.2 }, { 0.85, 0.35 }, { 1, 0.8 } }),
 		Paint = function(core, main, edge)
-			return colours({ { 0, core }, { 0.35, main }, { 1, edge } })
+			return colours({ { 0, core }, { 0.45, main }, { 1, edge } })
 		end,
 	},
-	{ -- tall thin spikes shooting up
-		Count = 7, Radius = { 1, 1.6 }, Height = { 4.5, 11.5 }, Width = { 0.3, 0.7 }, Lean = { 0.4, 2.4 },
-		Speed = { 1.4, 3.4 }, Base = { 0.3, 2 }, Bulge = 0.25,
-		Transparency = seq({ { 0, 0.85 }, { 0.3, 0.25 }, { 1, 0.85 } }),
+	{ -- broad see-through flames filling the shell, from the feet to the top
+		Kind = "Body", Count = 8, Speed = { 0.8, 1.8 }, Width = { 2.2, 3.6 },
+		Transparency = seq({ { 0, 0.9 }, { 0.3, 0.72 }, { 0.8, 0.76 }, { 1, 1 } }),
 		Paint = function(core, main, edge)
-			return colours({ { 0, main }, { 0.6, main }, { 1, edge } })
+			return colours({ { 0, Color3.new(1, 1, 1) }, { 0.6, core }, { 1, main } })
 		end,
 	},
-	{ -- white-hot core hugging the body
-		Count = 9, Radius = { 0.7, 1.05 }, Height = { 2.2, 5.6 }, Width = { 0.8, 1.5 }, Lean = { 0.1, 0.9 },
-		Speed = { 1.2, 3 }, Base = { 0.2, 1.5 }, Bulge = 0.35,
-		Transparency = seq({ { 0, 0.8 }, { 0.25, 0.3 }, { 0.8, 0.45 }, { 1, 0.95 } }),
+	{ -- white-hot flames hugging the body
+		Kind = "Core", Count = 6, Speed = { 1.2, 2.6 }, Width = { 0.8, 1.4 },
+		Transparency = seq({ { 0, 0.8 }, { 0.25, 0.35 }, { 0.8, 0.5 }, { 1, 0.95 } }),
 		Paint = function(core, main, edge)
-			return colours({ { 0, Color3.new(1, 1, 1) }, { 0.45, core }, { 1, main } })
+			return colours({ { 0, Color3.new(1, 1, 1) }, { 0.5, core }, { 1, main } })
 		end,
 	},
 }
+local AURA_FPS = math.max(PowerConfig.AuraFrameRate or 15, 1)
 local SWOOSHES = 3 -- energy streaks swirling up around the body
 
 -- an attachment frame whose axis (X) points straight up
@@ -2825,12 +2842,22 @@ end
 local function respawn(t)
 	local slot = (t.Index - 1) / t.Of * math.pi * 2 + t.Offset
 	t.Angle = slot + rng:NextNumber(-0.5, 0.5) * (math.pi * 2 / t.Of)
-	t.R = rng:NextNumber()
-	t.HeightMul = rng:NextNumber(0.7, 1.15)
+	t.LenMul = rng:NextNumber(0.75, 1.2)
 	t.WidthMul = rng:NextNumber(0.75, 1.2)
 	t.SpeedMul = rng:NextNumber(0.8, 1.25)
-	t.Seed = rng:NextNumber(0, 100)
-	t.Lift = rng:NextNumber(t.Layer.Base[1], t.Layer.Base[2])
+	if t.Kind == "Spike" then
+		-- where on the shell: plenty low down (the side flares), most in the middle, some on top
+		local r = rng:NextNumber()
+		t.U = r < 0.3 and rng:NextNumber(0.04, 0.2) or r < 0.75 and rng:NextNumber(0.2, 0.7) or rng:NextNumber(0.7, 0.97)
+	elseif t.Kind == "Body" then
+		t.R0 = rng:NextNumber(0.3, 1)
+		t.TipU = rng:NextNumber(0.85, 1.05)
+		t.TipOff = rng:NextNumber(-0.5, 0.5)
+	else
+		t.R0 = rng:NextNumber(0.5, 0.9)
+		t.Lift = rng:NextNumber(0.2, 1.5)
+		t.TipU = rng:NextNumber(0.45, 0.7)
+	end
 end
 
 local function resetSwoosh(w, feet: number, first: boolean)
@@ -2840,6 +2867,21 @@ local function resetSwoosh(w, feet: number, first: boolean)
 	w.Top = feet + rng:NextNumber(6, 9) * S
 	w.Rise = rng:NextNumber(4, 7) * S
 	w.Spin = rng:NextNumber(3.5, 5.5) * (rng:NextNumber() < 0.5 and -1 or 1)
+end
+
+-- The character's joints the animation turns. Characters now spawn with AnimationConstraints
+-- (Roblox's "Avatar Joint Upgrade") instead of Motor6Ds; both are posed the same way, through
+-- their Transform.
+local function findJoints(character: Model)
+	local joints = {}
+	for _, d in character:GetDescendants() do
+		if READY[d.Name] and (d:IsA("AnimationConstraint") or d:IsA("Motor6D")) then
+			if not joints[d.Name] or d:IsA("AnimationConstraint") then
+				joints[d.Name] = d
+			end
+		end
+	end
+	return joints
 end
 
 local function newFX(character: Model, root: BasePart)
@@ -2861,17 +2903,21 @@ local function newFX(character: Model, root: BasePart)
 
 	fx.Tongues = {}
 	local amount = math.max(PowerConfig.AuraFlames or 1, 0)
-	for li, layer in LAYERS do
-		local count = math.max(1, math.floor(layer.Count * amount + 0.5))
+	for gi, group in GROUPS do
+		local count = math.max(1, math.floor(group.Count * amount + 0.5))
 		local offset = rng:NextNumber(0, math.pi * 2)
 		for k = 1, count do
-			local beam, a0, a1 = newBeam(fx.Aura, layer.Transparency)
-			local t = { Layer = layer, LayerIndex = li, Index = k, Of = count, Offset = offset, Beam = beam, A0 = a0, A1 = a1 }
+			local beam, a0, a1 = newBeam(fx.Aura, group.Transparency)
+			local t = {
+				Group = group, GroupIndex = gi, Kind = group.Kind, Index = k, Of = count, Offset = offset,
+				Beam = beam, A0 = a0, A1 = a1, Boil = 1,
+			}
 			respawn(t)
 			t.Phase = rng:NextNumber()
 			table.insert(fx.Tongues, t)
 		end
 	end
+	fx.FrameClock = math.huge -- draw the first frame straight away
 	fx.Swooshes = {}
 	for _ = 1, SWOOSHES do
 		local beam, a0, a1 = newBeam(fx.Aura, seq({ { 0, 1 }, { 0.5, 0.35 }, { 1, 0.05 } }))
@@ -2949,13 +2995,9 @@ local function newFX(character: Model, root: BasePart)
 		})
 	end
 
-	-- the animation needs the character's joints (looked up once)
-	fx.Motors = {}
-	for _, d in character:GetDescendants() do
-		if d:IsA("Motor6D") and READY[d.Name] then
-			fx.Motors[d.Name] = d
-		end
-	end
+	-- the animation needs the character's joints
+	fx.Motors = findJoints(character)
+	fx.NextJointScan = 0
 	fx.LastWritten = {}
 	return fx
 end
@@ -2996,8 +3038,8 @@ local function paint(fx)
 	local core = Color3.new(1, 1, 1):Lerp(main, 0.35)
 	local painted = {}
 	for _, t in fx.Tongues do
-		painted[t.LayerIndex] = painted[t.LayerIndex] or t.Layer.Paint(core, main, edge)
-		t.Beam.Color = painted[t.LayerIndex]
+		painted[t.GroupIndex] = painted[t.GroupIndex] or t.Group.Paint(core, main, edge)
+		t.Beam.Color = painted[t.GroupIndex]
 	end
 	local swoosh = colours({ { 0, edge }, { 1, core } })
 	for _, w in fx.Swooshes do
@@ -3114,14 +3156,32 @@ local function characters()
 end
 
 -- moves the flames, streaks and swirls of one character's aura
-local function updateAura(fx, i: number, dt: number, now: number, camDir: Vector3?)
+local function updateAura(fx, i: number, dt: number, camDir: Vector3?)
+	-- glow, light and particles change smoothly every frame
+	local visible = i > 0.02
+	fx.Streaks.Rate = i > 0.3 and 70 * (i - 0.3) or 0
+	fx.Sparks.Rate = i > 0.5 and 60 * (i - 0.5) or 0
+	fx.Haze.Rate = visible and (6 + 18 * i) or 0
+	fx.Haze.Size = NumberSequence.new(5 * S * (0.7 + 0.5 * i))
+	fx.Light.Range = visible and (8 + 18 * i) or 0
+	fx.Light.Brightness = ease(fx.Light.Brightness, visible and (1 + 5 * i) or 0, 6, dt)
+
+	-- the flames change shape in steps, like hand-drawn anime frames
+	fx.FrameClock += dt
+	if fx.FrameClock < 1 / AURA_FPS then
+		return
+	end
+	local step = math.min(fx.FrameClock, 0.25)
+	fx.FrameClock = 0
+
 	local feet = -fx.FootDrop
 	local k = math.min(i, 1.4)
-	-- fewer flames at low power, all of them at full
-	local share = i > 0.02 and math.clamp(0.25 + 0.85 * i, 0, 1) or 0
+	local height = lerp(SHELL_HEIGHT[1], SHELL_HEIGHT[2], k) * S * fx.Flare
+	local half = lerp(SHELL_WIDTH[1], SHELL_WIDTH[2], math.min(k, 1.2)) * S
+	local share = i > 0.02 and math.clamp(0.3 + 0.8 * i, 0, 1) or 0 -- fewer flames at low power
 	for _, t in fx.Tongues do
-		local layer = t.Layer
-		t.Phase += dt * lerp(layer.Speed[1], layer.Speed[2], math.min(k, 1.2)) * t.SpeedMul
+		local group = t.Group
+		t.Phase += step * lerp(group.Speed[1], group.Speed[2], math.min(k, 1.2)) * t.SpeedMul
 		if t.Phase >= 1 then
 			t.Phase -= math.floor(t.Phase)
 			respawn(t)
@@ -3132,36 +3192,54 @@ local function updateAura(fx, i: number, dt: number, now: number, camDir: Vector
 			end
 			continue
 		end
-		-- each lick shoots up fast, then thins out and is replaced
+		-- every drawn frame each flame wobbles a little, as if redrawn by hand
+		t.Boil = rng:NextNumber(0.85, 1.15)
+		local a = t.Angle + rng:NextNumber(-0.06, 0.06)
+		-- each lick shoots out fast, then thins away and starts again somewhere else
 		local p = t.Phase
 		local grow = smooth(0, 0.3, p)
-		local fade = 1 - smooth(0.6, 1, p)
-		local height = lerp(layer.Height[1], layer.Height[2], k) * S * t.HeightMul * (0.45 + 0.55 * grow) * fx.Flare
-		local width = lerp(layer.Width[1], layer.Width[2], k) * S * t.WidthMul * (0.3 + 0.7 * grow) * (0.2 + 0.8 * fade)
-		local out = Vector3.new(math.cos(t.Angle), 0, math.sin(t.Angle))
+		local fade = 1 - smooth(0.65, 1, p)
+		local out = Vector3.new(math.cos(a), 0, math.sin(a))
+		local width = lerp(group.Width[1], group.Width[2], k) * S * t.WidthMul * (0.4 + 0.6 * grow) * (0.25 + 0.75 * fade)
 		if camDir then
 			-- flames between the camera and the character thin out so they don't hide them
-			width *= 1 - 0.7 * smooth(0.3, 0.85, out:Dot(camDir))
+			width *= 1 - 0.65 * smooth(0.3, 0.85, out:Dot(camDir))
 		end
-		local radius = lerp(layer.Radius[1], layer.Radius[2], t.R) * S
-		local lean = lerp(layer.Lean[1], layer.Lean[2], k) * S * (0.4 + 0.6 * grow)
-		local sway = math.sin(now * 6 + t.Seed) * 0.12 * height
-		local side = Vector3.new(-out.Z, 0, out.X)
-		local baseY = feet + t.Lift * S
-		t.A0.CFrame = CFrame.new(out * radius + Vector3.new(0, baseY, 0)) * UP_FRAME
-		local tip = out * (radius + lean) + side * sway + Vector3.new(0, baseY + height, 0)
-		local tipDir = (Vector3.yAxis * height + out * (lean * 1.2) + side * (2 * sway)).Unit
-		t.A1.CFrame = pointing(tip, tipDir)
+		if t.Kind == "Spike" then
+			-- sits on the shell and points outward: sideways low down, diagonally in the middle,
+			-- straight up on top, curling upward at the tip
+			local u = t.U
+			local dir = (out * (1.15 - 0.95 * u) + Vector3.yAxis * (-0.1 + 1.45 * u)).Unit
+			local len = (0.18 + 0.22 * u) * height * t.LenMul * t.Boil * (0.5 + 0.5 * grow)
+			local base = out * (outline(u) * half * 0.8) + Vector3.new(0, feet + u * height, 0)
+			t.A0.CFrame = pointing(base, dir)
+			t.A1.CFrame = pointing(base + dir * len, (dir + Vector3.yAxis * 0.5).Unit)
+			t.Beam.CurveSize0 = len * 0.3
+			t.Beam.CurveSize1 = len * 0.25
+		elseif t.Kind == "Body" then
+			-- rises from the feet, bows outward along the shell and meets the top
+			local top = t.TipU * height * t.Boil * (0.6 + 0.4 * grow)
+			local base = out * (t.R0 * S) + Vector3.new(0, feet + 0.1 * S, 0)
+			t.A0.CFrame = pointing(base, (out * 0.9 + Vector3.yAxis * 0.7).Unit)
+			t.A1.CFrame = CFrame.new(-out * (t.TipOff * S) + Vector3.new(0, feet + top, 0)) * UP_FRAME
+			t.Beam.CurveSize0 = top * 0.45
+			t.Beam.CurveSize1 = top * 0.2
+		else
+			local h = t.TipU * height * t.Boil * (0.5 + 0.5 * grow)
+			local base = out * (t.R0 * S) + Vector3.new(0, feet + t.Lift * S, 0)
+			t.A0.CFrame = CFrame.new(base) * UP_FRAME
+			t.A1.CFrame = CFrame.new(base + out * (0.3 * S) + Vector3.new(0, h, 0)) * UP_FRAME
+			t.Beam.CurveSize0 = h * 0.35
+			t.Beam.CurveSize1 = h * 0.2
+		end
 		t.Beam.Width0 = width
-		t.Beam.CurveSize0 = height * layer.Bulge
-		t.Beam.CurveSize1 = height * 0.2
 	end
 
 	-- energy streaks swirling up around the body
 	local swirl = smooth(0.35, 0.8, i)
 	for _, w in fx.Swooshes do
-		w.Angle += dt * w.Spin * (0.6 + i)
-		w.Y += dt * w.Rise * (0.6 + i)
+		w.Angle += step * w.Spin * (0.6 + i)
+		w.Y += step * w.Rise * (0.6 + i)
 		if w.Y > w.Top then
 			resetSwoosh(w, feet, false)
 		end
@@ -3179,14 +3257,6 @@ local function updateAura(fx, i: number, dt: number, now: number, camDir: Vector
 		w.Beam.Width0 = 0.04 * S * swirl * life
 		w.Beam.Width1 = 0.4 * S * swirl * life
 	end
-
-	local visible = i > 0.02
-	fx.Streaks.Rate = i > 0.3 and 70 * (i - 0.3) or 0
-	fx.Sparks.Rate = i > 0.5 and 60 * (i - 0.5) or 0
-	fx.Haze.Rate = visible and (6 + 18 * i) or 0
-	fx.Haze.Size = NumberSequence.new(5 * S * (0.7 + 0.5 * i))
-	fx.Light.Range = visible and (8 + 18 * i) or 0
-	fx.Light.Brightness = ease(fx.Light.Brightness, visible and (1 + 5 * i) or 0, 6, dt)
 end
 
 local moveParts, moveFrames = {}, {}
@@ -3247,7 +3317,7 @@ RunService.RenderStepped:Connect(function(dt)
 					camDir = h.Unit
 				end
 			end
-			updateAura(fx, i, dt, now, camDir)
+			updateAura(fx, i, dt, camDir)
 
 			-- ground: dust and lifting rocks (only if there's ground close below)
 			local hit = Workspace:Raycast(root.Position, Vector3.new(0, -(fx.FootDrop + 5), 0), groundParams)
@@ -3312,11 +3382,29 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 end)
 
--- The pose goes on after Roblox has played the character's animations for this frame, blended
--- with them by how far into the power-up we are.
-RunService.Stepped:Connect(function()
+-- The pose goes on after Roblox has played the character's animations for this frame (in
+-- PreSimulation, as Roblox recommends), blended with them by how far into the power-up we are.
+local okPre, preSimulation = pcall(function()
+	return RunService.PreSimulation
+end)
+local poseSignal = (okPre and preSimulation) or RunService.Stepped
+poseSignal:Connect(function()
 	local t = os.clock()
 	for _, fx in active do
+		-- joints can be swapped out after spawning (e.g. by the joint upgrade): look again if so
+		if t >= fx.NextJointScan then
+			fx.NextJointScan = t + 1
+			local ok = next(fx.Motors) ~= nil
+			for _, joint in fx.Motors do
+				if not joint.Parent then
+					ok = false
+				end
+			end
+			if not ok then
+				fx.Motors = findJoints(fx.Character)
+				table.clear(fx.LastWritten)
+			end
+		end
 		if fx.Pose > 0.001 then
 			local w = math.min(fx.Pose, 1)
 			local tremble = fx.Tremble or 0

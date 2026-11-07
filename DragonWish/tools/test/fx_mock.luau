@@ -5,7 +5,7 @@ local luau = require("@lune/luau")
 local fs = require("@lune/fs")
 local process = require("@lune/process")
 local serde = require("@lune/serde")
-local dumpPath = process.args[1] -- optional: write the flame shapes here for a picture
+local dumpPath = process.args[1] ~= "" and process.args[1] or nil -- optional: write the flame shapes here for a picture
 local dumps = {}
 local roblox = require("@lune/roblox")
 local V3, CF, I = roblox.Vector3, roblox.CFrame, roblox.Instance
@@ -24,7 +24,9 @@ local ut = part("UpperTorso", V3.new(2, 1.6, 1), 3.2)
 local head = part("Head", V3.new(1.2, 1.2, 1.2), 4.5)
 local motors = {}
 for _, name in { "Root", "Waist", "Neck", "LeftShoulder", "RightShoulder", "LeftElbow", "RightElbow", "LeftWrist", "RightWrist", "LeftHip", "RightHip", "LeftKnee", "RightKnee", "LeftAnkle", "RightAnkle" } do
-	local m = I.new("Motor6D"); m.Name = name; m.Transform = CF.identity; m.Parent = ut
+	-- characters now spawn with AnimationConstraints (Roblox's joint upgrade); "motor6d" as the
+	-- second argument tests the old joints instead
+	local m = I.new(process.args[2] == "motor6d" and "Motor6D" or "AnimationConstraint"); m.Name = name; m.Transform = CF.identity; m.Parent = ut
 	motors[name] = m
 end
 char:SetAttribute("Form", "Base"); char:SetAttribute("PowerState", "Idle"); char:SetAttribute("Charge", 0)

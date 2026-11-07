@@ -3,7 +3,7 @@
 Every player spawns as the R15 rig **Base**, with their own clothes and accessories stripped. They start with the base hair and the belt on.
 
 - **Power up:** press **R**. The camera swings round in front of you and you stand tall with your fists clenched at your waist.
-- **Charge:** spam **Space**. An anime-style aura of flame tongues flickers on, then grows taller and faster and flares out into a teardrop. You hunch over with your head down and your elbows thrown wide, trembling. Your hair, bangs and the belt's ribbons get blown upward, dust kicks up and rocks lift off the ground.
+- **Charge:** spam **Space**. A Dragon Ball-style aura flickers on around you, then grows bigger and faster. It's a flame-shaped shell you stand inside: wide at the ground with flares sticking out sideways, narrowing to tall spikes on top. You hunch over with your head down and your elbows thrown wide, trembling. Your hair, bangs and the belt's ribbons get blown upward, dust kicks up and rocks lift off the ground.
 - **Transform:** fill the bar and you **burst into Super Saiyan**. A pillar of light shoots up, the screen flashes, a shockwave rolls out and the golden hair swaps in. You lean back with your head up and arms spread and hold that pose, then you get control back. The golden hair then flows calmly in a soft gold aura.
 
 ## Files you need
@@ -61,9 +61,16 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
   - **RELEASE:** leaning back, head up, arms lowered and spread.
 
   While charging, it blends READY into STRAIN as the bar fills, with a tremble that grows with the effort. On the transformation it snaps into RELEASE and holds it for `BurstTime` (2.8 s), then blends back into your normal animations as you get control back. The pose is layered on top of the walk and idle animations, so it fades in and out smoothly.
+
+  It works with both kinds of character joint. Roblox's "Avatar Joint Upgrade" now gives characters **AnimationConstraint** joints instead of Motor6Ds, which is why the first version's animation never played: it only looked for Motor6Ds.
 - **The aura (`PowerFX`, every screen).**
-  - **Flames:** it's built from about 30 **Beams**: tapered ribbons that always face the camera, so each reads as a sharp anime flame shape. There are three layers: big outer flames, tall thin spikes and a white-hot core. Each flame licks up on its own cycle, then thins out and starts again somewhere else.
-  - **Shape:** the tips lean outward, so the aura is narrow at your feet and flares wide above your head. At higher power there are more flames and they're taller and faster.
+  - **Shape:** the aura is a flame-shaped shell around you (`PROFILE` at the top of `PowerFX`). It's widest just above the ground, bulges around the body and narrows to the top. Because it goes all the way round, its outline looks the same from any side.
+  - **Flames:** it's built from about 50 **Beams**: tapered ribbons that always face the camera, so each reads as a sharp anime flame shape.
+    - **Spikes:** jagged spikes stick out of the shell. Low down they point sideways (the flares at the bottom), in the middle they point diagonally, and on top straight up, curling upward at their tips.
+    - **Fill:** broad see-through flames fill the shell from your feet to the top.
+    - **Core:** white-hot flames hug your body.
+  - **Movement:** each flame licks out, thins away and starts again somewhere else. At higher power the shell is bigger and the flames are more numerous and faster.
+  - **Anime flicker:** the flames change shape in steps, 15 times a second (`AuraFrameRate`), with a little random wobble each time, like hand-drawn frames looping. The aura itself still follows you smoothly.
   - **Visibility:** flames between the camera and you thin out so they don't hide you.
   - **Extras:** orange energy streaks swirl upward around you and light streaks shoot up. A glow lights the surroundings, and the colour changes from white-blue to gold as you transform.
   - **Burst:** a pillar of light, a flash, a shockwave ring, dust and a moment where every flame shoots extra high.
@@ -77,8 +84,8 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 
 ## Settings
 
-- **`PowerConfig`:** keys, how much each tap fills, how fast the bar drains, minimum charge time, how long you hold the release pose (`BurstTime`), aura colours (main and tip colour for each form), aura size, how many flames (`AuraFlames`: lower it if lots of players lag), camera distance, height and shake.
-- **`PowerFX`** (top of the script): the three key poses (`READY`, `STRAIN`, `RELEASE`) and the flame layers (`LAYERS`), if you want to restyle them.
+- **`PowerConfig`:** keys, how much each tap fills, how fast the bar drains, minimum charge time, how long you hold the release pose (`BurstTime`), aura colours (main and tip colour for each form), aura size, how many flames (`AuraFlames`: lower it if lots of players lag), how often the flames change shape (`AuraFrameRate`: 12–15 for the anime look, 60 for smooth), camera distance, height and shake.
+- **`PowerFX`** (top of the script): the three key poses (`READY`, `STRAIN`, `RELEASE`), the aura's outline (`PROFILE`, `SHELL_HEIGHT`, `SHELL_WIDTH`) and the flame groups (`GROUPS`), if you want to restyle them.
 - **`HairConfig`:**
   - colour, texture id, placement (`Offset`) and size of each piece
   - how stiff and heavy it is (`Stiffness`, `GravityCompensation`); the bangs have their own softer settings (`ChainOverrides`, chains `BB01`–`BB09`)
