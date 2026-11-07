@@ -12,6 +12,7 @@
 ]]
 
 local ContextActionService = game:GetService("ContextActionService")
+local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -132,6 +133,11 @@ local bigText = label(gui, {
 	TextStrokeTransparency = 1,
 	ZIndex = 11,
 })
+
+-- a colour grade on this player's screen only: punchier as you charge, a warm flash on release
+local grade = Instance.new("ColorCorrectionEffect")
+grade.Name = "PowerUpGrade"
+grade.Parent = Lighting
 
 ----------------------------------------------------------------------------------------
 -- state
@@ -256,6 +262,7 @@ local function stopCharging(sendCancel: boolean)
 	full = false
 	panel.Visible = false
 	setTapBinding(false)
+	grade.Contrast, grade.Saturation = 0, 0
 	if not bursting then
 		releaseCamera()
 	end
@@ -271,6 +278,16 @@ local function playBurst()
 	fovKick = 18
 	flash.BackgroundTransparency = 0
 	TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
+	grade.Brightness = 0.3
+	grade.Contrast = 0.25
+	grade.Saturation = 0.35
+	grade.TintColor = Color3.fromRGB(255, 236, 200)
+	TweenService:Create(grade, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Brightness = 0,
+		Contrast = 0,
+		Saturation = 0,
+		TintColor = Color3.new(1, 1, 1),
+	}):Play()
 	bigText.TextTransparency = 0
 	bigText.TextStrokeTransparency = 0.2
 	bigText.Size = UDim2.fromOffset(500, 70)
@@ -330,6 +347,8 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 	promptScale.Scale += (1 - promptScale.Scale) * math.min(1, dt * 10)
 	barFill.Size = UDim2.new(charge, 0, 1, 0)
+	grade.Contrast = 0.12 * charge
+	grade.Saturation = 0.2 * charge
 	barFill.BackgroundColor3 = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, charge)
 	local text = STAGES[1][2]
 	for _, s in STAGES do

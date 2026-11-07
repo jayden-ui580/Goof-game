@@ -25,15 +25,18 @@ PowerConfig.HairStart = 0.25 -- bar level where the hair and belt start lifting
 PowerConfig.LockMovement = true -- you can't walk or jump while powering up
 
 -- the transformation
-PowerConfig.BurstTime = 2.4 -- seconds the burst lasts before you get control back
+PowerConfig.BurstTime = 2.8 -- seconds you hold the release pose before you get control back
 PowerConfig.SSJCalmWind = 0.12 -- a gentle upward lift that stays on as a Super Saiyan (0..1); the
 -- sideways breeze is the SSJ hair's LocalWind in HairConfig
 PowerConfig.SSJIdleAura = 0.22 -- a soft golden aura stays on after transforming (0 = none)
 
 -- looks
-PowerConfig.BaseAuraColor = Color3.fromRGB(200, 228, 255)
+PowerConfig.BaseAuraColor = Color3.fromRGB(200, 228, 255) -- main colour of the flames
+PowerConfig.BaseAuraEdge = Color3.fromRGB(95, 160, 255) -- colour at the flame tips
 PowerConfig.SSJAuraColor = Color3.fromRGB(255, 210, 70)
+PowerConfig.SSJAuraEdge = Color3.fromRGB(255, 125, 25)
 PowerConfig.AuraSize = 1 -- scales the whole aura
+PowerConfig.AuraFlames = 1 -- how many flame tongues (1 = normal; lower it if lots of players lag)
 
 -- camera (front view while powering up)
 PowerConfig.CameraDistance = 9 -- studs in front of you

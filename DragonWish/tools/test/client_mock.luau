@@ -95,6 +95,7 @@ local cas = {
 	SetTitle = function() end,
 }
 local renderSteps, renderStepped, heartbeat = {}, signal(), signal()
+local lighting = I.new("Folder")
 local camera = I.new("Camera")
 camera.FieldOfView = 70
 local function config()
@@ -133,6 +134,8 @@ local function env(isServer)
 				return { TouchEnabled = false }
 			elseif n == "Workspace" then
 				return { CurrentCamera = camera }
+			elseif n == "Lighting" then
+				return lighting
 			end
 			error("no stub for " .. n)
 		end,

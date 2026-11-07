@@ -16,9 +16,10 @@
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Delete the old SSJHair_Rigged from ServerStorage > CharacterParts and import the new
-	  SSJHair_Rigged.fbx. (The old one's root bone had the same name as the base hair's, which
-	  tied it to the base hair's skeleton, so it never moved.)
+	  Delete the old copies and import the new ones into ServerStorage > CharacterParts:
+	    BaseHair_Rigged.fbx  - the bangs now have bones
+	    SSJHair_Rigged.fbx   - its root bone was renamed (the old name clashed with the base
+	                           hair's, which tied it to the base hair's skeleton: it never moved)
 
 	SETUP (once)
 	  1. Your R15 rig must be in ReplicatedStorage and called "Base".
@@ -33,7 +34,9 @@
 	  5. Press Play (F5).
 
 	CONTROLS (in Play)
-	  R       power up: the camera swings round to face you and you take a ready stance.
+	  R       power up: the camera swings round to face you and you stand tall, fists at
+	          your waist. As the bar fills you hunch over, head down, elbows wide; when you
+	          transform you lean back, head up, arms spread, and hold it a moment.
 	          R again cancels. As a Super Saiyan, R powers back down to base.
 	          (phones: the round POWER button on the right does the same as R)
 	  Space   spam it to fill the power bar (phones: the big TAP button).

@@ -1,13 +1,17 @@
 # Dragon Wish: Online: character + power-up kit
 
-Every player spawns as the R15 rig **Base**, with their own clothes and accessories stripped. They start with the base hair and the belt on. Press **R** and the camera swings round in front of you while you drop into a ready stance. **Spam Space** and an aura flickers on, then grows bigger and faster. Your hair and the belt's ribbons get blown upward, dust kicks up and rocks lift off the ground. Fill the bar and you **burst into Super Saiyan**: the screen flashes, a shockwave rolls out, the golden hair swaps in, and it then flows calmly in a soft golden aura.
+Every player spawns as the R15 rig **Base**, with their own clothes and accessories stripped. They start with the base hair and the belt on.
+
+- **Power up:** press **R**. The camera swings round in front of you and you stand tall with your fists clenched at your waist.
+- **Charge:** spam **Space**. An anime-style aura of flame tongues flickers on, then grows taller and faster and flares out into a teardrop. You hunch over with your head down and your elbows thrown wide, trembling. Your hair, bangs and the belt's ribbons get blown upward, dust kicks up and rocks lift off the ground.
+- **Transform:** fill the bar and you **burst into Super Saiyan**. A pillar of light shoots up, the screen flashes, a shockwave rolls out and the golden hair swaps in. You lean back with your head up and arms spread and hold that pose, then you get control back. The golden hair then flows calmly in a soft gold aura.
 
 ## Files you need
 
 | File | What it is |
 | --- | --- |
 | `DragonWishKit.rbxmx` | All 10 scripts in one drag-in file. Its folders are named after the service each part goes in. |
-| `models/BaseHair_Rigged.fbx` | The base hair: 1 root bone + 17 spikes (60 bones). |
+| `models/BaseHair_Rigged.fbx` | The base hair: 1 root bone + 17 spikes + 9 bangs (87 bones). |
 | `models/SSJHair_Rigged.fbx` | The Super Saiyan hair: 1 root bone (`SSJRoot`) + 22 spikes (84 bones). |
 | `models/Belt_Rigged.fbx` | The belt: 1 root bone + the 2 hanging ribbons (4 bones each). |
 
@@ -15,7 +19,11 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 
 ## Setup
 
-> **Updating from an earlier version?** Delete your old imported `SSJHair_Rigged` from `ServerStorage › CharacterParts` and import the new `SSJHair_Rigged.fbx`. In the old one, the root bone was called `HairRoot`, the same as the base hair's. Roblox ties a skinned mesh to the first bone with a matching name anywhere in the character, so the SSJ hair was tied to the base hair's skeleton and never moved. The base hair and belt don't need re-importing.
+> **Updating from an earlier version?** Re-import any piece that's newer than yours, after deleting the old copy from `ServerStorage › CharacterParts`:
+> - **`BaseHair_Rigged.fbx`** now has bones in the bangs. The server looks for bone `BB01_1`, so an older import won't load.
+> - **`SSJHair_Rigged.fbx`** has its root bone renamed to `SSJRoot`. In the first version it was called `HairRoot`, the same as the base hair's, and Roblox ties a skinned mesh to the first bone with a matching name anywhere in the character. The SSJ hair was tied to the base hair's skeleton and never moved.
+>
+> The belt hasn't changed.
 
 1. **The rig.** Keep your R15 rig in ReplicatedStorage, named `Base`, with a Humanoid in it.
 2. **Import the three pieces.** In File › Import 3D, pick each `.fbx`. Set Rig Type to **Custom** and Scale Unit to Studs, and tick **Keep Zero Influence Bones**. Put all three imported models in `ServerStorage › CharacterParts`. The kit makes that folder for you.
@@ -47,9 +55,19 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
   - It handles the keys, the power bar and the front-view camera, which shakes harder as you charge.
   - The transformation flash and the "SUPER SAIYAN!" title also live here.
   - Space is grabbed at a higher priority than jumping, so spamming it doesn't make you hop.
-- **The effects (`PowerFX`, every screen).**
-  - The aura is a column of flame particles around you, plus haze, sparks and a glow. It changes from white-blue to gold as you transform.
-  - It also draws the ground dust, the floating rocks, the shockwave ring and flash, and the ready stance and scream pose. The stance is layered on top of your normal animations.
+- **The animation (`PowerFX`, every screen).** It's coded joint by joint, so there's no animation asset to upload. There are three key poses for each R15 joint:
+  - **READY:** standing tall, fists at the waist, elbows out.
+  - **STRAIN:** hunched over, head down, elbows wide, knees bent.
+  - **RELEASE:** leaning back, head up, arms lowered and spread.
+
+  While charging, it blends READY into STRAIN as the bar fills, with a tremble that grows with the effort. On the transformation it snaps into RELEASE and holds it for `BurstTime` (2.8 s), then blends back into your normal animations as you get control back. The pose is layered on top of the walk and idle animations, so it fades in and out smoothly.
+- **The aura (`PowerFX`, every screen).**
+  - **Flames:** it's built from about 30 **Beams**: tapered ribbons that always face the camera, so each reads as a sharp anime flame shape. There are three layers: big outer flames, tall thin spikes and a white-hot core. Each flame licks up on its own cycle, then thins out and starts again somewhere else.
+  - **Shape:** the tips lean outward, so the aura is narrow at your feet and flares wide above your head. At higher power there are more flames and they're taller and faster.
+  - **Visibility:** flames between the camera and you thin out so they don't hide you.
+  - **Extras:** orange energy streaks swirl upward around you and light streaks shoot up. A glow lights the surroundings, and the colour changes from white-blue to gold as you transform.
+  - **Burst:** a pillar of light, a flash, a shockwave ring, dust and a moment where every flame shoots extra high.
+  - **Your screen only:** the picture gets slightly punchier as you charge and flashes warm and bright on the transformation.
 - **The hair and belt (`HairPhysics`, every screen).**
   - This is the same physics as the earlier hair, with these additions.
   - **Gravity:** only part of gravity is cancelled by the springs (`GravityCompensation`): half for the base hair, 40% for the SSJ hair. The spikes hang a little heavier and swing more when you move, jump or stop.
@@ -59,10 +77,11 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 
 ## Settings
 
-- **`PowerConfig`:** keys, how much each tap fills, how fast the bar drains, minimum charge time, burst length, aura colours and size, camera distance, height and shake.
+- **`PowerConfig`:** keys, how much each tap fills, how fast the bar drains, minimum charge time, how long you hold the release pose (`BurstTime`), aura colours (main and tip colour for each form), aura size, how many flames (`AuraFlames`: lower it if lots of players lag), camera distance, height and shake.
+- **`PowerFX`** (top of the script): the three key poses (`READY`, `STRAIN`, `RELEASE`) and the flame layers (`LAYERS`), if you want to restyle them.
 - **`HairConfig`:**
   - colour, texture id, placement (`Offset`) and size of each piece
-  - how stiff and heavy it is (`Stiffness`, `GravityCompensation`)
+  - how stiff and heavy it is (`Stiffness`, `GravityCompensation`); the bangs have their own softer settings (`ChainOverrides`, chains `BB01`–`BB09`)
   - the SSJ breeze (`LocalWind`, `LocalWindFlutter`); flip the X to `70` to blow it to the right
   - how hard the aura blows it (`AuraLift`, `AuraSwirl`)
   - the belt's room around the waist (`FitGap`, or `Scale` for extra size on top)

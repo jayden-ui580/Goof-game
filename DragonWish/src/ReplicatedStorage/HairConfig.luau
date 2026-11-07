@@ -38,7 +38,7 @@ HairConfig.FitToolEnabled = true
 
 HairConfig.Hairs = {
 	BaseHair = {
-		SignatureBone = "BS01_1", -- how the imported model is recognised
+		SignatureBone = "BB01_1", -- how the imported model is recognised (a bang bone: older imports had none)
 		TextureId = "", -- paste the original hair texture id here (optional)
 		Color = Color3.fromRGB(24, 22, 28),
 		Material = Enum.Material.SmoothPlastic,
@@ -59,6 +59,10 @@ HairConfig.Hairs = {
 			AuraLift = 600,
 			AuraSwirl = 160,
 			AuraSwirlSpeed = 9,
+			-- the bangs (chains BB01..BB09) are thin locks: floppier than the spikes
+			ChainOverrides = {
+				BB = { Stiffness = { 0.12, 0.07 }, MaxBend = { 35, 40 } },
+			},
 			SelfCollision = false,
 			BodyColliders = { "Head", "UpperTorso" },
 			SimulationDistance = 150,
@@ -155,6 +159,15 @@ HairConfig.Layouts = {
 			{ Name = "BS15", Bones = { "BS15_1", "BS15_2" }, Tip = "BS15_End", Radii = { 0.12, 0.12, 0.12 } },
 			{ Name = "BS16", Bones = { "BS16_1", "BS16_2", "BS16_3" }, Tip = "BS16_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
 			{ Name = "BS17", Bones = { "BS17_1", "BS17_2", "BS17_3" }, Tip = "BS17_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
+			{ Name = "BB01", Bones = { "BB01_1", "BB01_2" }, Tip = "BB01_End", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "BB02", Bones = { "BB02_1", "BB02_2" }, Tip = "BB02_End", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "BB03", Bones = { "BB03_1", "BB03_2" }, Tip = "BB03_End", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "BB04", Bones = { "BB04_1", "BB04_2" }, Tip = "BB04_End", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "BB05", Bones = { "BB05_1", "BB05_2" }, Tip = "BB05_End", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "BB06", Bones = { "BB06_1", "BB06_2" }, Tip = "BB06_End", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "BB07", Bones = { "BB07_1", "BB07_2" }, Tip = "BB07_End", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "BB08", Bones = { "BB08_1", "BB08_2" }, Tip = "BB08_End", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "BB09", Bones = { "BB09_1", "BB09_2" }, Tip = "BB09_End", Radii = { 0.1, 0.1, 0.1 } },
 		},
 		Bones = {
 			HairRoot = Vector3.new(0, 0, 0),
@@ -217,6 +230,33 @@ HairConfig.Layouts = {
 			BS17_2 = Vector3.new(0.7449, 0.233, 0.8611),
 			BS17_3 = Vector3.new(0.8778, 0.1862, 1.2324),
 			BS17_End = Vector3.new(1.0254, 0.151, 1.6153),
+			BB01_1 = Vector3.new(-0.5446, 0.4171, -0.2797),
+			BB01_2 = Vector3.new(-0.6316, 0.1859, -0.2664),
+			BB01_End = Vector3.new(-0.5786, -0.0412, -0.2737),
+			BB02_1 = Vector3.new(-0.4822, 0.5449, -0.397),
+			BB02_2 = Vector3.new(-0.5968, 0.2869, -0.4337),
+			BB02_End = Vector3.new(-0.5386, 0.017, -0.5347),
+			BB03_1 = Vector3.new(-0.4475, 0.5938, -0.564),
+			BB03_2 = Vector3.new(-0.3985, 0.2834, -0.7178),
+			BB03_End = Vector3.new(-0.2106, -0.0037, -0.7187),
+			BB04_1 = Vector3.new(-0.3586, 0.6227, -0.6019),
+			BB04_2 = Vector3.new(-0.3289, 0.272, -0.7642),
+			BB04_End = Vector3.new(-0.1556, -0.0588, -0.7497),
+			BB05_1 = Vector3.new(-0.0212, 0.6377, -0.7313),
+			BB05_2 = Vector3.new(0.1401, 0.3128, -0.7961),
+			BB05_End = Vector3.new(0.2704, -0.0603, -0.6937),
+			BB06_1 = Vector3.new(0.1294, 0.5887, -0.6051),
+			BB06_2 = Vector3.new(0.2638, 0.3629, -0.7172),
+			BB06_End = Vector3.new(0.3434, 0.1059, -0.7247),
+			BB07_1 = Vector3.new(0.3078, 0.6335, -0.6074),
+			BB07_2 = Vector3.new(0.4477, 0.3062, -0.6948),
+			BB07_End = Vector3.new(0.4324, -0.0314, -0.5978),
+			BB08_1 = Vector3.new(0.4963, 0.5787, -0.4245),
+			BB08_2 = Vector3.new(0.5669, 0.2921, -0.4673),
+			BB08_End = Vector3.new(0.5544, -0.0195, -0.5077),
+			BB09_1 = Vector3.new(0.5609, 0.3114, -0.2853),
+			BB09_2 = Vector3.new(0.6365, 0.1385, -0.297),
+			BB09_End = Vector3.new(0.5654, -0.0816, -0.2867),
 		},
 	},
 	SSJHair = {

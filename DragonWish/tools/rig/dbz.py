@@ -49,7 +49,56 @@ class DRig(hairs.Rig):
         self.chains.append((name, names, list(radii)))
 
 
-def spike_rig(name, path, prefix, min_tip_r, min_len, root):
+def add_bangs(rig, prefix='BB', min_len=0.4, min_verts=12):
+    """Bangs hang DOWN over the forehead, so the spike finder (which looks for tips pointing
+    away from the head) skips them. Here every front vertex not already in a spike follows its
+    lowest neighbour downhill; the vertices that end at the same lowest point form one lock,
+    which gets a 2-bone chain fixed at the hairline and free at the tip."""
+    P = rig.P
+    free = rig.W[rig.root] > 0.999
+    front = free & (P[:, 2] < -0.25) & (P[:, 1] < 0.7)
+    down = np.arange(len(P))
+    for v in np.where(front)[0]:
+        best, by = v, P[v, 1]
+        for u in rig.adj[v]:
+            if front[u] and P[u, 1] < by - 1e-6:
+                best, by = u, P[u, 1]
+        down[v] = best
+    locks = {}
+    for v in np.where(front)[0]:
+        x = v
+        for _ in range(5000):
+            if down[x] == x:
+                break
+            x = down[x]
+        locks.setdefault(x, []).append(v)
+    found = []
+    for t, vs in locks.items():
+        vs = np.array(vs)
+        top, length = P[vs, 1].max(), P[vs, 1].max() - P[t, 1]
+        if length >= min_len and len(vs) >= min_verts:
+            found.append((t, vs, top, length))
+    found.sort(key=lambda f: P[f[0], 0])  # left to right
+    nb = 2
+    for k, (t, vs, top, length) in enumerate(found):
+        # centre line: average of the lock's vertices at decreasing height, ending at the tip
+        bins = np.linspace(top, P[t, 1], 7)
+        pts = []
+        for a, b in zip(bins[:-1], bins[1:]):
+            m = (P[vs, 1] <= a) & (P[vs, 1] > b)
+            if m.any():
+                pts.append(P[vs][m].mean(0))
+        pts.append(P[t])
+        joints = resample(np.vstack(pts), nb)
+        joints[-1] = P[t]
+        u = (top - P[vs, 1]) / max(length, 1e-3) * nb
+        cw = chain_weights(u, nb)
+        static = 1 - smoothstep(0.0, 0.4, u)  # the top stays fixed to the hairline
+        rig.add_chain('%s%02d' % (prefix, k + 1), joints, vs, cw, static, [0.1] * (nb + 1))
+    print('%s bang locks %d' % (rig.name, len(found)))
+
+
+def spike_rig(name, path, prefix, min_tip_r, min_len, root, extra=None):
     # every piece worn at the same time needs its own bone names: Roblox ties a skinned mesh to
     # the first bone with a matching name anywhere in the character, so two "HairRoot"s clash
     rig = DRig(name, path, CENTERS[name], root)
@@ -85,12 +134,14 @@ def spike_rig(name, path, prefix, min_tip_r, min_len, root):
         radius = 0.16 if length > 1 else 0.12
         rig.add_chain('%s%02d' % (prefix, n_ + 1), joints, vs, cw, static, [radius] * (nb + 1))
     print(name, 'spike chains', len(spikes))
+    if extra:
+        extra(rig)
     rig.finish()
     return rig
 
 
 def build_base_hair(path):
-    return spike_rig('BaseHair', path, 'BS', 1.15, 0.45, 'HairRoot')
+    return spike_rig('BaseHair', path, 'BS', 1.15, 0.45, 'HairRoot', extra=add_bangs)
 
 
 def build_ssj_hair(path):

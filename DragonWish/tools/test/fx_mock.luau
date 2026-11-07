@@ -1,8 +1,12 @@
 -- Runs the real PowerFX script against a fake R15 character whose attributes go through a
--- power-up, and checks the aura, stance, rocks and burst respond.
+-- power-up, and checks the aura flames, the coded animation, rocks and burst respond.
 -- usage (from the DragonWish folder): lune run tools/test/fx_mock.luau
 local luau = require("@lune/luau")
 local fs = require("@lune/fs")
+local process = require("@lune/process")
+local serde = require("@lune/serde")
+local dumpPath = process.args[1] -- optional: write the flame shapes here for a picture
+local dumps = {}
 local roblox = require("@lune/roblox")
 local V3, CF, I = roblox.Vector3, roblox.CFrame, roblox.Instance
 local emitted = 0
@@ -10,7 +14,7 @@ roblox.implementMethod("ParticleEmitter", "Emit", function(_, n) emitted += n en
 
 local char = I.new("Model"); char.Name = "Player1"
 char.Parent = I.new("Folder") -- stands in for Workspace
-I.new("Humanoid").Parent = char
+local hum = I.new("Humanoid"); hum.HipHeight = 2; hum.Parent = char
 local function part(name, size, y)
 	local p = I.new("Part"); p.Name = name; p.Size = size; p.CFrame = CF.new(0, y, 0); p.Position = V3.new(0, y, 0); p.Parent = char; return p
 end
@@ -19,7 +23,7 @@ local lt = part("LowerTorso", V3.new(2, 0.4, 1), 2.2)
 local ut = part("UpperTorso", V3.new(2, 1.6, 1), 3.2)
 local head = part("Head", V3.new(1.2, 1.2, 1.2), 4.5)
 local motors = {}
-for _, name in { "Root", "Waist", "Neck", "LeftShoulder", "RightShoulder", "LeftElbow", "RightElbow", "LeftHip", "RightHip", "LeftKnee", "RightKnee" } do
+for _, name in { "Root", "Waist", "Neck", "LeftShoulder", "RightShoulder", "LeftElbow", "RightElbow", "LeftWrist", "RightWrist", "LeftHip", "RightHip", "LeftKnee", "RightKnee", "LeftAnkle", "RightAnkle" } do
 	local m = I.new("Motor6D"); m.Name = name; m.Transform = CF.identity; m.Parent = ut
 	motors[name] = m
 end
@@ -34,13 +38,14 @@ end
 local render, stepped = signal(), signal()
 local fxRoot = I.new("Folder")
 local workspaceStub = {
+	CurrentCamera = { CFrame = CF.new(0, 4, -12) }, -- in front of the character (it faces -Z)
 	Raycast = function(_, from) return { Position = V3.new(from.X, 0, from.Z) } end,
 	BulkMoveTo = function(_, parts, cfs) for i, p in parts do p.CFrame = cfs[i] end end,
 }
 local tweens = 0
 local env = {
 	Vector3 = V3, CFrame = CF, Color3 = roblox.Color3, Enum = roblox.Enum, ColorSequence = roblox.ColorSequence,
-	NumberSequence = roblox.NumberSequence, NumberSequenceKeypoint = roblox.NumberSequenceKeypoint, NumberRange = roblox.NumberRange,
+	NumberSequence = roblox.NumberSequence, NumberSequenceKeypoint = roblox.NumberSequenceKeypoint, NumberRange = roblox.NumberRange, ColorSequenceKeypoint = roblox.ColorSequenceKeypoint,
 	Vector2 = roblox.Vector2, TweenInfo = { new = function() return {} end }, typeof = typeof, print = print,
 	RaycastParams = { new = function() return {} end },
 	task = { delay = function() end },
@@ -83,27 +88,74 @@ local function frame(dt) render:Fire(dt); stepped:Fire(dt) end
 local function find(name) for _, c in folder:GetChildren() do if c.Name == name then return c end end end
 local function report(tag)
 	local aura = find("Aura")
-	local flame = aura and aura:FindFirstChildOfClass("ParticleEmitter")
+	local shown, tallest, colour = 0, 0, "-"
+	if aura then
+		for _, b in aura:GetChildren() do
+			if b:IsA("Beam") and b.Width0 > 0.05 and b.Width1 == 0 then
+				shown += 1
+				tallest = math.max(tallest, b.Attachment1.CFrame.Position.Y - b.Attachment0.CFrame.Position.Y)
+				if colour == "-" then
+					local k = b.Color.Keypoints
+					local c = k[math.ceil(#k / 2)].Value
+					colour = ("%.2f %.2f %.2f"):format(c.R, c.G, c.B)
+				end
+			end
+		end
+	end
 	local rocks = 0
 	for _, c in folder:GetChildren() do if c.Name == "Rock" and c.Transparency < 1 then rocks += 1 end end
-	local light = aura and aura:FindFirstChildOfClass("PointLight")
-	local rx = select(1, motors.LeftKnee.Transform:ToEulerAnglesXYZ())
-	print(("%-22s aura %s  flame rate %5.0f  aura height %4.1f  light %4.1f  rocks up %d  knee bend %+.2f  colour %s"):format(
-		tag, tostring(aura ~= nil), flame and flame.Rate or 0, aura and aura.Size.Y or 0, light and light.Brightness or 0, rocks, rx,
-		flame and tostring(flame.Color.Keypoints[#flame.Color.Keypoints].Value) or "-"))
+	local function rx(n) return (select(1, motors[n].Transform:ToEulerAnglesXYZ())) end
+	local function rz(n) return (select(3, motors[n].Transform:ToEulerAnglesXYZ())) end
+	print(("%-20s flames %2d  tallest %4.1f  rocks %d  colour %-14s | waist %+.2f neck %+.2f L-arm out %+.2f elbow %+.2f knee %+.2f"):format(
+		tag, shown, tallest, rocks, colour, rx("Waist"), rx("Neck"), rz("LeftShoulder"), rx("LeftElbow"), rx("LeftKnee")))
+	if dumpPath and aura then
+		local beams = {}
+		for _, b in aura:GetChildren() do
+			if b:IsA("Beam") and (b.Width0 > 0.02 or b.Width1 > 0.02) then
+				local c0, c1 = b.Attachment0.CFrame, b.Attachment1.CFrame
+				local function v(x) return { x.X, x.Y, x.Z } end
+				local cols, trs = {}, {}
+				for _, k in b.Color.Keypoints do table.insert(cols, { k.Time, k.Value.R, k.Value.G, k.Value.B }) end
+				for _, k in b.Transparency.Keypoints do table.insert(trs, { k.Time, k.Value }) end
+				table.insert(beams, { p0 = v(c0.Position), x0 = v(c0.XVector), p1 = v(c1.Position), x1 = v(c1.XVector),
+					cs0 = b.CurveSize0, cs1 = b.CurveSize1, w0 = b.Width0, w1 = b.Width1, colors = cols, trans = trs })
+			end
+		end
+		dumps[tag] = beams
+		fs.writeFile(dumpPath, serde.encode("json", dumps, false))
+	end
+	return { waist = rx("Waist"), neck = rx("Neck"), arm = rz("LeftShoulder"), elbow = rx("LeftElbow"), flames = shown, tallest = tallest }
 end
+local failed = false
+local function check(what, ok) print((ok and "  PASS " or "  FAIL ") .. what); if not ok then failed = true end end
 for _ = 1, 30 do frame(1 / 60) end
-report("idle")
+local r = report("idle")
+check("no aura or pose when idle", r.flames == 0 and math.abs(r.waist) < 0.01)
 char:SetAttribute("PowerState", "Charging")
-for c = 0, 1, 0.01 do char:SetAttribute("Charge", c); frame(1 / 30) end
-report("charged to full")
+char:SetAttribute("Charge", 0.1)
+for _ = 1, 40 do frame(1 / 60) end
+r = report("just started")
+check("starts standing tall: chest out, fists at the waist (elbows bent)", r.waist > 0 and r.elbow > 1 and r.flames > 0)
+local early = r
+for c = 0.1, 1, 0.01 do char:SetAttribute("Charge", c); frame(1 / 30) end
+for _ = 1, 30 do frame(1 / 60) end
+r = report("charged to full")
+check("hunched over with head down and arms out", r.waist < -0.2 and r.neck < -0.2 and r.arm < -0.55)
+check("aura bigger and fuller than at the start", r.flames > early.flames and r.tallest > early.tallest)
 char:SetAttribute("PowerState", "Bursting"); char:SetAttribute("Form", "SSJ")
-for _ = 1, 10 do frame(1 / 60) end
-report("bursting")
-print("burst tweens started (shockwave + flash):", tweens, " particles burst out:", emitted)
+for _ = 1, 30 do frame(1 / 60) end
+r = report("bursting")
+check("release: leaning back, head up, arms lowered and out", r.waist > 0.2 and r.neck > 0.3 and r.arm < -0.5 and r.elbow < 0.4)
+print("burst tweens started (pillar + shockwave + flash):", tweens, " particles burst out:", emitted)
+for _ = 1, 120 do frame(1 / 60) end
+r = report("still holding")
+check("holds the release pose while bursting", r.waist > 0.2 and r.neck > 0.3)
 char:SetAttribute("PowerState", "Idle"); char:SetAttribute("Charge", 0)
 for _ = 1, 240 do frame(1 / 60) end
-report("calm super saiyan")
+r = report("calm super saiyan")
+check("control back: pose released, soft gold aura stays", math.abs(r.waist) < 0.02 and r.flames > 0)
 char:SetAttribute("Form", "Base")
 for _ = 1, 400 do frame(1 / 60) end
-report("powered down")
+r = report("powered down")
+check("everything cleaned up", r.flames == 0 and find("Aura") == nil)
+if failed then error("some checks failed") end
