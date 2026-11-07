@@ -8,12 +8,14 @@ Every player spawns as the R15 rig **Base**, with their own clothes and accessor
 | --- | --- |
 | `DragonWishKit.rbxmx` | All 10 scripts in one drag-in file. Its folders are named after the service each part goes in. |
 | `models/BaseHair_Rigged.fbx` | The base hair: 1 root bone + 17 spikes (60 bones). |
-| `models/SSJHair_Rigged.fbx` | The Super Saiyan hair: 1 root bone + 22 spikes (84 bones). |
+| `models/SSJHair_Rigged.fbx` | The Super Saiyan hair: 1 root bone (`SSJRoot`) + 22 spikes (84 bones). |
 | `models/Belt_Rigged.fbx` | The belt: 1 root bone + the 2 hanging ribbons (4 bones each). |
 
 The `.blend` files are the same rigs as Blender scenes. `models/source/` has your original `.obj` files.
 
 ## Setup
+
+> **Updating from an earlier version?** Delete your old imported `SSJHair_Rigged` from `ServerStorage › CharacterParts` and import the new `SSJHair_Rigged.fbx`. In the old one, the root bone was called `HairRoot`, the same as the base hair's. Roblox ties a skinned mesh to the first bone with a matching name anywhere in the character, so the SSJ hair was tied to the base hair's skeleton and never moved. The base hair and belt don't need re-importing.
 
 1. **The rig.** Keep your R15 rig in ReplicatedStorage, named `Base`, with a Humanoid in it.
 2. **Import the three pieces.** In File › Import 3D, pick each `.fbx`. Set Rig Type to **Custom** and Scale Unit to Studs, and tick **Keep Zero Influence Bones**. Put all three imported models in `ServerStorage › CharacterParts`. The kit makes that folder for you.
@@ -66,6 +68,8 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
   - the belt's room around the waist (`FitGap`, or `Scale` for extra size on top)
 
 ## Limits
+
+- **Bone names must be unique across every piece worn together.** Roblox ties each skinned mesh to its bones by name across the whole character. `CharacterSetup` warns in the Output if two pieces share a bone name.
 
 - **No textures.** The `.mtl` files point at `Handle1_diff.png`, which wasn't in the zip. The pieces use flat colours instead: black base hair, gold SSJ hair, blue belt. Paste a texture id into `TextureId` in `HairConfig` if you have one.
 - **Hair placement is worked out from the model files.** The head centre for each piece comes from its shape. If a piece sits a little off on your rig, press **H** and nudge it.

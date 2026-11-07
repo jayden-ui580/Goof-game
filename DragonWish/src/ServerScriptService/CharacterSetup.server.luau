@@ -198,8 +198,9 @@ local function attachPiece(rig: Model, name: string): boolean
 	local bone, where = findSource(cfg.SignatureBone)
 	if not bone then
 		complain(
-			("couldn't find the rigged %s. Import %s_Rigged.fbx (File > Import 3D) and put it in ServerStorage > %s."):format(
+			("couldn't find the rigged %s (looking for its bone '%s'). Import the latest %s_Rigged.fbx (File > Import 3D) and put it in ServerStorage > %s; delete any older copy."):format(
 				name,
+				cfg.SignatureBone,
 				name,
 				HairConfig.ModelFolder
 			)
@@ -316,6 +317,23 @@ for _, name in PIECES do
 	local ok, err = pcall(attachPiece, template, name)
 	if not ok then
 		complain(("putting on the %s failed: %s"):format(name, tostring(err)))
+	end
+end
+-- Roblox ties a skinned mesh to the first bone with a matching name anywhere in the character,
+-- so two pieces with a bone of the same name would steal each other's bones (the hair then
+-- never moves). Every piece's bones must have their own names.
+do
+	local owner = {}
+	for _, d in template:GetDescendants() do
+		if d:IsA("Bone") then
+			local piece = d:FindFirstAncestorWhichIsA("MeshPart")
+			local pieceName = piece and piece.Name or "?"
+			if owner[d.Name] and owner[d.Name] ~= pieceName then
+				complain(("the %s and the %s both have a bone called '%s', so one of them won't move. Re-import the latest %s_Rigged.fbx."):format(
+					owner[d.Name], pieceName, d.Name, pieceName))
+			end
+			owner[d.Name] = owner[d.Name] or pieceName
+		end
 	end
 end
 template:SetAttribute("Form", "Base")

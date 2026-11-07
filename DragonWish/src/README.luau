@@ -15,6 +15,11 @@
 	                            HairFitTool       (press H: nudge hair/belt into place)
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
+	UPDATING FROM AN EARLIER VERSION
+	  Delete the old SSJHair_Rigged from ServerStorage > CharacterParts and import the new
+	  SSJHair_Rigged.fbx. (The old one's root bone had the same name as the base hair's, which
+	  tied it to the base hair's skeleton, so it never moved.)
+
 	SETUP (once)
 	  1. Your R15 rig must be in ReplicatedStorage and called "Base".
 	  2. Import the three rigged pieces with File > Import 3D:

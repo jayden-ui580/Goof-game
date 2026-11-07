@@ -46,7 +46,10 @@ local function addBone(name, parentInst, parentName)
 	b.CFrame = (parentName and world[parentName] or CF.identity):Inverse() * w
 	world[name] = w
 end
-local root = layout.Bones.HairRoot and "HairRoot" or "BeltRoot"
+local inChain = {}
+for _, c in layout.Chains do for _, b in c.Bones do inChain[b] = true end inChain[c.Tip] = true end
+local root
+for name in layout.Bones do if not inChain[name] then root = name end end
 addBone(root, mesh, nil)
 for _, c in layout.Chains do
 	local pn = root

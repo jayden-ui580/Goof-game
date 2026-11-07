@@ -615,9 +615,9 @@
  {
   "name": "SSJHair",
   "attach": "Head",
-  "root": "HairRoot",
+  "root": "SSJRoot",
   "bones": {
-   "HairRoot": [
+   "SSJRoot": [
     0.0,
     0.0,
     0.0
@@ -1366,7 +1366,7 @@
    3.1868
   ],
   "weights_per_bone": {
-   "HairRoot": 763,
+   "SSJRoot": 763,
    "SS01_1": 97,
    "SS01_2": 90,
    "SS01_3": 64,

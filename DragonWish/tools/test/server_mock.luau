@@ -132,6 +132,14 @@ for _, h in info do
 		h.name, attach.Name, #(function() local t = {} for k in h.bones do table.insert(t, k) end return t end)(), mesh:GetAttribute("FitScale"), worst,
 		tostring(mesh.Transparency < 1), tostring(mesh:HasTag("HairPhysics")), tostring(mesh:GetAttribute("HairPreset"))))
 end
+local seen, dupes = {}, {}
+for _, d in sc:GetDescendants() do
+	if d:IsA("Bone") then
+		if seen[d.Name] then table.insert(dupes, d.Name) end
+		seen[d.Name] = true
+	end
+end
+print("every bone name in the character is unique:", #dupes == 0, #dupes > 0 and table.concat(dupes, ", ") or "")
 print("rig's own accessory kept and marked:", sc:FindFirstChild("RigOwnScouter") and sc.RigOwnScouter:GetAttribute("DWOwned"))
 
 -- power-up through the referee

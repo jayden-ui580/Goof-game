@@ -66,7 +66,7 @@ HairConfig.Hairs = {
 	},
 
 	SSJHair = {
-		SignatureBone = "SS01_1",
+		SignatureBone = "SSJRoot", -- (older imports used "HairRoot", which clashed with the base hair)
 		TextureId = "",
 		Color = Color3.fromRGB(255, 214, 80),
 		Material = Enum.Material.SmoothPlastic,
@@ -248,7 +248,7 @@ HairConfig.Layouts = {
 			{ Name = "SS22", Bones = { "SS22_1", "SS22_2", "SS22_3" }, Tip = "SS22_End", Radii = { 0.16, 0.16, 0.16, 0.16 } },
 		},
 		Bones = {
-			HairRoot = Vector3.new(0, 0, 0),
+			SSJRoot = Vector3.new(0, 0, 0),
 			SS01_1 = Vector3.new(-0.5884, 1.2323, -0.1123),
 			SS01_2 = Vector3.new(-0.0136, 1.5285, 0.546),
 			SS01_3 = Vector3.new(-0.4082, 2.0635, 0.7624),

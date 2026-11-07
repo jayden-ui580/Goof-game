@@ -49,8 +49,10 @@ class DRig(hairs.Rig):
         self.chains.append((name, names, list(radii)))
 
 
-def spike_rig(name, path, prefix, min_tip_r, min_len):
-    rig = DRig(name, path, CENTERS[name], 'HairRoot')
+def spike_rig(name, path, prefix, min_tip_r, min_len, root):
+    # every piece worn at the same time needs its own bone names: Roblox ties a skinned mesh to
+    # the first bone with a matching name anywhere in the character, so two "HairRoot"s clash
+    rig = DRig(name, path, CENTERS[name], root)
     P = rig.P
     r = np.linalg.norm(P * np.array([1, 0.9, 1]), axis=1)
     spikes, _ = spike_segments(P, rig.adj, r, min_len, 0.7)
@@ -88,11 +90,11 @@ def spike_rig(name, path, prefix, min_tip_r, min_len):
 
 
 def build_base_hair(path):
-    return spike_rig('BaseHair', path, 'BS', 1.15, 0.45)
+    return spike_rig('BaseHair', path, 'BS', 1.15, 0.45, 'HairRoot')
 
 
 def build_ssj_hair(path):
-    return spike_rig('SSJHair', path, 'SS', 1.2, 0.45)
+    return spike_rig('SSJHair', path, 'SS', 1.2, 0.45, 'SSJRoot')
 
 
 def build_belt(path):
