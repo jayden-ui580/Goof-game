@@ -26,7 +26,8 @@ PowerConfig.LockMovement = true -- you can't walk or jump while powering up
 
 -- the transformation
 PowerConfig.BurstTime = 2.4 -- seconds the burst lasts before you get control back
-PowerConfig.SSJCalmWind = 0.35 -- how strongly the Super Saiyan hair keeps flowing afterwards (0..1)
+PowerConfig.SSJCalmWind = 0.12 -- a gentle upward lift that stays on as a Super Saiyan (0..1); the
+-- sideways breeze is the SSJ hair's LocalWind in HairConfig
 PowerConfig.SSJIdleAura = 0.22 -- a soft golden aura stays on after transforming (0 = none)
 
 -- looks

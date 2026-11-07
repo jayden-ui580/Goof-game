@@ -53,6 +53,12 @@ local DEFAULTS = {
 	AuraSwirl = 0,
 	AuraSwirlSpeed = 3,
 	AuraResponse = 4, -- how quickly the hair reacts when the aura changes (per second)
+	-- a steady breeze that keeps the same direction relative to the wearer's head (studs/s²;
+	-- X = their right, Y = up, Z = behind them): Vector3.new(-80, 0, 0) blows it to their left.
+	-- It fades out while the power-up aura blasts the hair upward.
+	LocalWind = Vector3.zero,
+	LocalWindFlutter = 0, -- 0..1: how much each strand's breeze rises and falls on its own
+	LocalWindFlutterSpeed = 2, -- how fast that ripple goes
 	SheetLinks = {},
 	SheetSlack = 0.12,
 	Wind = Vector3.zero,
@@ -759,6 +765,10 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 	local accel = gravity + (wind + Vector3.new(0, s.AuraLift * aura, 0)) * (h * h)
 	local compensation = s.GravityCompensation > 0 and gravity * s.GravityCompensation or nil
 	local swirl = s.AuraSwirl * aura * h * h
+	local breeze = nil
+	if s.LocalWind.Magnitude > 0 then
+		breeze = rot:VectorToWorldSpace(s.LocalWind) * ((1 - math.min(aura, 1) ^ 2) * h * h)
+	end
 
 	for _, chain in self.Chains do
 		local pos, prev = chain.Pos, chain.Prev
@@ -769,6 +779,12 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 			-- turbulent wind from the aura: every strand gets its own flutter
 			local t = self.Time * s.AuraSwirlSpeed + chain.Phase
 			chainAccel += Vector3.new(math.sin(t), 0.4 * math.sin(t * 1.7 + 1), math.cos(t * 1.3)) * swirl
+		end
+		if breeze then
+			-- each strand's breeze rises and falls on its own, so the hair ripples instead of
+			-- leaning over like one stiff block
+			local t = self.Time * s.LocalWindFlutterSpeed + chain.Phase * 2.3
+			chainAccel += breeze * (1 + s.LocalWindFlutter * (0.6 * math.sin(t) + 0.4 * math.sin(t * 2.3 + 1.1)))
 		end
 		for k = 2, chain.N + 1 do
 			local p, q = pos[k], prev[k]

@@ -1,5 +1,7 @@
 -- Runs the real HairPhysics solver with the real HairConfig on a fake R15 body through a
--- power-up: rest, aura ramp, full power, calm Super Saiyan aura, power down, then walking.
+-- power-up (rest, aura ramp, full power, calm Super Saiyan, power down), then walking,
+-- stopping and jumping, and reports how the tips of the hair moved (angles in degrees, seen
+-- from each strand's root; X/Y in studs, X < 0 = towards the wearer's left).
 -- usage (from the DragonWish folder): lune run tools/test/aura_harness.luau <preset> [overridesJson] [dump]
 local luau = require("@lune/luau")
 local roblox = require("@lune/roblox")
@@ -15,7 +17,10 @@ local ov = process.args[2] and process.args[2] ~= "" and serde.decode("json", pr
 local dumpPath = process.args[3]
 local layout = CFG.Layouts[preset]
 local phys = table.clone(CFG.Hairs[preset].Physics)
-for k, v in ov do phys[k] = v end
+for k, v in ov do
+	if k == "LocalWind" or k == "Wind" then v = V3.new(v[1], v[2], v[3]) end
+	if k ~= "_calm" then phys[k] = v end
+end
 local settings = HP.mergeSettings(phys)
 
 local char = I.new("Model"); I.new("Humanoid").Parent = char
@@ -50,38 +55,43 @@ for _, c in layout.Chains do
 end
 local sim = assert(HP.Sim.new(mesh, layout, settings))
 
--- script: 0-2 rest | 2-4 aura 0->0.5 | 4-7 aura 1 | 7-10 calm 0.3 | 10-12 aura 0 | 12-15 walk
+local PowerConfig = luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.luau"), { environment = env })()
+local CALM = ov._calm or PowerConfig.SSJCalmWind
+
+-- script: 0-2 rest | 2-4 aura 0->0.5 | 4-7 aura 1 | 7-11 calm Super Saiyan | 11-13 aura 0
+--         13-14.5 walk | 14.5-16.5 stopped | 16.5-17.3 jump | 17.3-19 landed
 local function auraAt(t)
-	if t < 2 then return 0 elseif t < 4 then return 0.25 * (t - 2) elseif t < 7 then return 1 elseif t < 10 then return 0.3 elseif t < 12 then return 0 end
+	if t < 2 then return 0 elseif t < 4 then return 0.25 * (t - 2) elseif t < 7 then return 1 elseif t < 11 then return CALM end
 	return 0
 end
 local function rootAt(t)
-	local z = 0
-	if t > 12 then z = -12 * (t - 12) end
-	return CF.new(0, 0, z)
+	local z, y = 0, 0
+	if t > 13 then z = -16 * (math.min(t, 14.5) - 13) end
+	if t > 16.5 and t < 17.3 then local u = t - 16.5; y = 20 * u - 50 * u * u end
+	return CF.new(0, y, z)
 end
 local attach = parts[layout.Attach][1]
-local attachOff = parts[layout.Attach][2]
 local dt = 1 / 60
 local t = 0
-local tipsRest
-local lift = { rest = 0, half = 0, full = 0, calm = 0, off = 0 }
-local flutter = { full = 0, calm = 0 }
-local samples = { rest = 0, half = 0, full = 0, calm = 0, off = 0 }
+local modeled = {}
+for ci, ch in sim.Chains do modeled[ci] = ch.J[ch.N + 1] - ch.J[1] end
+local function angle(a, b) return math.deg(math.acos(math.clamp(a.Unit:Dot(b.Unit), -1, 1))) end
+local rest
+local acc = {}
+local function add(key, v) acc[key] = acc[key] or { sum = 0, n = 0, max = -math.huge }; local a = acc[key]; a.sum += v; a.n += 1; a.max = math.max(a.max, v) end
 local lastTips
-local nan, pen, bendOver, frames = false, 0, 0, {}
-while t < 15 do
+local nan, pen, frames = false, 0, {}
+while t < 19 do
 	t += dt
 	local rootCF = rootAt(t)
 	for _, pr in parts do pr[1].CFrame = rootCF * pr[2] end
 	mesh.CFrame = attach.CFrame
 	char:SetAttribute("AuraWind", auraAt(t))
 	sim:Update(dt, nil)
-	-- tips relative to the attach part
-	local tips = {}
 	local alpha = sim.Accum / (1 / 60)
+	local tips = {}
 	for ci, ch in sim.Chains do
-		local p = ch.LocalPrev[ch.N + 1]:Lerp(ch.LocalCur[ch.N + 1], alpha)
+		local p = ch.LocalPrev[ch.N + 1]:Lerp(ch.LocalCur[ch.N + 1], alpha) - ch.J[1]
 		tips[ci] = p
 		if p.X ~= p.X then nan = true end
 		for k = 1, ch.N + 1 do
@@ -91,17 +101,28 @@ while t < 15 do
 			end
 		end
 	end
-	if t > 1.5 and t < 2 then tipsRest = tipsRest or tips end
-	local phase = (t > 1.6 and t < 2 and "rest") or (t > 3.6 and t < 4 and "half") or (t > 5.5 and t < 7 and "full") or (t > 8.5 and t < 10 and "calm") or (t > 11.5 and t < 12 and "off") or nil
-	if phase and tipsRest then
-		local sumLift, sumMove = 0, 0
-		for ci, p in tips do
-			sumLift += p.Y - tipsRest[ci].Y
-			if lastTips then sumMove += (p - lastTips[ci]).Magnitude / dt end
+	if t > 1.9 and not rest then rest = tips end
+	local function mean(f) local sum = 0 for ci, p in tips do sum += f(ci, p) end return sum / #tips end
+	if t > 1.6 and t < 2 then
+		add("droop_deg", mean(function(ci, p) return angle(p, modeled[ci]) end))
+		add("droop_y", mean(function(ci, p) return p.Y - modeled[ci].Y end))
+		add("rest_x", mean(function(ci, p) return p.X - modeled[ci].X end))
+	end
+	if rest then
+		local devDeg = mean(function(ci, p) return angle(p, rest[ci]) end)
+		local speed = lastTips and mean(function(ci, p) return (p - lastTips[ci]).Magnitude / dt end) or 0
+		if t > 5.5 and t < 7 then add("full_lift_y", mean(function(ci, p) return p.Y - rest[ci].Y end)); add("full_flutter", speed) end
+		if t > 8.5 and t < 11 then
+			add("calm_deg", devDeg)
+			add("calm_x", mean(function(ci, p) return p.X - modeled[ci].X end))
+			add("calm_vs_model_deg", mean(function(ci, p) return angle(p, modeled[ci]) end))
+			add("calm_flutter", speed)
 		end
-		lift[phase] += sumLift / #tips
-		if flutter[phase] then flutter[phase] += sumMove / #tips end
-		samples[phase] += 1
+		if t > 12.5 and t < 13 then add("off_deg", devDeg) end
+		if t > 13 and t < 14.5 then add("walk_deg", devDeg) end
+		if t > 14.5 and t < 15.5 then add("stop_deg", devDeg); add("stop_wobble", speed) end
+		if t > 16 and t < 16.5 then add("still_deg", devDeg) end
+		if t > 16.5 and t < 18 then add("jump_deg", devDeg) end
 	end
 	lastTips = tips
 	if dumpPath and math.floor(t * 60 + 0.5) % 6 == 0 then
@@ -114,8 +135,14 @@ while t < 15 do
 		table.insert(frames, row)
 	end
 end
-local out = { nan = nan, bodyPen = math.floor(pen * 1000) / 1000 }
-for k, v in lift do out["lift_" .. k] = math.floor(v / math.max(samples[k], 1) * 100) / 100 end
-for k, v in flutter do out["flutter_" .. k] = math.floor(v / math.max(samples[k], 1) * 100) / 100 end
-print(preset, serde.encode("json", out, false))
+local function r2(x) return math.floor(x * 100 + 0.5) / 100 end
+local line = { ("%-8s"):format(preset), ("nan %s  body pen %.3f"):format(tostring(nan), pen) }
+for _, key in { "droop_deg", "droop_y", "rest_x", "walk_deg", "stop_deg", "stop_wobble", "still_deg", "jump_deg", "full_lift_y", "full_flutter", "calm_deg", "calm_vs_model_deg", "calm_x", "calm_flutter", "off_deg" } do
+	local a = acc[key]
+	if a then
+		local useMax = key == "walk_deg" or key == "stop_deg" or key == "jump_deg"
+		table.insert(line, ("%s %s"):format(key, tostring(r2(useMax and a.max or a.sum / a.n))))
+	end
+end
+print(table.concat(line, "  "))
 if dumpPath then fs.writeFile(dumpPath, serde.encode("json", frames, false)) end

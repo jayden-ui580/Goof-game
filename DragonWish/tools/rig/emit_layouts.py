@@ -15,6 +15,17 @@ for h in info:
         radii = ', '.join('%g' % r for r in c['radii'])
         out.append('\t\t\t{ Name = "%s", Bones = { %s }, Tip = "%s", Radii = { %s } },' % (c['name'], bones, c['bones'][-1], radii))
     out.append('\t\t},')
+    if 'ring' in h:
+        r = h['ring']
+        out.append('\t\t-- inside of the band: distance from the centre every %d degrees (from +X towards +Z)' % r['step'])
+        out.append('\t\tRing = {')
+        out.append('\t\t\tBottom = %s, Top = %s, Step = %d,' % (num(r['bottom']), num(r['top']), r['step']))
+        out.append('\t\t\tRadii = {')
+        rs = [num(x) for x in r['radii']]
+        for i in range(0, len(rs), 15):
+            out.append('\t\t\t\t' + ', '.join(rs[i:i + 15]) + ',')
+        out.append('\t\t\t},')
+        out.append('\t\t},')
     out.append('\t\tBones = {')
     for name, p in h['bones'].items():
         out.append('\t\t\t%s = %s,' % (name, v3(p)))

@@ -34,6 +34,7 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 - **The morph (`CharacterSetup`, server).**
   - When the server starts, it copies `Base`, puts the three rigged pieces on the copy, and saves it as the `StarterCharacter`. That's Roblox's built-in way of giving every player a custom body.
   - Each piece is placed by matching its bones to where they sat on the original model, so it lands in the same spot on the head or waist as in your `.obj` files.
+  - The belt is then sized to your rig's waist. The rig tools measured the inside of the band all the way round (`Ring` in `HairConfig`). The server measures the Base rig's LowerTorso, UpperTorso and upper legs where they cross the band, and grows or shrinks the belt until there's `FitGap` (0.04 studs) of room everywhere. On a standard blocky R15 it comes out at ×1.1. The modeled belt fit too tightly, so the torso's corners poked through.
   - Anything from a player's own avatar that still sneaks on (shirts, pants, hats, body colours) is deleted as it arrives.
 - **The referee (`PowerUpServer`, server).**
   - Your game tells the server "I started", "my bar is at X", "I'm full" and "cancel".
@@ -48,14 +49,21 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
   - The aura is a column of flame particles around you, plus haze, sparks and a glow. It changes from white-blue to gold as you transform.
   - It also draws the ground dust, the floating rocks, the shockwave ring and flash, and the ready stance and scream pose. The stance is layered on top of your normal animations.
 - **The hair and belt (`HairPhysics`, every screen).**
-  - This is the same physics as the earlier hair, with two additions.
-  - An upward "wind", plus a swirl, is driven by `AuraWind`: 0 while calm, rising as the bar fills, 1 at the burst, and 0.35 as a Super Saiyan, so the golden hair keeps flowing gently.
+  - This is the same physics as the earlier hair, with these additions.
+  - **Gravity:** only part of gravity is cancelled by the springs (`GravityCompensation`): half for the base hair, 40% for the SSJ hair. The spikes hang a little heavier and swing more when you move, jump or stop.
+  - **Aura:** an upward "wind", plus a swirl, is driven by `AuraWind`: 0 while calm, rising as the bar fills, 1 at the burst, and 0.12 as a Super Saiyan.
+  - **Breeze:** the SSJ hair has a steady breeze to the wearer's left (`LocalWind`) that turns with the head. Each spike's share rises and falls on its own, so the hair ripples. It fades while the aura blasts upward.
   - A hidden hair (the SSJ hair while you're in base form) doesn't get simulated.
 
 ## Settings
 
 - **`PowerConfig`:** keys, how much each tap fills, how fast the bar drains, minimum charge time, burst length, aura colours and size, camera distance, height and shake.
-- **`HairConfig`:** colour, texture id, placement (`Offset`) and size of each piece, and how stiff it is and how hard the aura blows it (`AuraLift`, `AuraSwirl`).
+- **`HairConfig`:**
+  - colour, texture id, placement (`Offset`) and size of each piece
+  - how stiff and heavy it is (`Stiffness`, `GravityCompensation`)
+  - the SSJ breeze (`LocalWind`, `LocalWindFlutter`); flip the X to `70` to blow it to the right
+  - how hard the aura blows it (`AuraLift`, `AuraSwirl`)
+  - the belt's room around the waist (`FitGap`, or `Scale` for extra size on top)
 
 ## Limits
 
@@ -72,4 +80,5 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
   - `server_mock`: the morph and the referee
   - `client_mock`: controls plus server, end to end
   - `fx_mock`: aura, stance and burst
-  - `aura_harness <BaseHair|SSJHair|Belt>`: hair and belt physics through a power-up
+  - `aura_harness <BaseHair|SSJHair|Belt>`: hair and belt physics through a power-up, walking, stopping and jumping (sag, swing, sideways sweep and ripple)
+- `python3 -I tools/rig/belt_ring.py models/source/Belt.obj tools/rig/riginfo.json` re-measures the belt's band, then `tools/rig/emit_layouts.py` prints the `Layouts` table for `HairConfig`.

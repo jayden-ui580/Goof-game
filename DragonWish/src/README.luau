@@ -39,7 +39,10 @@
 
 	TWEAKING
 	  HairConfig: hair/belt colours (Color), textures (TextureId), placement (Offset),
-	              how stiff/floppy, and how hard the aura blows them (AuraLift / AuraSwirl).
+	              how stiff/floppy (Stiffness) and heavy (GravityCompensation: lower = heavier),
+	              the Super Saiyan hair's breeze to the left (LocalWind: make the X positive to
+	              blow it right), how hard the aura blows them (AuraLift / AuraSwirl), and the
+	              belt's room around the waist (FitGap; it's sized to the rig automatically).
 	  PowerConfig: keys, how fast the bar fills/drains, minimum charge time, aura colours and
 	               size, camera distance and shake.
 ]]

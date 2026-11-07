@@ -9,8 +9,14 @@
 	  Stiffness     One number per bone, root first: how strongly each bone springs back to its
 	                modeled shape. Spiky hair = high, ribbons = low.
 	  MaxBend       One number per bone, in degrees: the most a joint can bend. Stops folding.
+	  GravityCompensation  0..1: how much of gravity the spring cancels. 1 = sits exactly in its
+	                modeled shape when still; lower = gravity pulls it down more (heavier hair).
 	  Damping       0..1: how fast movement dies out. Bounce: how much it overshoots (keep low).
 	  Inertia       0..1: how much it gets left behind when the body moves.
+	  LocalWind     A steady breeze that turns with the head (studs/s²; X = the wearer's right,
+	                Y = up, Z = behind them). Vector3.new(-70, 10, 0) blows it to their left.
+	                LocalWindFlutter (0..1) / LocalWindFlutterSpeed: how much and how fast each
+	                strand's breeze rises and falls, so the hair ripples.
 	  AuraLift      How hard the power-up aura blows it upward (studs/s² at full power).
 	  AuraSwirl     How hard the aura whips it around sideways (studs/s² at full power).
 	  AuraSwirlSpeed  How fast that whipping wobbles.
@@ -42,13 +48,13 @@ HairConfig.Hairs = {
 		VisibleIn = "Base", -- which form shows this piece ("Base", "SSJ" or "Both")
 		Physics = {
 			Gravity = 30,
-			GravityCompensation = 1,
-			Damping = 0.3,
-			Bounce = 0.15,
-			Inertia = 0.15,
-			Stiffness = { 0.5, 0.4, 0.3 },
+			GravityCompensation = 0.5, -- half of gravity is left to pull the spikes down
+			Damping = 0.25,
+			Bounce = 0.2,
+			Inertia = 0.3,
+			Stiffness = { 0.22, 0.15, 0.1 },
 			ShapeFollow = 0.25,
-			MaxBend = { 22, 22, 25 },
+			MaxBend = { 30, 30, 35 },
 			MaxSpeed = 30,
 			AuraLift = 600,
 			AuraSwirl = 160,
@@ -64,20 +70,24 @@ HairConfig.Hairs = {
 		TextureId = "",
 		Color = Color3.fromRGB(255, 214, 80),
 		Material = Enum.Material.SmoothPlastic,
-		Offset = CFrame.new(0, 0, 0),
+		Offset = CFrame.new(-0.05, -0.2, 0.15),
 		Scale = 1,
 		ScaleToHead = true,
 		VisibleIn = "SSJ",
 		Physics = {
 			Gravity = 30,
-			GravityCompensation = 1,
+			GravityCompensation = 0.4, -- heavier than the base hair: gravity pulls it more
 			Damping = 0.25,
 			Bounce = 0.2,
-			Inertia = 0.15,
-			Stiffness = { 0.45, 0.35, 0.28 },
+			Inertia = 0.3,
+			Stiffness = { 0.18, 0.12, 0.08 },
 			ShapeFollow = 0.25,
-			MaxBend = { 20, 20, 24 },
+			MaxBend = { 32, 32, 38 },
 			MaxSpeed = 30,
+			-- a steady breeze to the wearer's left, each spike rippling on its own
+			LocalWind = Vector3.new(-70, 10, 0),
+			LocalWindFlutter = 0.7,
+			LocalWindFlutterSpeed = 3.4,
 			AuraLift = 500,
 			AuraSwirl = 200,
 			AuraSwirlSpeed = 3.5, -- slow: the Super Saiyan hair "flows calmly"
@@ -93,8 +103,11 @@ HairConfig.Hairs = {
 		Color = Color3.fromRGB(38, 70, 170),
 		Material = Enum.Material.Fabric,
 		Offset = CFrame.new(0, 0, 0),
-		Scale = 1,
+		Scale = 1, -- extra size on top of the automatic fit (1.05 = a little looser)
 		ScaleToHead = false,
+		-- the belt is sized so these body parts never poke through it, with FitGap studs of room
+		FitAround = { "LowerTorso", "UpperTorso", "LeftUpperLeg", "RightUpperLeg" },
+		FitGap = 0.04,
 		VisibleIn = "Both",
 		Physics = {
 			Gravity = 30,
@@ -328,6 +341,24 @@ HairConfig.Layouts = {
 		Chains = {
 			{ Name = "RibbonL", Bones = { "RibbonL_1", "RibbonL_2", "RibbonL_3" }, Tip = "RibbonL_End", Radii = { 0.12, 0.11, 0.1, 0.09 } },
 			{ Name = "RibbonR", Bones = { "RibbonR_1", "RibbonR_2", "RibbonR_3" }, Tip = "RibbonR_End", Radii = { 0.12, 0.11, 0.1, 0.09 } },
+		},
+		-- inside of the band: distance from the centre every 2 degrees (from +X towards +Z)
+		Ring = {
+			Bottom = -0.195, Top = 0.205, Step = 2,
+			Radii = {
+				1.048, 1.049, 1.05, 1.053, 1.058, 1.063, 1.068, 1.073, 1.079, 1.087, 1.096, 1.106, 1.1, 1.085, 1.058,
+				1.005, 0.957, 0.915, 0.875, 0.837, 0.803, 0.772, 0.745, 0.72, 0.699, 0.682, 0.666, 0.652, 0.639, 0.627,
+				0.617, 0.607, 0.599, 0.591, 0.585, 0.579, 0.574, 0.57, 0.567, 0.564, 0.563, 0.561, 0.561, 0.561, 0.561,
+				0.562, 0.564, 0.566, 0.568, 0.572, 0.576, 0.581, 0.586, 0.593, 0.599, 0.606, 0.614, 0.623, 0.631, 0.64,
+				0.65, 0.661, 0.673, 0.686, 0.701, 0.718, 0.736, 0.754, 0.774, 0.796, 0.82, 0.847, 0.877, 0.909, 0.945,
+				0.984, 1.028, 1.068, 1.082, 1.098, 1.093, 1.084, 1.077, 1.071, 1.066, 1.063, 1.059, 1.055, 1.052, 1.05,
+				1.05, 1.05, 1.051, 1.053, 1.056, 1.06, 1.063, 1.067, 1.073, 1.081, 1.089, 1.099, 1.094, 1.08, 1.065,
+				1.008, 0.958, 0.913, 0.872, 0.834, 0.8, 0.771, 0.745, 0.722, 0.7, 0.683, 0.667, 0.652, 0.639, 0.627,
+				0.616, 0.606, 0.597, 0.589, 0.58, 0.573, 0.566, 0.56, 0.555, 0.551, 0.548, 0.545, 0.543, 0.542, 0.541,
+				0.541, 0.541, 0.542, 0.544, 0.547, 0.55, 0.554, 0.559, 0.565, 0.571, 0.578, 0.587, 0.596, 0.604, 0.613,
+				0.623, 0.635, 0.647, 0.661, 0.676, 0.693, 0.711, 0.731, 0.754, 0.779, 0.807, 0.838, 0.873, 0.911, 0.952,
+				0.999, 1.052, 1.074, 1.088, 1.098, 1.088, 1.079, 1.072, 1.066, 1.061, 1.058, 1.055, 1.051, 1.049, 1.048,
+			},
 		},
 		Bones = {
 			BeltRoot = Vector3.new(0, 0, 0),

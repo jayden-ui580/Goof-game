@@ -7,6 +7,20 @@ local roblox = require("@lune/roblox")
 local serde = require("@lune/serde")
 local task = require("@lune/task")
 local V3, CF, I = roblox.Vector3, roblox.CFrame, roblox.Instance
+-- Roblox's Model:GetScale / ScaleTo (missing in Lune): grows the parts and moves the bones out
+roblox.implementMethod("Model", "GetScale", function(m) return m:GetAttribute("_Scale") or 1 end)
+roblox.implementMethod("Model", "ScaleTo", function(m, new)
+	local f = new / (m:GetAttribute("_Scale") or 1)
+	m:SetAttribute("_Scale", new)
+	for _, d in m:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Size *= f
+		elseif d:IsA("Bone") then
+			local c = d.CFrame
+			d.CFrame = CF.new(c.Position * f) * c.Rotation
+		end
+	end
+end)
 
 local game = I.new("DataModel")
 local RS, SS, SP = game:GetService("ReplicatedStorage"), game:GetService("ServerStorage"), game:GetService("StarterPlayer")
@@ -24,6 +38,8 @@ bodyPart("HumanoidRootPart", V3.new(2, 2, 1), CF.new(0, 3, 0))
 local head = bodyPart("Head", V3.new(1.2, 1.2, 1.2), CF.new(0, 4.5, 0), true)
 bodyPart("UpperTorso", V3.new(2, 1.6, 1), CF.new(0, 3.2, 0))
 local lower = bodyPart("LowerTorso", V3.new(2, 0.4, 1), CF.new(0, 2.2, 0))
+bodyPart("LeftUpperLeg", V3.new(1, 1.2, 1), CF.new(-0.5, 1.4, 0))
+bodyPart("RightUpperLeg", V3.new(1, 1.2, 1), CF.new(0.5, 1.4, 0))
 local ownHat = I.new("Accessory"); ownHat.Name = "RigOwnScouter"; ownHat.Parent = base
 base.Parent = RS
 
@@ -108,11 +124,12 @@ for _, h in info do
 	for name, p in h.bones do
 		local bone = mesh:FindFirstChild(name, true)
 		local got = meshCF * modules.HairPhysics.PartSpaceCFrame(bone, mesh).Position
-		local want = attach.CFrame * V3.new(p[1], p[2], p[3])
+		local cfg = modules.HairConfig.Hairs[h.name]
+		local want = attach.CFrame * cfg.Offset * (V3.new(p[1], p[2], p[3]) * mesh:GetAttribute("FitScale"))
 		worst = math.max(worst, (got - want).Magnitude)
 	end
-	print(("%-8s on %-10s bones %3d  worst placement error %.5f  visible %s  tagged %s  preset %s"):format(
-		h.name, attach.Name, #(function() local t = {} for k in h.bones do table.insert(t, k) end return t end)(), worst,
+	print(("%-8s on %-10s bones %3d  size x%.3f  worst placement error %.5f  visible %s  tagged %s  preset %s"):format(
+		h.name, attach.Name, #(function() local t = {} for k in h.bones do table.insert(t, k) end return t end)(), mesh:GetAttribute("FitScale"), worst,
 		tostring(mesh.Transparency < 1), tostring(mesh:HasTag("HairPhysics")), tostring(mesh:GetAttribute("HairPreset"))))
 end
 print("rig's own accessory kept and marked:", sc:FindFirstChild("RigOwnScouter") and sc.RigOwnScouter:GetAttribute("DWOwned"))

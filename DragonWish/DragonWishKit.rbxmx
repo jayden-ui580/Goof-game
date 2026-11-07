@@ -48,7 +48,10 @@
 
 	TWEAKING
 	  HairConfig: hair/belt colours (Color), textures (TextureId), placement (Offset),
-	              how stiff/floppy, and how hard the aura blows them (AuraLift / AuraSwirl).
+	              how stiff/floppy (Stiffness) and heavy (GravityCompensation: lower = heavier),
+	              the Super Saiyan hair's breeze to the left (LocalWind: make the X positive to
+	              blow it right), how hard the aura blows them (AuraLift / AuraSwirl), and the
+	              belt's room around the waist (FitGap; it's sized to the rig automatically).
 	  PowerConfig: keys, how fast the bar fills/drains, minimum charge time, aura colours and
 	               size, camera distance and shake.
 ]]
@@ -117,6 +120,12 @@ local DEFAULTS = {
 	AuraSwirl = 0,
 	AuraSwirlSpeed = 3,
 	AuraResponse = 4, -- how quickly the hair reacts when the aura changes (per second)
+	-- a steady breeze that keeps the same direction relative to the wearer's head (studs/s²;
+	-- X = their right, Y = up, Z = behind them): Vector3.new(-80, 0, 0) blows it to their left.
+	-- It fades out while the power-up aura blasts the hair upward.
+	LocalWind = Vector3.zero,
+	LocalWindFlutter = 0, -- 0..1: how much each strand's breeze rises and falls on its own
+	LocalWindFlutterSpeed = 2, -- how fast that ripple goes
 	SheetLinks = {},
 	SheetSlack = 0.12,
 	Wind = Vector3.zero,
@@ -823,6 +832,10 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 	local accel = gravity + (wind + Vector3.new(0, s.AuraLift * aura, 0)) * (h * h)
 	local compensation = s.GravityCompensation > 0 and gravity * s.GravityCompensation or nil
 	local swirl = s.AuraSwirl * aura * h * h
+	local breeze = nil
+	if s.LocalWind.Magnitude > 0 then
+		breeze = rot:VectorToWorldSpace(s.LocalWind) * ((1 - math.min(aura, 1) ^ 2) * h * h)
+	end
 
 	for _, chain in self.Chains do
 		local pos, prev = chain.Pos, chain.Prev
@@ -833,6 +846,12 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 			-- turbulent wind from the aura: every strand gets its own flutter
 			local t = self.Time * s.AuraSwirlSpeed + chain.Phase
 			chainAccel += Vector3.new(math.sin(t), 0.4 * math.sin(t * 1.7 + 1), math.cos(t * 1.3)) * swirl
+		end
+		if breeze then
+			-- each strand's breeze rises and falls on its own, so the hair ripples instead of
+			-- leaning over like one stiff block
+			local t = self.Time * s.LocalWindFlutterSpeed + chain.Phase * 2.3
+			chainAccel += breeze * (1 + s.LocalWindFlutter * (0.6 * math.sin(t) + 0.4 * math.sin(t * 2.3 + 1.1)))
 		end
 		for k = 2, chain.N + 1 do
 			local p, q = pos[k], prev[k]
@@ -1084,8 +1103,14 @@ return HairPhysics
 	  Stiffness     One number per bone, root first: how strongly each bone springs back to its
 	                modeled shape. Spiky hair = high, ribbons = low.
 	  MaxBend       One number per bone, in degrees: the most a joint can bend. Stops folding.
+	  GravityCompensation  0..1: how much of gravity the spring cancels. 1 = sits exactly in its
+	                modeled shape when still; lower = gravity pulls it down more (heavier hair).
 	  Damping       0..1: how fast movement dies out. Bounce: how much it overshoots (keep low).
 	  Inertia       0..1: how much it gets left behind when the body moves.
+	  LocalWind     A steady breeze that turns with the head (studs/s²; X = the wearer's right,
+	                Y = up, Z = behind them). Vector3.new(-70, 10, 0) blows it to their left.
+	                LocalWindFlutter (0..1) / LocalWindFlutterSpeed: how much and how fast each
+	                strand's breeze rises and falls, so the hair ripples.
 	  AuraLift      How hard the power-up aura blows it upward (studs/s² at full power).
 	  AuraSwirl     How hard the aura whips it around sideways (studs/s² at full power).
 	  AuraSwirlSpeed  How fast that whipping wobbles.
@@ -1117,13 +1142,13 @@ HairConfig.Hairs = {
 		VisibleIn = "Base", -- which form shows this piece ("Base", "SSJ" or "Both")
 		Physics = {
 			Gravity = 30,
-			GravityCompensation = 1,
-			Damping = 0.3,
-			Bounce = 0.15,
-			Inertia = 0.15,
-			Stiffness = { 0.5, 0.4, 0.3 },
+			GravityCompensation = 0.5, -- half of gravity is left to pull the spikes down
+			Damping = 0.25,
+			Bounce = 0.2,
+			Inertia = 0.3,
+			Stiffness = { 0.22, 0.15, 0.1 },
 			ShapeFollow = 0.25,
-			MaxBend = { 22, 22, 25 },
+			MaxBend = { 30, 30, 35 },
 			MaxSpeed = 30,
 			AuraLift = 600,
 			AuraSwirl = 160,
@@ -1139,20 +1164,24 @@ HairConfig.Hairs = {
 		TextureId = "",
 		Color = Color3.fromRGB(255, 214, 80),
 		Material = Enum.Material.SmoothPlastic,
-		Offset = CFrame.new(0, 0, 0),
+		Offset = CFrame.new(-0.05, -0.2, 0.15),
 		Scale = 1,
 		ScaleToHead = true,
 		VisibleIn = "SSJ",
 		Physics = {
 			Gravity = 30,
-			GravityCompensation = 1,
+			GravityCompensation = 0.4, -- heavier than the base hair: gravity pulls it more
 			Damping = 0.25,
 			Bounce = 0.2,
-			Inertia = 0.15,
-			Stiffness = { 0.45, 0.35, 0.28 },
+			Inertia = 0.3,
+			Stiffness = { 0.18, 0.12, 0.08 },
 			ShapeFollow = 0.25,
-			MaxBend = { 20, 20, 24 },
+			MaxBend = { 32, 32, 38 },
 			MaxSpeed = 30,
+			-- a steady breeze to the wearer's left, each spike rippling on its own
+			LocalWind = Vector3.new(-70, 10, 0),
+			LocalWindFlutter = 0.7,
+			LocalWindFlutterSpeed = 3.4,
 			AuraLift = 500,
 			AuraSwirl = 200,
 			AuraSwirlSpeed = 3.5, -- slow: the Super Saiyan hair "flows calmly"
@@ -1168,8 +1197,11 @@ HairConfig.Hairs = {
 		Color = Color3.fromRGB(38, 70, 170),
 		Material = Enum.Material.Fabric,
 		Offset = CFrame.new(0, 0, 0),
-		Scale = 1,
+		Scale = 1, -- extra size on top of the automatic fit (1.05 = a little looser)
 		ScaleToHead = false,
+		-- the belt is sized so these body parts never poke through it, with FitGap studs of room
+		FitAround = { "LowerTorso", "UpperTorso", "LeftUpperLeg", "RightUpperLeg" },
+		FitGap = 0.04,
 		VisibleIn = "Both",
 		Physics = {
 			Gravity = 30,
@@ -1404,6 +1436,24 @@ HairConfig.Layouts = {
 			{ Name = "RibbonL", Bones = { "RibbonL_1", "RibbonL_2", "RibbonL_3" }, Tip = "RibbonL_End", Radii = { 0.12, 0.11, 0.1, 0.09 } },
 			{ Name = "RibbonR", Bones = { "RibbonR_1", "RibbonR_2", "RibbonR_3" }, Tip = "RibbonR_End", Radii = { 0.12, 0.11, 0.1, 0.09 } },
 		},
+		-- inside of the band: distance from the centre every 2 degrees (from +X towards +Z)
+		Ring = {
+			Bottom = -0.195, Top = 0.205, Step = 2,
+			Radii = {
+				1.048, 1.049, 1.05, 1.053, 1.058, 1.063, 1.068, 1.073, 1.079, 1.087, 1.096, 1.106, 1.1, 1.085, 1.058,
+				1.005, 0.957, 0.915, 0.875, 0.837, 0.803, 0.772, 0.745, 0.72, 0.699, 0.682, 0.666, 0.652, 0.639, 0.627,
+				0.617, 0.607, 0.599, 0.591, 0.585, 0.579, 0.574, 0.57, 0.567, 0.564, 0.563, 0.561, 0.561, 0.561, 0.561,
+				0.562, 0.564, 0.566, 0.568, 0.572, 0.576, 0.581, 0.586, 0.593, 0.599, 0.606, 0.614, 0.623, 0.631, 0.64,
+				0.65, 0.661, 0.673, 0.686, 0.701, 0.718, 0.736, 0.754, 0.774, 0.796, 0.82, 0.847, 0.877, 0.909, 0.945,
+				0.984, 1.028, 1.068, 1.082, 1.098, 1.093, 1.084, 1.077, 1.071, 1.066, 1.063, 1.059, 1.055, 1.052, 1.05,
+				1.05, 1.05, 1.051, 1.053, 1.056, 1.06, 1.063, 1.067, 1.073, 1.081, 1.089, 1.099, 1.094, 1.08, 1.065,
+				1.008, 0.958, 0.913, 0.872, 0.834, 0.8, 0.771, 0.745, 0.722, 0.7, 0.683, 0.667, 0.652, 0.639, 0.627,
+				0.616, 0.606, 0.597, 0.589, 0.58, 0.573, 0.566, 0.56, 0.555, 0.551, 0.548, 0.545, 0.543, 0.542, 0.541,
+				0.541, 0.541, 0.542, 0.544, 0.547, 0.55, 0.554, 0.559, 0.565, 0.571, 0.578, 0.587, 0.596, 0.604, 0.613,
+				0.623, 0.635, 0.647, 0.661, 0.676, 0.693, 0.711, 0.731, 0.754, 0.779, 0.807, 0.838, 0.873, 0.911, 0.952,
+				0.999, 1.052, 1.074, 1.088, 1.098, 1.088, 1.079, 1.072, 1.066, 1.061, 1.058, 1.055, 1.051, 1.049, 1.048,
+			},
+		},
 		Bones = {
 			BeltRoot = Vector3.new(0, 0, 0),
 			RibbonL_1 = Vector3.new(-0.0599, -0.0362, -0.5875),
@@ -1453,7 +1503,8 @@ PowerConfig.LockMovement = true -- you can't walk or jump while powering up
 
 -- the transformation
 PowerConfig.BurstTime = 2.4 -- seconds the burst lasts before you get control back
-PowerConfig.SSJCalmWind = 0.35 -- how strongly the Super Saiyan hair keeps flowing afterwards (0..1)
+PowerConfig.SSJCalmWind = 0.12 -- a gentle upward lift that stays on as a Super Saiyan (0..1); the
+-- sideways breeze is the SSJ hair's LocalWind in HairConfig
 PowerConfig.SSJIdleAura = 0.22 -- a soft golden aura stays on after transforming (0 = none)
 
 -- looks
@@ -1610,6 +1661,62 @@ local function bonePairs(mesh: BasePart, layout)
 end
 
 ----------------------------------------------------------------------------------------
+-- sizing the belt to the waist
+----------------------------------------------------------------------------------------
+-- How big the belt has to be so the body never pokes through it, and where the middle of the
+-- waist is. The body parts listed in FitAround are measured where they cross the band, all the
+-- way round, and compared with the inside of the band (layout.Ring, measured from the model).
+-- Returns the size to use (1 = as modeled) and how far to move the belt to centre it.
+local function waistFit(rig: Model, attachPart: BasePart, ring, cfg): (number?, Vector3)
+	local radii, step = ring.Radii, ring.Step
+	local count = #radii
+	local function inside(angle: number): number
+		local a = (math.deg(angle) % 360) / step
+		local i = math.floor(a)
+		local f = a - i
+		return radii[i % count + 1] * (1 - f) + radii[(i + 1) % count + 1] * f
+	end
+	local base = attachPart.CFrame * (cfg.Offset or CFrame.identity)
+	-- the band grows with the belt, so look a bit above and below it
+	local low, high = ring.Bottom * 1.4, ring.Top * 1.4
+	local points = {}
+	local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+	for _, name in cfg.FitAround do
+		local part = rig:FindFirstChild(name)
+		if part and part:IsA("BasePart") then
+			local cf = base:ToObjectSpace(part.CFrame)
+			local h = part.Size / 2
+			for i = 0, 16 do
+				local u = i / 8 - 1
+				for j = 0, 16 do
+					local v = j / 8 - 1
+					-- the four side faces of the part
+					for _, q in { Vector3.new(h.X, v * h.Y, u * h.Z), Vector3.new(-h.X, v * h.Y, u * h.Z), Vector3.new(u * h.X, v * h.Y, h.Z), Vector3.new(u * h.X, v * h.Y, -h.Z) } do
+						local p = cf * q
+						if p.Y >= low and p.Y <= high then
+							table.insert(points, p)
+							minX, maxX = math.min(minX, p.X), math.max(maxX, p.X)
+							minZ, maxZ = math.min(minZ, p.Z), math.max(maxZ, p.Z)
+						end
+					end
+				end
+			end
+		end
+	end
+	if #points == 0 then
+		return nil, Vector3.zero
+	end
+	local middle = Vector3.new(math.clamp((minX + maxX) / 2, -0.3, 0.3), 0, math.clamp((minZ + maxZ) / 2, -0.3, 0.3))
+	local need = 0
+	local gap = cfg.FitGap or 0.04
+	for _, p in points do
+		local dx, dz = p.X - middle.X, p.Z - middle.Z
+		need = math.max(need, (math.sqrt(dx * dx + dz * dz) + gap) / inside(math.atan2(dz, dx)))
+	end
+	return math.clamp(need, 0.6, 2), middle
+end
+
+----------------------------------------------------------------------------------------
 -- putting one piece on the rig
 ----------------------------------------------------------------------------------------
 local function attachPiece(rig: Model, name: string): boolean
@@ -1667,6 +1774,15 @@ local function attachPiece(rig: Model, name: string): boolean
 			wantScale *= ratio
 		end
 	end
+	local shift = Vector3.zero
+	if cfg.FitAround and layout.Ring then
+		local size, middle = waistFit(rig, attachPart, layout.Ring, cfg)
+		if size then
+			wantScale = size * (cfg.Scale or 1)
+			shift = middle
+			log(("sized the %s to wrap the waist (x%.3f)"):format(name, wantScale))
+		end
+	end
 	if math.abs(fit.Scale / wantScale - 1) > 0.02 then
 		local temp = Instance.new("Model")
 		mesh.Parent = temp
@@ -1686,7 +1802,7 @@ local function attachPiece(rig: Model, name: string): boolean
 		complain(("the %s's bones don't match the expected layout (off by %.2f studs)"):format(name, fit.Error))
 	end
 	local centre = (layout.HeadCenter or Vector3.zero) * fit.Scale
-	local attachToMesh = cfg.Offset * CFrame.new(-centre) * HairPhysics.HeadToPart(fit)
+	local attachToMesh = cfg.Offset * CFrame.new(shift - centre) * HairPhysics.HeadToPart(fit)
 
 	local holder = Instance.new("Model")
 	holder.Name = "DW_" .. name
@@ -1700,6 +1816,7 @@ local function attachPiece(rig: Model, name: string): boolean
 	weld.C0 = attachToMesh
 	weld.Parent = mesh
 	mesh:SetAttribute("HairPreset", name)
+	mesh:SetAttribute("FitScale", math.floor(fit.Scale * 1000 + 0.5) / 1000) -- how big it ended up (1 = as modeled)
 	mesh:SetAttribute("VisibleIn", cfg.VisibleIn or "Both")
 	mesh.Transparency = (cfg.VisibleIn == "SSJ") and 1 or 0
 	CollectionService:AddTag(mesh, HairPhysics.TAG)

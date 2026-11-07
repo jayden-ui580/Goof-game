@@ -129,6 +129,62 @@ local function bonePairs(mesh: BasePart, layout)
 end
 
 ----------------------------------------------------------------------------------------
+-- sizing the belt to the waist
+----------------------------------------------------------------------------------------
+-- How big the belt has to be so the body never pokes through it, and where the middle of the
+-- waist is. The body parts listed in FitAround are measured where they cross the band, all the
+-- way round, and compared with the inside of the band (layout.Ring, measured from the model).
+-- Returns the size to use (1 = as modeled) and how far to move the belt to centre it.
+local function waistFit(rig: Model, attachPart: BasePart, ring, cfg): (number?, Vector3)
+	local radii, step = ring.Radii, ring.Step
+	local count = #radii
+	local function inside(angle: number): number
+		local a = (math.deg(angle) % 360) / step
+		local i = math.floor(a)
+		local f = a - i
+		return radii[i % count + 1] * (1 - f) + radii[(i + 1) % count + 1] * f
+	end
+	local base = attachPart.CFrame * (cfg.Offset or CFrame.identity)
+	-- the band grows with the belt, so look a bit above and below it
+	local low, high = ring.Bottom * 1.4, ring.Top * 1.4
+	local points = {}
+	local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+	for _, name in cfg.FitAround do
+		local part = rig:FindFirstChild(name)
+		if part and part:IsA("BasePart") then
+			local cf = base:ToObjectSpace(part.CFrame)
+			local h = part.Size / 2
+			for i = 0, 16 do
+				local u = i / 8 - 1
+				for j = 0, 16 do
+					local v = j / 8 - 1
+					-- the four side faces of the part
+					for _, q in { Vector3.new(h.X, v * h.Y, u * h.Z), Vector3.new(-h.X, v * h.Y, u * h.Z), Vector3.new(u * h.X, v * h.Y, h.Z), Vector3.new(u * h.X, v * h.Y, -h.Z) } do
+						local p = cf * q
+						if p.Y >= low and p.Y <= high then
+							table.insert(points, p)
+							minX, maxX = math.min(minX, p.X), math.max(maxX, p.X)
+							minZ, maxZ = math.min(minZ, p.Z), math.max(maxZ, p.Z)
+						end
+					end
+				end
+			end
+		end
+	end
+	if #points == 0 then
+		return nil, Vector3.zero
+	end
+	local middle = Vector3.new(math.clamp((minX + maxX) / 2, -0.3, 0.3), 0, math.clamp((minZ + maxZ) / 2, -0.3, 0.3))
+	local need = 0
+	local gap = cfg.FitGap or 0.04
+	for _, p in points do
+		local dx, dz = p.X - middle.X, p.Z - middle.Z
+		need = math.max(need, (math.sqrt(dx * dx + dz * dz) + gap) / inside(math.atan2(dz, dx)))
+	end
+	return math.clamp(need, 0.6, 2), middle
+end
+
+----------------------------------------------------------------------------------------
 -- putting one piece on the rig
 ----------------------------------------------------------------------------------------
 local function attachPiece(rig: Model, name: string): boolean
@@ -186,6 +242,15 @@ local function attachPiece(rig: Model, name: string): boolean
 			wantScale *= ratio
 		end
 	end
+	local shift = Vector3.zero
+	if cfg.FitAround and layout.Ring then
+		local size, middle = waistFit(rig, attachPart, layout.Ring, cfg)
+		if size then
+			wantScale = size * (cfg.Scale or 1)
+			shift = middle
+			log(("sized the %s to wrap the waist (x%.3f)"):format(name, wantScale))
+		end
+	end
 	if math.abs(fit.Scale / wantScale - 1) > 0.02 then
 		local temp = Instance.new("Model")
 		mesh.Parent = temp
@@ -205,7 +270,7 @@ local function attachPiece(rig: Model, name: string): boolean
 		complain(("the %s's bones don't match the expected layout (off by %.2f studs)"):format(name, fit.Error))
 	end
 	local centre = (layout.HeadCenter or Vector3.zero) * fit.Scale
-	local attachToMesh = cfg.Offset * CFrame.new(-centre) * HairPhysics.HeadToPart(fit)
+	local attachToMesh = cfg.Offset * CFrame.new(shift - centre) * HairPhysics.HeadToPart(fit)
 
 	local holder = Instance.new("Model")
 	holder.Name = "DW_" .. name
@@ -219,6 +284,7 @@ local function attachPiece(rig: Model, name: string): boolean
 	weld.C0 = attachToMesh
 	weld.Parent = mesh
 	mesh:SetAttribute("HairPreset", name)
+	mesh:SetAttribute("FitScale", math.floor(fit.Scale * 1000 + 0.5) / 1000) -- how big it ended up (1 = as modeled)
 	mesh:SetAttribute("VisibleIn", cfg.VisibleIn or "Both")
 	mesh.Transparency = (cfg.VisibleIn == "SSJ") and 1 or 0
 	CollectionService:AddTag(mesh, HairPhysics.TAG)
