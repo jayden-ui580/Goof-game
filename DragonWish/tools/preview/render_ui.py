@@ -13,6 +13,7 @@ DEJAVU = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
 LIB_BOLD = '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf'
 LIB_REG = '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'
 MONO = '/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf'
+CJK = '/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf'
 FONTS = {  # (file, horizontal squeeze)
     'Bangers': (DEJAVU, 0.78), 'GothamBlack': (LIB_BOLD, 1.0), 'GothamBold': (LIB_BOLD, 1.0),
     'GothamMedium': (LIB_REG, 1.0), 'Gotham': (LIB_REG, 1.0), 'Code': (MONO, 1.0), 'Sarpanch': (DEJAVU, 0.92),
@@ -20,7 +21,9 @@ FONTS = {  # (file, horizontal squeeze)
 _font_cache = {}
 def font(name, size, text):
     path, squeeze = FONTS.get(name, (LIB_BOLD, 1.0))
-    if any(ord(c) > 0x2000 and c not in '—·' for c in text):
+    if any(0x2E80 <= ord(c) <= 0x9FFF or 0xFF00 <= ord(c) <= 0xFFEF for c in text):
+        path, squeeze = CJK, 1.0  # kanji / kana
+    elif any(ord(c) > 0x2000 and c not in '—·' for c in text):
         path = DEJAVU  # (has the ★ glyph)
     key = (path, int(size))
     if key not in _font_cache:
@@ -89,6 +92,10 @@ def draw_box(layer, node, x, y, w, h, k):
         ring = np.clip(outer - inner, 0, 1)
         arr = np.zeros(ring.shape + (4,), np.float32)
         arr[..., :3] = s['color']; arr[..., 3] = ring * (1 - s['t'])
+        gcol, gtr = gradient(s, ring.shape[1], ring.shape[0])  # a UIGradient inside the stroke
+        if gcol is not None:
+            arr[..., :3] = arr[..., :3] * gcol
+            arr[..., 3] = arr[..., 3] * (1 - gtr)
         paste(layer, arr, x - t, y - t)
     if node['bgT'] < 1:
         mask = rounded_mask(w, h, r)
@@ -121,14 +128,18 @@ def draw_text(layer, node, x, y, w, h, k):
         return
     strokes = [s for s in kids(node, 'UIStroke') if s['mode'] == 'Contextual']
     sw = int(round(strokes[0]['thick'] * k)) if strokes else (1 if node['strokeT'] < 1 else 0)
+    lines = txt.split('\n')
+    def measure(f):
+        asc, desc = f.getmetrics()
+        widths = [f.getbbox(l or ' ', stroke_width=sw)[2] - f.getbbox(l or ' ', stroke_width=sw)[0] for l in lines]
+        return max(widths), (asc + desc) * len(lines), asc + desc
     if node['scaled']:
         lo, hi = 2, 100
         while lo < hi:
             mid = (lo + hi + 1) // 2
             f, sq = font(node['font'], mid, txt)
-            bb = f.getbbox(txt, stroke_width=sw)
-            asc, desc = f.getmetrics()
-            if (bb[2] - bb[0]) * sq <= w and (asc + desc) <= h * 1.02:
+            mw, mh, _ = measure(f)
+            if mw * sq <= w and mh <= h * 1.02:
                 lo = mid
             else:
                 hi = mid - 1
@@ -136,16 +147,20 @@ def draw_text(layer, node, x, y, w, h, k):
     else:
         size = node['tsize'] * k
     f, sq = font(node['font'], size, txt)
-    bb = f.getbbox(txt, stroke_width=sw)
-    asc, desc = f.getmetrics()
-    tw, th = bb[2] - bb[0] + 2 * sw + 2, asc + desc + 2 * sw + 2
+    mw, mh, lh = measure(f)
+    tw, th = mw + 2 * sw + 4, mh + 2 * sw + 2
     timg = Image.new('RGBA', (int(tw), int(th)), (0, 0, 0, 0))
     col = tuple(int(255 * c) for c in node['tc']) + (int(255 * (1 - node['tT'])),)
     if strokes:
         sc = tuple(int(255 * c) for c in strokes[0]['color']) + (int(255 * (1 - strokes[0]['t']) * (1 - node['tT'])),)
     else:
         sc = tuple(int(255 * c) for c in node['strokeC']) + (int(255 * (1 - node['strokeT']) * (1 - node['tT'])),)
-    ImageDraw.Draw(timg).text((sw - bb[0] + 1, sw + 1), txt, font=f, fill=col, stroke_width=sw, stroke_fill=sc)
+    td = ImageDraw.Draw(timg)
+    for li, line in enumerate(lines):
+        lb = f.getbbox(line or ' ', stroke_width=sw)
+        lw = lb[2] - lb[0]
+        lx = {'Left': 0, 'Right': mw - lw}.get(node['xa'], (mw - lw) / 2)
+        td.text((sw - lb[0] + 2 + lx, sw + 1 + li * lh), line, font=f, fill=col, stroke_width=sw, stroke_fill=sc)
     if sq != 1:
         timg = timg.resize((max(1, int(tw * sq)), int(th)), Image.LANCZOS)
     tw = timg.size[0]
@@ -160,7 +175,7 @@ def draw_text(layer, node, x, y, w, h, k):
     tmp.paste(timg, (int(round(tx)), int(round(ty))))
     layer.alpha_composite(tmp)
 
-GUI_CLASSES = ('Frame', 'TextLabel', 'TextButton', 'ImageLabel', 'ViewportFrame', 'ScrollingFrame')
+GUI_CLASSES = ('Frame', 'TextLabel', 'TextButton', 'ImageLabel', 'ViewportFrame', 'ScrollingFrame', 'CanvasGroup')
 
 def layout(node, prect, k):
     px, py, pw, ph = prect
@@ -189,7 +204,10 @@ def draw_node(layer, node, prect, k):
     rect, kk = layout(node, prect, k)
     x, y, w, h = rect
     rot = node.get('rot', 0) or 0
-    target = Image.new('RGBA', layer.size, (0, 0, 0, 0)) if rot else layer
+    group = node['class'] == 'CanvasGroup'
+    if group and node.get('groupT', 0) >= 1:
+        return
+    target = Image.new('RGBA', layer.size, (0, 0, 0, 0)) if (rot or group) else layer
     draw_box(target, node, x, y, w, h, kk)
     if node['class'] == 'ViewportFrame':
         draw_viewport(target, x, y, w, h)
@@ -207,8 +225,13 @@ def draw_node(layer, node, prect, k):
     else:
         for c in children:
             draw_node(target, c, rect, kk)
+    if group:  # a CanvasGroup fades its whole contents together
+        a = np.asarray(target).copy()
+        a[..., 3] = (a[..., 3] * (1 - node.get('groupT', 0))).astype(np.uint8)
+        target = Image.fromarray(a, 'RGBA')
     if rot:
         target = target.rotate(-rot, center=(x + w / 2, y + h / 2), resample=Image.BICUBIC)
+    if rot or group:
         layer.alpha_composite(target)
 
 def scene(W, H):
@@ -235,6 +258,13 @@ def render(data, title=''):
     W, H = data['width'], data['height']
     touch = data.get('touch')
     img = scene(W, H)
+    for e in data.get('effects', []):  # ColorCorrection on the 3D view (approximate)
+        a = np.asarray(img, np.float32)[..., :3] / 255
+        grey = a @ np.array([0.299, 0.587, 0.114])
+        a = grey[..., None] + (a - grey[..., None]) * (1 + e['saturation'])
+        a = (a - 0.5) * (1 + e['contrast']) + 0.5 + e['brightness']
+        a = np.clip(a * np.array(e['tint']), 0, 1)
+        img = Image.fromarray((a * 255).astype(np.uint8)).convert('RGBA')
     # where ScreenGuis that don't ignore the inset may draw (Roblox's top bar, a phone's notch)
     notch = 47 if W >= 800 else 0  # notched phones are wider; an iPhone SE has no side insets
     inset = (notch, 58, notch, 21 if notch else 0) if touch else (0, 58, 0, 0)  # left, top, right, bottom

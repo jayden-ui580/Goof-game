@@ -7,18 +7,18 @@ Every player spawns as the R15 rig **Base**, with their own clothes and accessor
   - **Aura:** a ring of light flares up on the ground at your feet, and a sheet of blue fire rises from it all the way round you. It grows bigger and faster as the bar fills, with energy swirling round you and sparks floating up.
   - **Pose:** you hunch over with your head down and your elbows thrown wide, trembling.
   - **Around you:** your hair, bangs and the belt's ribbons get blown upward, dust kicks up and rocks lift off the ground.
-  - **HUD:** your scouter counts your power level up.
+  - **HUD:** the radar slides away and your Scouter counts your power level up.
 - **Transform:** fill the bar and you **burst into Super Saiyan**, with a cutscene:
   - **Close-ups:** black bars slide in, the camera pans across your eyes, then sweeps up your hair as it turns gold.
   - **Explosion:** the power explodes out with a pillar of light and a shockwave. You throw your arms out and the camera pulls back from a low angle.
-  - **Manga boxes:** "THIS IS—" drops in, then "SUPER SAIYAN!".
+  - **Manga panels:** the screen turns into a manga page (black-and-white ink, screentone dots, a page border, an ink outline round you). A tall panel slides **down** into frame, "THIS IS—", then a second slides **up**, "SUPER SAIYAN!". Both slide away again as the colour floods back.
   - **After:** you get control back with a strong golden aura. About 20 seconds later your hair stops flowing and the aura fades: you've calmed down.
 
 ## Files you need
 
 | File | What it is |
 | --- | --- |
-| `DragonWishKit.rbxmx` | All 12 scripts in one drag-in file. Its folders are named after the service each part goes in. |
+| `DragonWishKit.rbxmx` | All 13 scripts in one drag-in file. Its folders are named after the service each part goes in. |
 | `models/BaseHair_Rigged.fbx` | The base hair: 1 root bone + 17 spikes + 9 bangs (87 bones). |
 | `models/SSJHair_Rigged.fbx` | The Super Saiyan hair: 1 root bone (`SSJRoot`) + 22 spikes (84 bones). |
 | `models/Belt_Rigged.fbx` | The belt: 1 root bone + the 2 hanging ribbons (4 bones each). |
@@ -27,7 +27,7 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 
 ## Setup
 
-> **Updating from an earlier version?** Replace all the scripts with the ones in the new kit. Two of them are new: `HUD` (a LocalScript) and `SSJCutscene` (a ModuleScript); both go in StarterPlayerScripts. If you haven't yet, re-import the newer pieces, after deleting the old copy from `ServerStorage › CharacterParts`:
+> **Updating from an earlier version?** Replace all the scripts with the ones in the new kit. **`DragonUI` is new**: a ModuleScript that goes in ReplicatedStorage (the HUD and the power-up controls both need it). `HUD` and `SSJCutscene` were new last time; both go in StarterPlayerScripts. If you haven't yet, re-import the newer pieces, after deleting the old copy from `ServerStorage › CharacterParts`:
 > - **`BaseHair_Rigged.fbx`** has bones in the bangs. The server looks for bone `BB01_1`, so an older import won't load.
 > - **`SSJHair_Rigged.fbx`** has its root bone named `SSJRoot`. In the first version it was called `HairRoot`, the same as the base hair's, and Roblox ties a skinned mesh to the first bone with a matching name anywhere in the character. The SSJ hair was tied to the base hair's skeleton and never moved.
 >
@@ -47,23 +47,38 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 | **Space** | big TAP button | Spam it to fill the bar. Tap faster than it drains: it only rises above about 3 taps a second, and 8 a second gets you there in under 3 s. |
 | **H** | — | Fit panel: nudge the hair or belt into place, then copy the `Offset` line it shows into `HairConfig`. |
 
-On a phone, the charge bar sits at the top between the HUD and the radar, and the TAP button at the bottom between the thumbstick and the jump button, so neither covers the other.
+On a phone, the charge bar sits at the top right (the radar slides out of the way while you power up), and the TAP button, a big Dragon Ball, sits at the bottom between the thumbstick and the jump button, so nothing covers anything else.
 
-## The HUD (`HUD`, your screen)
+## The look (`DragonUI`) and the HUD (`HUD`, your screen)
 
-- **Top left:**
-  - **Portrait:** your face inside a glossy 4-star **Dragon Ball**. It's a live 3D portrait: a copy of your character in a 3D view, re-taken when your hair changes.
-  - **Name and form:** your name, with your form underneath.
-  - **HP bar:** a red trail behind it shows damage you just took.
-  - **Ki gauge:** five cells, blue in base form and gold as a Super Saiyan. Ki refills slowly and charging fills it fast.
-- **Scouter:** under that, a green Scouter lens reads your **POWER LEVEL**.
+The screens borrow from the Dragon Ball fighting games (FighterZ, Sparking! ZERO) and from Persona 5's menus. The shared module `DragonUI` holds the look:
+- **Slabs, not rounded boxes.** Every panel, bar and tag is a parallelogram, and they all lean the same way (24°).
+- **Three colours plus meaning.** Ink black, warm paper and Goku's gi orange. Other colours only mean something: yellow is health, red is damage, blue is ki (gold as a Super Saiyan), green is the Scouter.
+- **Comic lettering.** Bangers with an ink outline, printed twice with the second print offset behind it, like the Dragon Ball logo.
+- **Manga touches.** Halftone dots, hard (unblurred) shadows and Dragon Balls.
+- **No images.** It's all plain Frames and text, so there's nothing to upload.
+
+The HUD, top left:
+- **Portrait card:** a gi-orange slab with a hard shadow, gold as a Super Saiyan. Your face is a live 3D portrait with no frame round it, so your head and hair pop out over the top of the card. It's re-taken when your hair changes.
+  - **Energy arc:** a blue swoosh under the card (gold as a Super Saiyan).
+  - **Gi badge:** a kanji in a white circle, like the one on Goku's gi: 気 ("ki"), or 超 ("super") as a Super Saiyan.
+- **Name panel:** a dark slanted panel that fades out in halftone dots, with your name in comic lettering and a tag with your form.
+- **HP bar:** yellow, with a paper outline and a glint that runs along it. A red chunk shows the damage you just took and shrinks a moment later. Below 30% the bar throbs orange.
+  - **Getting hit:** the plate shakes, the outline flashes red and your portrait flashes red.
+- **Ki:** five slanted pips, blue in base form and gold as a Super Saiyan. Each pip pops white when it fills. Next to them is a Dragon Ball whose stars count your full pips. At full ki it's a 5-star ball and it pulses.
+- **Scouter:** under the bars, a dark green readout with scan lines shows your **POWER LEVEL**.
   - **Values:** 1,500 at rest, up to 7,500 as you charge, and 75,000 as a Super Saiyan.
   - **Animation:** it scrambles and counts up when it jumps, and flashes **IT'S OVER 9000!!** when you pass 9000.
-- **Top right:** a **Dragon Radar**: a sweeping green screen with a blip for every player within 250 studs (gold blips are Super Saiyans). Up on the radar is the way your camera faces.
-- **Behaviour:**
-  - **Phones:** it shrinks to fit.
-  - **Cutscene:** it hides while the cutscene plays.
-  - **Roblox's health bar:** it replaces it.
+
+Top right: a **Dragon Radar**, a sweeping green screen with a blip for every player within 250 studs (gold blips are Super Saiyans). Up on the radar is the way your camera faces.
+
+Behaviour:
+- **Motion:** the plate slides in from the left (and the radar from the right) when you spawn, and again when the cutscene ends. The radar slides away while you power up.
+- **Phones:** it shrinks to fit.
+- **Cutscene:** it hides while the cutscene plays.
+- **Roblox's health bar:** it replaces it.
+
+The power-up controls (`PowerUpClient`) use the same look: the **SPAM SPACE!** prompt in comic lettering, a slanted charge bar that turns from ki blue to gold as your hair starts lifting (with a % readout), a big Dragon Ball **TAP!** button on phones, and a key-cap hint along the bottom (**R** / **POWER UP**).
 
 ## How it works
 
@@ -88,8 +103,9 @@ On a phone, the charge bar sits at the top between the HUD and the radar, and th
     - **Eyes (0–1 s):** an extreme close-up panning across your eyes.
     - **Hair (1–2.2 s):** a sweep up your hair as it turns gold.
     - **Explosion (`ExplodeAt`, 2.2 s):** a white flash and manga focus lines, then a low-angle pull-back.
-  - **Manga boxes:** white panels with a thick black border and a hard shadow. They drop in with a bounce: "THIS IS—" at 2.6 s, then "SUPER SAIYAN!" at 3.25 s. The text is `CutsceneText` in PowerConfig.
-  - **Finish:** the boxes fly off, the bars slide away and you get control back.
+  - **Manga panels:** tall white panels with a thick black border, an inner border and a hard shadow. The first has speed lines and slides **down** into frame at 2.6 s ("THIS IS—"). The second has burst lines and slides **up** at 3.25 s ("SUPER SAIYAN!"). The text is `CutsceneText` in PowerConfig.
+  - **Manga filter:** with the first panel, the 3D view turns into a manga page: the colour drains to black and white with hard contrast and a paper tint, screentone dots fill in round the edges, a page border appears and you get an ink outline. It fades back with the panels.
+  - **Finish:** the panels slide away, the colour floods back, the bars slide away and you get control back.
   - **On screen:** black bars cover the top and bottom, and on a phone the thumbstick and jump button hide while it plays. Turn the cutscene off with `Cutscene = false`.
 - **The animation (`PowerFX`, every screen).** It's coded joint by joint, so there's no animation asset to upload. Each R15 joint has three key poses:
   - **READY:** standing tall, fists at the waist, elbows out.
@@ -124,7 +140,8 @@ On a phone, the charge bar sits at the top between the HUD and the radar, and th
   - **HUD:** ki (`KiMax`, `KiStart`, `KiRegen`), power level (`BasePowerLevel`, `ChargePowerBoost`, `SSJMultiplier`), radar range (`RadarRange`)
   - **camera:** distance, height and shake
 - **`PowerFX`** (top of the script): the three key poses (`READY`, `STRAIN`, `RELEASE`), the aura's sizes (`RING_RADIUS`, `FLAME_HEIGHT`, `FLAME_LEAN`) and its flame groups (`GROUPS`), if you want to restyle them.
-- **`HUD`** (top of the script): its accent colours.
+- **`DragonUI`** (top of the script): the screens' colours (`INK`, `PAPER`, `GI`, `HP`, `KI` …) and how far every slab leans (`SLANT`).
+- **`HUD`** (top of the script): the portrait camera (`PORTRAIT_FOV`, `PORTRAIT_EYE`, `PORTRAIT_LOOK`), if your head sits too high or low on the card.
 - **`HairConfig`:**
   - colour, texture id, placement (`Offset`) and size of each piece
   - how stiff and heavy it is (`Stiffness`, `GravityCompensation`); the bangs have their own softer settings (`ChainOverrides`, chains `BB01`–`BB09`)
@@ -138,7 +155,9 @@ On a phone, the charge bar sits at the top between the HUD and the radar, and th
 - **No textures.** The `.mtl` files point at `Handle1_diff.png`, which wasn't in the zip. The pieces use flat colours instead: black base hair, gold SSJ hair, blue belt. Paste a texture id into `TextureId` in `HairConfig` if you have one.
 - **Hair placement is worked out from the model files.** The head centre for each piece comes from its shape. If a piece sits a little off on your rig, press **H** and nudge it.
 - **No sounds yet.** No charge hum, scream or burst sound.
-- **Not tried in real Studio.** The scripts were run against fake characters in tests (`tools/test/`), and the UI was drawn by a stand-in renderer (`tools/preview/`), not in a live Roblox server. The renderer uses stand-in fonts and can't show the 3D portrait.
+- **Not tried in real Studio.** The scripts were run against fake characters in tests (`tools/test/`), and the UI was drawn by a stand-in renderer (`tools/preview/`), not in a live Roblox server. The renderer uses stand-in fonts, and it can't show the 3D portrait, the ink outline round you or the colour filter exactly. The portrait camera's framing is a best guess: if your head sits wrong on the card, change `PORTRAIT_EYE` / `PORTRAIT_LOOK` in `HUD`.
+- **Slanted edges are a little jagged.** Roblox doesn't smooth the edges of turned frames, and each slab's slanted ends are turned frames.
+- **The kanji** (気 and 超) use Roblox's built-in fallback font for Japanese, since Bangers and Gotham don't have them.
 
 ## Rebuilding and checking
 
@@ -152,7 +171,7 @@ On a phone, the charge bar sits at the top between the HUD and the radar, and th
   - `wake_mock`: the SSJ hair waking up when it's shown
   - `compile <files...>`: every script compiles
 - UI previews:
-  - `lune run tools/preview/ui_dump.luau <idle|charging|ssj|cutscene:SECONDS> <width> <height> out.json` runs the real HUD, controls and cutscene scripts and writes out what's on screen.
+  - `lune run tools/preview/ui_dump.luau <idle|charging|ssj|hit|cutscene:SECONDS> <width> <height> out.json` runs the real HUD, controls and cutscene scripts (and `DragonUI`) and writes out what's on screen.
   - `python3 tools/preview/render_ui.py out.json out.png` draws it the way Roblox lays it out, with phone safe areas and touch controls.
   - `python3 tools/preview/check_ui.py idle.json charging.json cutscene.json` checks the important pieces are there.
 - `python3 -I tools/rig/belt_ring.py models/source/Belt.obj tools/rig/riginfo.json` re-measures the belt's band, then `tools/rig/emit_layouts.py` prints the `Layouts` table for `HairConfig`.

@@ -16,18 +16,20 @@
 	  ReplicatedStorage      -> HairPhysics  (moves hair and belt ribbons)
 	                            HairConfig   (hair/belt settings: colours, stiffness, aura reaction)
 	                            PowerConfig  (power-up settings: keys, charge speed, aura colours)
+	                            DragonUI     (the look of the screens: slabs, lettering, colours)
 	  ServerScriptService    -> CharacterSetup (every player becomes the Base rig with hair + belt)
 	                            PowerUpServer  (referee for powering up / Super Saiyan)
 	  StarterPlayerScripts   -> HairPhysicsClient (runs the hair + belt physics on each screen)
 	                            PowerUpClient     (R / Space controls, front camera, power bar)
 	                            PowerFX           (aura, animation, dust, rocks, the explosion)
 	                            SSJCutscene       (ModuleScript: the transformation cutscene)
-	                            HUD               (Dragon Ball portrait, HP, Ki, Scouter, Radar)
+	                            HUD               (portrait card, HP, Ki, Scouter, Dragon Radar)
 	                            HairFitTool       (press H: nudge hair/belt into place)
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Replace every script with the ones in this kit (HUD and SSJCutscene are new: both go in
+	  Replace every script with the ones in this kit. DragonUI is new (a ModuleScript: it goes
+	  in ReplicatedStorage); HUD and SSJCutscene were new last time (both in
 	  StarterPlayerScripts). If you haven't yet, delete the old copies of these and import the
 	  new ones into ServerStorage > CharacterParts:
 	    BaseHair_Rigged.fbx  - the bangs now have bones
@@ -56,8 +58,9 @@
 	          A ring of light flares at your feet and a sheet of fire rises round you, bigger
 	          and faster as the bar fills; hair and belt blow upward. Once the bar is full it
 	          stays full, and (after at least 2.5 s of charging) you transform: the cutscene
-	          plays (your eyes, your hair, the explosion, "THIS IS—" / "SUPER SAIYAN!"), then
-	          the golden hair flows and the gold aura burns until you calm down (~20 s).
+	          plays (your eyes, your hair, the explosion, then the screen turns into a manga
+	          page while "THIS IS—" slides down and "SUPER SAIYAN!" slides up), then the
+	          golden hair flows and the gold aura burns until you calm down (~20 s).
 	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
 
 	TWEAKING
@@ -70,6 +73,9 @@
 	               (Cutscene, CutsceneText, BurstTime, ExplodeAt), calming down (SSJCalmAfter),
 	               aura colours, size and flicker, the HUD's numbers (ki, power level, radar
 	               range), camera distance and shake.
+	  DragonUI: the screens' colours (INK, PAPER, GI, HP, KI ...) and how far every slab
+	            leans (SLANT).
+	  HUD (top of the script): the portrait camera (PORTRAIT_FOV, PORTRAIT_EYE, PORTRAIT_LOOK).
 ]]
 ]]></ProtectedString>
       </Properties>
@@ -1612,12 +1618,386 @@ return PowerConfig
 ]]></ProtectedString>
         </Properties>
       </Item>
+      <Item class="ModuleScript" referent="6">
+        <Properties>
+          <string name="Name">DragonUI</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	DragonUI  (ModuleScript — lives in ReplicatedStorage)
+
+	The look of Dragon Wish's screens, shared by the HUD and the power-up controls. It borrows from
+	how the Dragon Ball fighting games dress their screens (FighterZ, Sparking! ZERO) and from
+	Persona 5's rules for stylish menus:
+	  * no rounded boxes: everything is a SLAB, a slanted parallelogram ("/" at both ends), and
+	    every slab leans the same way
+	  * a tight palette: ink black, warm paper and Saiyan-gi orange, with colour only where it
+	    means something (yellow health, red damage, blue ki that turns gold as a Super Saiyan)
+	  * comic lettering: Bangers with an ink outline, printed twice, slightly offset
+	  * Dragon Balls, halftone dots and hard shadows (solid, not blurred)
+	Everything here is plain Frames and TextLabels: no uploaded images.
+
+	One rule: never put a slab inside a ROTATED frame. A slab cuts its slanted ends out with
+	ClipsDescendants, and Roblox stops clipping inside anything that is rotated.
+]]
+
+local DragonUI = {}
+
+DragonUI.INK = Color3.fromRGB(16, 14, 20)
+DragonUI.INK_SOFT = Color3.fromRGB(46, 42, 58) -- empty gauges on an ink panel
+DragonUI.PAPER = Color3.fromRGB(250, 244, 228)
+DragonUI.GI = Color3.fromRGB(255, 122, 24) -- Goku's gi orange
+DragonUI.GI_DARK = Color3.fromRGB(176, 66, 10)
+DragonUI.GOLD = Color3.fromRGB(255, 200, 44) -- Super Saiyan
+DragonUI.HP = Color3.fromRGB(255, 216, 40)
+DragonUI.HP_LOW = Color3.fromRGB(255, 92, 40)
+DragonUI.DAMAGE = Color3.fromRGB(230, 30, 42)
+DragonUI.KI = Color3.fromRGB(80, 214, 255)
+DragonUI.KI_SSJ = Color3.fromRGB(255, 214, 60)
+DragonUI.SCOUTER = Color3.fromRGB(40, 255, 120)
+DragonUI.SLANT = math.tan(math.rad(24)) -- how far the ends lean: 24 degrees off vertical
+
+local function new(className: string, props, parent: Instance?)
+	local inst = Instance.new(className)
+	for k, v in props do
+		inst[k] = v
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+DragonUI.new = new
+
+----------------------------------------------------------------------------------------
+-- Slab: a slanted parallelogram. Each slanted end is a big square turned to the slant
+-- angle inside a box that clips it, so only a triangle of it shows; a plain body fills the
+-- middle. (Roblox only stops clipping when the clipping box itself, or something it sits in,
+-- is rotated: the turned squares inside are clipped fine.)
+----------------------------------------------------------------------------------------
+local Slab = {}
+Slab.__index = Slab
+DragonUI.Slab = Slab
+
+-- x, y, w, h in pixels inside parent. props (all optional): Slant (pixels the top edge is
+-- shifted right; default h * SLANT), ZIndex, Transparency
+function Slab.new(parent: Instance, name: string, x: number, y: number, w: number, h: number, color: Color3, props)
+	props = props or {}
+	local self = setmetatable({}, Slab)
+	local s = props.Slant or h * DragonUI.SLANT
+	local z = props.ZIndex or 1
+	local transparency = props.Transparency or 0
+	self.S, self.H, self.W, self.Z = s, h, w, z
+	self.Pieces, self.Bands = {}, {}
+	-- an opaque slab's body runs a pixel into each end so no seam can show where they meet; a
+	-- see-through one's can't (the overlap would show as a darker line), so it meets them exactly
+	self.Overlap = transparency > 0 and 0 or 1
+	self.Holder = new("Frame", {
+		Name = name,
+		Position = UDim2.fromOffset(x, y),
+		Size = UDim2.fromOffset(w, h),
+		BackgroundTransparency = 1,
+		ZIndex = z,
+	}, parent)
+	local function piece(p: Instance)
+		local f = new("Frame", {
+			BackgroundColor3 = color,
+			BackgroundTransparency = transparency,
+			BorderSizePixel = 0,
+			ZIndex = z,
+		}, p)
+		table.insert(self.Pieces, f)
+		return f
+	end
+	self.Body = piece(self.Holder)
+	self.Body.Name = "Body"
+	self.LBox = new("Frame", { Name = "LeftEnd", Size = UDim2.fromOffset(s, h), BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = z }, self.Holder)
+	self.RBox = new("Frame", { Name = "RightEnd", Size = UDim2.fromOffset(s, h), BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = z }, self.Holder)
+	local lt, rt = piece(self.LBox), piece(self.RBox)
+	-- the slanted edge runs from (0, h) to (s, 0) inside each end box
+	local theta = math.atan2(-h, s)
+	local big = 2 * (h + s)
+	local normal = Vector2.new(-math.sin(theta), math.cos(theta)) -- points down-right, off the edge
+	local mid = Vector2.new(s / 2, h / 2)
+	local cl, cr = mid + normal * (big / 2), mid - normal * (big / 2)
+	for _, t in { lt, rt } do
+		t.AnchorPoint = Vector2.new(0.5, 0.5)
+		t.Size = UDim2.fromOffset(big, big)
+		t.Rotation = math.deg(theta)
+	end
+	lt.Position = UDim2.fromOffset(cl.X, cl.Y) -- shows below-right of the edge: the left end
+	rt.Position = UDim2.fromOffset(cr.X, cr.Y) -- shows above-left of the edge: the right end
+	self:SetWidth(w)
+	return self
+end
+
+-- a slab drawn t pixels bigger all round the slab (x, y, w, h): put it behind that one for an
+-- outline of even thickness, slanted ends included
+function Slab.around(parent: Instance, name: string, x: number, y: number, w: number, h: number, t: number, color: Color3, props)
+	local k = DragonUI.SLANT
+	local grow = t * (k + math.sqrt(1 + k * k)) -- sideways growth that keeps the slanted sides t thick
+	local p = table.clone(props or {})
+	p.Slant = (h + 2 * t) * k
+	return Slab.new(parent, name, x - grow, y - t, w + 2 * grow, h + 2 * t, color, p)
+end
+
+-- the slab's length (its left end stays put); 0 hides it
+function Slab:SetWidth(width: number)
+	local s = self.S
+	self.Width = width
+	self.Holder.Visible = width > 0.5
+	self.Holder.Size = UDim2.fromOffset(math.max(width, 0), self.H)
+	local o = self.Overlap
+	self.Body.Position = UDim2.fromOffset(s - o, 0)
+	self.Body.Size = UDim2.fromOffset(math.max(width - 2 * s + 2 * o, 0), self.H)
+	self.RBox.Position = UDim2.fromOffset(math.max(width - s, 0), 0)
+	for _, band in self.Bands do
+		band.Slab:SetWidth(math.max(width - band.Trim, 0))
+	end
+end
+
+-- fills a share (0..1) of the full slab, like a bar
+function Slab:SetFill(share: number)
+	share = math.clamp(share, 0, 1)
+	self:SetWidth(share <= 0.001 and 0 or self.S + share * (self.W - self.S))
+end
+
+function Slab:SetColor(color: Color3)
+	for _, p in self.Pieces do
+		p.BackgroundColor3 = color
+	end
+end
+
+function Slab:SetTransparency(t: number)
+	for _, p in self.Pieces do
+		p.BackgroundTransparency = t
+	end
+	if (t > 0 and 0 or 1) ~= self.Overlap then
+		self.Overlap = t > 0 and 0 or 1
+		self:SetWidth(self.Width)
+	end
+end
+
+-- a strip of this slab from a to b pixels below its top (a shine, a shade, a scan line). It has
+-- the same slanted ends, so it always fits exactly inside, and it follows SetWidth.
+function Slab:Band(name: string, a: number, b: number, color: Color3, props)
+	props = props or {}
+	local k = self.S / self.H
+	local trim = (self.H - b + a) * k
+	local band = Slab.new(self.Holder, name, (self.H - b) * k, a, math.max(self.W - trim, 0), b - a, color, {
+		Slant = (b - a) * k,
+		ZIndex = props.ZIndex or (self.Z + 1),
+		Transparency = props.Transparency,
+	})
+	table.insert(self.Bands, { Slab = band, Trim = trim })
+	band:SetWidth(math.max(self.Width - trim, 0))
+	return band
+end
+
+----------------------------------------------------------------------------------------
+-- comic lettering: an ink-outlined label with a second print offset behind it
+-- props: Position, Size, AnchorPoint, Rotation, ZIndex, Text, Font, TextXAlignment,
+--        Color (front), BackColor (the offset print), Offset (pixels), Stroke (outline width)
+----------------------------------------------------------------------------------------
+function DragonUI.Lettering(parent: Instance, name: string, props)
+	local holder = new("Frame", {
+		Name = name,
+		Position = props.Position,
+		Size = props.Size,
+		AnchorPoint = props.AnchorPoint or Vector2.zero,
+		Rotation = props.Rotation or 0,
+		BackgroundTransparency = 1,
+		ZIndex = props.ZIndex or 1,
+	}, parent)
+	local function label(nm: string, offset: number, color: Color3, z: number)
+		local l = new("TextLabel", {
+			Name = nm,
+			Position = UDim2.fromOffset(offset, offset),
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Font = props.Font or Enum.Font.Bangers,
+			Text = props.Text or "",
+			TextColor3 = color,
+			TextScaled = true,
+			TextXAlignment = props.TextXAlignment or Enum.TextXAlignment.Left,
+			ZIndex = z,
+		}, holder)
+		local stroke = new("UIStroke", { Color = DragonUI.INK, Thickness = props.Stroke or 2 }, l)
+		return l, stroke
+	end
+	local back, backStroke = label("Print", props.Offset or 3, props.BackColor or DragonUI.GI, props.ZIndex or 1)
+	local front, frontStroke = label("Text", 0, props.Color or DragonUI.PAPER, (props.ZIndex or 1) + 1)
+	local lettering = { Holder = holder, Front = front, Back = back }
+	function lettering:SetText(text: string)
+		front.Text = text
+		back.Text = text
+	end
+	function lettering:SetColors(color: Color3?, backColor: Color3?)
+		if color then
+			front.TextColor3 = color
+		end
+		if backColor then
+			back.TextColor3 = backColor
+		end
+	end
+	function lettering:SetTransparency(t: number)
+		front.TextTransparency, back.TextTransparency = t, t
+		frontStroke.Transparency, backStroke.Transparency = t, t
+	end
+	return lettering
+end
+
+----------------------------------------------------------------------------------------
+-- a Dragon Ball: a glossy orange orb with up to 5 red stars, an ink outline and a hard shadow
+----------------------------------------------------------------------------------------
+local STAR_SPOTS = { -- where the stars sit for each count (share of the ball)
+	[1] = { { 0.5, 0.52 } },
+	[2] = { { 0.38, 0.42 }, { 0.62, 0.62 } },
+	[3] = { { 0.5, 0.36 }, { 0.36, 0.62 }, { 0.64, 0.62 } },
+	[4] = { { 0.38, 0.38 }, { 0.62, 0.38 }, { 0.38, 0.64 }, { 0.62, 0.64 } },
+	[5] = { { 0.5, 0.3 }, { 0.3, 0.47 }, { 0.7, 0.47 }, { 0.39, 0.71 }, { 0.61, 0.71 } },
+}
+DragonUI.STAR_SPOTS = STAR_SPOTS
+
+function DragonUI.Orb(parent: Instance, name: string, x: number, y: number, size: number, z: number?)
+	z = z or 1
+	local holder = new("Frame", {
+		Name = name,
+		Position = UDim2.fromOffset(x, y),
+		Size = UDim2.fromOffset(size, size),
+		BackgroundTransparency = 1,
+		ZIndex = z,
+	}, parent)
+	local scale = new("UIScale", {}, holder)
+	local shadow = new("Frame", {
+		Name = "Shadow",
+		Position = UDim2.fromOffset(math.max(2, size * 0.07), math.max(3, size * 0.09)),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = DragonUI.INK,
+		ZIndex = z,
+	}, holder)
+	new("UICorner", { CornerRadius = UDim.new(1, 0) }, shadow)
+	local ball = new("Frame", {
+		Name = "Ball",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		ZIndex = z + 1,
+	}, holder)
+	new("UICorner", { CornerRadius = UDim.new(1, 0) }, ball)
+	new("UIGradient", {
+		Color = ColorSequence.new(Color3.fromRGB(255, 214, 110), Color3.fromRGB(232, 100, 18)),
+		Rotation = 45,
+	}, ball)
+	new("UIStroke", { Color = DragonUI.INK, Thickness = math.max(2, size * 0.065), ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, ball)
+	local gloss = new("Frame", {
+		Name = "Gloss",
+		Position = UDim2.fromScale(0.16, 0.1),
+		Size = UDim2.fromScale(0.32, 0.18),
+		Rotation = -28,
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BackgroundTransparency = 0.35,
+		ZIndex = z + 3,
+	}, ball)
+	new("UICorner", { CornerRadius = UDim.new(1, 0) }, gloss)
+	local stars = {}
+	for k = 1, 5 do
+		local star = new("TextLabel", {
+			Name = "Star" .. k,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromScale(0.3, 0.3),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamBlack,
+			Text = "★",
+			TextScaled = true,
+			TextColor3 = Color3.fromRGB(225, 26, 26),
+			Visible = false,
+			ZIndex = z + 2,
+		}, ball)
+		stars[k] = star
+	end
+	local orb = { Holder = holder, Ball = ball, Stars = stars, Scale = scale, Count = -1 }
+	function orb:SetStars(n: number)
+		n = math.clamp(math.floor(n), 0, 5)
+		if n == self.Count then
+			return
+		end
+		self.Count = n
+		local spots = STAR_SPOTS[n] or {}
+		for k, star in self.Stars do
+			local spot = spots[k]
+			star.Visible = spot ~= nil
+			if spot then
+				star.Position = UDim2.fromScale(spot[1], spot[2])
+				local size = n == 1 and 0.46 or (n <= 3 and 0.36 or 0.3)
+				star.Size = UDim2.fromScale(size, size)
+			end
+		end
+	end
+	orb:SetStars(0)
+	return orb
+end
+
+----------------------------------------------------------------------------------------
+-- halftone: a patch of dots shrinking toward the right, like a screentone fading out
+-- props (all optional): ZIndex, Transparency, Lean (shift each row right by this much per pixel
+-- it sits higher, so the patch leans like a slab: use DragonUI.SLANT)
+----------------------------------------------------------------------------------------
+function DragonUI.Halftone(parent: Instance, name: string, x: number, y: number, cols: number, rows: number, step: number, biggest: number, color: Color3, props)
+	props = props or {}
+	local z = props.ZIndex or 1
+	local lean = props.Lean or 0
+	local holder = new("Frame", {
+		Name = name,
+		Position = UDim2.fromOffset(x, y),
+		Size = UDim2.fromOffset(cols * step + rows * step * lean, rows * step),
+		BackgroundTransparency = 1,
+		ZIndex = z,
+	}, parent)
+	for row = 0, rows - 1 do
+		local shift = (rows - 1 - row) * step * lean + (row % 2) * 0.5 * step
+		for col = 0, cols - 1 do
+			local d = biggest * (1 - col / cols)
+			if d >= 1.5 then
+				local dot = new("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromOffset((col + 0.5) * step + shift, (row + 0.5) * step),
+					Size = UDim2.fromOffset(d, d),
+					BackgroundColor3 = color,
+					BackgroundTransparency = props.Transparency or 0,
+					BorderSizePixel = 0,
+					ZIndex = z,
+				}, holder)
+				new("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
+			end
+		end
+	end
+	return holder
+end
+
+----------------------------------------------------------------------------------------
+-- small helpers for hand-made motion
+----------------------------------------------------------------------------------------
+-- 0..1 -> 0..1, overshooting a little before settling (like Enum.EasingStyle.Back, Out)
+function DragonUI.BackOut(t: number): number
+	t = math.clamp(t, 0, 1)
+	local c1 = 1.70158
+	return 1 + (c1 + 1) * (t - 1) ^ 3 + c1 * (t - 1) ^ 2
+end
+
+-- 0..1 -> 0..1, fast then gentle (Quad, Out)
+function DragonUI.QuadOut(t: number): number
+	t = math.clamp(t, 0, 1)
+	return 1 - (1 - t) * (1 - t)
+end
+
+return DragonUI
+]]></ProtectedString>
+        </Properties>
+      </Item>
     </Item>
-    <Item class="Folder" referent="6">
+    <Item class="Folder" referent="7">
       <Properties>
         <string name="Name">ServerScriptService</string>
       </Properties>
-      <Item class="Script" referent="7">
+      <Item class="Script" referent="8">
         <Properties>
           <string name="Name">CharacterSetup</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2033,7 +2413,7 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="Script" referent="8">
+      <Item class="Script" referent="9">
         <Properties>
           <string name="Name">PowerUpServer</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2258,11 +2638,11 @@ end)
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="9">
+    <Item class="Folder" referent="10">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="10">
+      <Item class="LocalScript" referent="11">
         <Properties>
           <string name="Name">HairPhysicsClient</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2280,7 +2660,7 @@ HairPhysics.StartClient()
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="11">
+      <Item class="LocalScript" referent="12">
         <Properties>
           <string name="Name">PowerUpClient</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2291,9 +2671,10 @@ HairPhysics.StartClient()
 	         R again while charging cancels; R as a Super Saiyan powers down
 	  Space  spam it to fill the power bar (phones: the big TAP button)
 	When the bar is full you burst into Super Saiyan: the transformation cutscene plays
-	(SSJCutscene: your eyes, your hair, the explosion, the manga boxes), then you get control
-	back. The aura, pose and hair are drawn by PowerFX and HairPhysics for everyone, using the
-	attributes PowerUpServer sets.
+	(SSJCutscene: your eyes, your hair, the explosion, the manga panels), then you get control
+	back. The prompt, bar and TAP button are drawn with ReplicatedStorage > DragonUI. The aura,
+	pose and hair are drawn by PowerFX and HairPhysics for everyone, using the attributes
+	PowerUpServer sets.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
 
@@ -2321,130 +2702,179 @@ end
 local SEND_EVERY = 0.1 -- seconds between bar updates sent to the server
 
 ----------------------------------------------------------------------------------------
--- screen
+-- screen (the look comes from ReplicatedStorage > DragonUI)
 ----------------------------------------------------------------------------------------
-local gui = Instance.new("ScreenGui")
-gui.Name = "PowerUpUI"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.Parent = player:WaitForChild("PlayerGui")
+local DragonUI = require(ReplicatedStorage:WaitForChild("DragonUI"))
+local new, Slab = DragonUI.new, DragonUI.Slab
+local INK, PAPER = DragonUI.INK, DragonUI.PAPER
+local touch = UserInputService.TouchEnabled
 
-local function label(parent: Instance, props): TextLabel
-	local l = Instance.new("TextLabel")
-	l.BackgroundTransparency = 1
-	l.Font = Enum.Font.GothamBlack
-	l.TextColor3 = Color3.new(1, 1, 1)
-	l.TextScaled = true
-	l.TextStrokeTransparency = 0.4
+local gui = new("ScreenGui", {
+	Name = "PowerUpUI",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+}, player:WaitForChild("PlayerGui"))
+
+-- comic text: Bangers with an ink outline (ink-coloured text goes without one)
+local function text(parent: Instance, props): TextLabel
+	local l = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.Bangers,
+		TextColor3 = PAPER,
+		TextScaled = true,
+	})
 	for k, v in props do
 		l[k] = v
 	end
 	l.Parent = parent
+	if l.TextColor3 ~= INK then
+		new("UIStroke", { Color = INK, Thickness = 2 }, l)
+	end
 	return l
 end
 
-local hint = label(gui, {
+-- the hint along the bottom: a key cap and what it does
+local hint = new("Frame", {
 	Name = "Hint",
 	AnchorPoint = Vector2.new(0.5, 1),
-	Position = UDim2.new(0.5, 0, 1, -18),
-	Size = UDim2.fromOffset(360, 26),
-	Font = Enum.Font.GothamMedium,
-	TextTransparency = 0.15,
+	Position = UDim2.new(0.5, 0, 1, -16),
+	Size = UDim2.fromOffset(200, 30),
+	BackgroundTransparency = 1,
+}, gui)
+local hintKey = Slab.new(hint, "Key", 0, 0, 40, 30, PAPER, { ZIndex = 2 })
+local hintKeyText = text(hintKey.Holder, {
+	Name = "Text",
+	Position = UDim2.fromOffset(13, 4),
+	Size = UDim2.new(1, -26, 1, -7),
+	TextColor3 = INK,
+	ZIndex = 3,
+})
+local hintAction = Slab.new(hint, "Action", 44, 3, 150, 24, INK, { Transparency = 0.15, ZIndex = 1 })
+local hintActionText = text(hintAction.Holder, {
+	Name = "Text",
+	Position = UDim2.fromOffset(15, 2),
+	Size = UDim2.new(1, -30, 1, -4),
+	ZIndex = 2,
 })
 
-local panel = Instance.new("Frame")
-panel.Name = "Charge"
-panel.AnchorPoint = Vector2.new(0.5, 1)
-panel.Position = UDim2.new(0.5, 0, 1, -60)
-panel.Size = UDim2.fromOffset(420, 130)
-panel.BackgroundTransparency = 1
-panel.Visible = false
-panel.Parent = gui
-local panelScale = Instance.new("UIScale") -- shrinks the panel on small screens
-panelScale.Parent = panel
-local prompt = label(panel, {
-	Name = "Prompt",
+local function setHint(key: string?, action: string?)
+	hint.Visible = key ~= nil
+	if not key then
+		return
+	end
+	local keyWidth = 26 + 13 * #key
+	hintKeyText.Text = key
+	hintActionText.Text = action or ""
+	hintKey:SetWidth(keyWidth)
+	hintAction.Holder.Position = UDim2.fromOffset(keyWidth - 6, 3)
+	hint.Size = UDim2.fromOffset(keyWidth + 144, 30)
+end
+setHint(nil) -- (until your character arrives)
+
+-- the charge panel: SPAM SPACE!, how far along you are, and the bar
+local PANEL_W = touch and 300 or 420
+local panel = new("Frame", {
+	Name = "Charge",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -64),
+	Size = UDim2.fromOffset(PANEL_W, 124),
+	BackgroundTransparency = 1,
+	Visible = false,
+}, gui)
+local panelScale = new("UIScale", {}, panel) -- shrinks the panel on small screens
+local prompt = DragonUI.Lettering(panel, "Prompt", {
 	AnchorPoint = Vector2.new(0.5, 0),
 	Position = UDim2.new(0.5, 0, 0, 0),
-	Size = UDim2.new(1, 0, 0, 52),
+	Size = UDim2.new(1, -30, 0, 54),
 	Text = "SPAM  SPACE!",
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Stroke = 3,
+	Offset = 4,
+	ZIndex = 2,
 })
-local promptScale = Instance.new("UIScale")
-promptScale.Parent = prompt
-local stage = label(panel, {
+local promptScale = new("UIScale", {}, prompt.Holder)
+local stage = text(panel, {
 	Name = "Stage",
-	Position = UDim2.new(0, 0, 0, 56),
+	Position = UDim2.new(0, 0, 0, 58),
 	Size = UDim2.new(1, 0, 0, 22),
-	Font = Enum.Font.GothamBold,
 	Text = "",
+	ZIndex = 2,
 })
-local barBack = Instance.new("Frame")
-barBack.Position = UDim2.new(0, 0, 0, 88)
-barBack.Size = UDim2.new(1, 0, 0, 24)
-barBack.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
-barBack.BackgroundTransparency = 0.2
-barBack.Parent = panel
-Instance.new("UICorner").Parent = barBack
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.new(1, 1, 1)
-stroke.Thickness = 2
-stroke.Parent = barBack
-local barFill = Instance.new("Frame")
-barFill.Size = UDim2.new(0, 0, 1, 0)
-barFill.BackgroundColor3 = PowerConfig.BaseAuraColor
-barFill.Parent = barBack
-Instance.new("UICorner").Parent = barFill
+local BAR_X, BAR_Y, BAR_H = 16, 90, 22
+local BAR_W = PANEL_W - BAR_X - 68
+Slab.around(panel, "BarEdge", BAR_X, BAR_Y, BAR_W, BAR_H, 3, PAPER, { ZIndex = 1 })
+local barBack = Slab.new(panel, "Bar", BAR_X, BAR_Y, BAR_W, BAR_H, INK, { ZIndex = 2 })
+local barFill = Slab.new(barBack.Holder, "Fill", 0, 0, BAR_W, BAR_H, DragonUI.KI, { ZIndex = 3 })
+barFill:Band("Shade", 14, BAR_H, INK, { Transparency = 0.7, ZIndex = 4 })
+barFill:Band("Shine", 3, 6, PAPER, { Transparency = 0.3, ZIndex = 4 })
+barFill:SetFill(0)
+local percent = text(panel, {
+	Name = "Percent",
+	Position = UDim2.fromOffset(BAR_X + BAR_W + 10, BAR_Y - 5),
+	Size = UDim2.fromOffset(56, BAR_H + 10),
+	Text = "0%",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	ZIndex = 2,
+})
 
-local tapButton = Instance.new("TextButton")
-tapButton.Name = "Tap"
-tapButton.AnchorPoint = Vector2.new(1, 1)
-tapButton.Position = UDim2.new(1, -30, 1, -40)
-tapButton.Size = UDim2.fromOffset(150, 150)
-tapButton.BackgroundColor3 = Color3.fromRGB(255, 190, 40)
-tapButton.Text = "TAP!"
-tapButton.Font = Enum.Font.GothamBlack
-tapButton.TextScaled = true
-tapButton.TextColor3 = Color3.fromRGB(40, 20, 0)
-tapButton.Visible = false
-tapButton.Parent = gui
-local tapCorner = Instance.new("UICorner")
-tapCorner.CornerRadius = UDim.new(1, 0)
-tapCorner.Parent = tapButton
-local tapStroke = Instance.new("UIStroke")
-tapStroke.Color = Color3.fromRGB(120, 60, 0)
-tapStroke.Thickness = 3
-tapStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-tapStroke.Parent = tapButton
+-- phones: a big Dragon Ball to tap
+local TAP_SIZE = touch and 124 or 150
+local tapButton = new("TextButton", {
+	Name = "Tap",
+	AnchorPoint = Vector2.new(1, 1),
+	Position = UDim2.new(1, -30, 1, -40),
+	Size = UDim2.fromOffset(TAP_SIZE, TAP_SIZE),
+	BackgroundTransparency = 1,
+	AutoButtonColor = false,
+	Text = "",
+	Visible = false,
+}, gui)
+local tapBall = DragonUI.Orb(tapButton, "Ball", 0, 0, TAP_SIZE, 1)
+DragonUI.Lettering(tapButton, "Label", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.52),
+	Size = UDim2.fromScale(0.8, 0.42),
+	Rotation = -8,
+	Text = "TAP!",
+	BackColor = DragonUI.DAMAGE,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Stroke = 3,
+	Offset = 4,
+	ZIndex = 5,
+})
 
-if UserInputService.TouchEnabled then
-	-- phones: the charge bar goes at the top (between the HUD and the radar) and the TAP button
-	-- at the bottom middle, between the thumbstick and the jump button, so it never covers JUMP
-	panel.AnchorPoint = Vector2.new(0.5, 0)
-	panel.Position = UDim2.new(0.6, 0, 0, 62)
-	panel.Size = UDim2.fromOffset(300, 130)
+if touch then
+	-- phones: the charge panel goes top right (the radar slides away while you power up) and
+	-- the TAP button bottom middle, between the thumbstick and the jump button, so it never
+	-- covers JUMP
+	panel.AnchorPoint = Vector2.new(1, 0)
+	panel.Position = UDim2.new(1, -60, 0, 62)
 	tapButton.AnchorPoint = Vector2.new(0.5, 1)
 	tapButton.Position = UDim2.new(0.5, 0, 1, -22)
-	tapButton.Size = UDim2.fromOffset(124, 124)
 end
 
-local flash = Instance.new("Frame")
-flash.Name = "Flash"
-flash.Size = UDim2.fromScale(1, 1)
-flash.BackgroundColor3 = Color3.new(1, 1, 1)
-flash.BackgroundTransparency = 1
-flash.ZIndex = 10
-flash.Parent = gui
-local bigText = label(gui, {
-	Name = "Title",
+local flash = new("Frame", {
+	Name = "Flash",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundTransparency = 1,
+	ZIndex = 10,
+}, gui)
+-- the title when there's no cutscene
+local bigText = DragonUI.Lettering(gui, "Title", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.3),
-	Size = UDim2.fromOffset(700, 90),
+	Size = UDim2.fromOffset(700, 100),
 	Text = "SUPER SAIYAN!",
-	TextColor3 = PowerConfig.SSJAuraColor,
-	TextTransparency = 1,
-	TextStrokeTransparency = 1,
+	Color = DragonUI.GOLD,
+	BackColor = DragonUI.DAMAGE,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Stroke = 4,
+	Offset = 5,
 	ZIndex = 11,
 })
+bigText.Holder.Visible = false
+local bigScale = new("UIScale", {}, bigText.Holder)
 
 -- a colour grade on this player's screen only: punchier as you charge, a warm flash on release
 local grade = Instance.new("ColorCorrectionEffect")
@@ -2471,12 +2901,13 @@ local function attr(name: string)
 end
 
 local function refreshHint()
+	local key = touch and "POWER" or PowerConfig.PowerKey.Name
 	if charging or bursting then
-		hint.Text = ""
+		setHint(nil)
 	elseif attr("Form") == "SSJ" then
-		hint.Text = UserInputService.TouchEnabled and "POWER button  —  power down" or "R  —  power down"
+		setHint(key, "POWER DOWN")
 	else
-		hint.Text = UserInputService.TouchEnabled and "POWER button  —  power up" or "R  —  power up"
+		setHint(key, "POWER UP")
 	end
 end
 
@@ -2534,6 +2965,7 @@ local function tap()
 		full = true
 	end
 	promptScale.Scale = 1.18
+	tapBall.Scale.Scale = 1.12
 end
 
 local function setTapBinding(on: boolean)
@@ -2548,7 +2980,7 @@ local function setTapBinding(on: boolean)
 	else
 		ContextActionService:UnbindAction("DWTap")
 	end
-	tapButton.Visible = on and UserInputService.TouchEnabled
+	tapButton.Visible = on and touch
 end
 
 local function startCharging()
@@ -2564,7 +2996,7 @@ local function startCharging()
 	remote:FireServer("Start")
 	takeCamera()
 	panel.Visible = true
-	prompt.Text = UserInputService.TouchEnabled and "TAP!  TAP!  TAP!" or "SPAM  SPACE!"
+	prompt:SetText(touch and "TAP!  TAP!  TAP!" or ("SPAM  " .. string.upper(PowerConfig.TapKey.Name) .. "!"))
 	setTapBinding(true)
 	refreshHint()
 end
@@ -2617,12 +3049,14 @@ local function playBurst()
 		if not cutscene then
 			flash.BackgroundTransparency = 0
 			TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
-			bigText.TextTransparency = 0
-			bigText.TextStrokeTransparency = 0.2
-			bigText.Size = UDim2.fromOffset(500, 70)
-			TweenService:Create(bigText, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(760, 100) }):Play()
+			bigText.Holder.Visible = true
+			bigScale.Scale = 0.5
+			TweenService:Create(bigScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 			task.delay(1.6, function()
-				TweenService:Create(bigText, TweenInfo.new(0.6), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+				TweenService:Create(bigScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0.01 }):Play()
+				task.delay(0.26, function()
+					bigText.Holder.Visible = false
+				end)
 			end)
 		end
 	end)
@@ -2677,10 +3111,14 @@ RunService.RenderStepped:Connect(function(dt)
 		charge = math.max(0, charge - PowerConfig.ChargeDecay * dt)
 	end
 	promptScale.Scale += (1 - promptScale.Scale) * math.min(1, dt * 10)
-	barFill.Size = UDim2.new(charge, 0, 1, 0)
+	tapBall.Scale.Scale += (1 - tapBall.Scale.Scale) * math.min(1, dt * 12)
+	barFill:SetFill(charge)
+	-- ki blue, turning Super Saiyan gold once your hair starts lifting
+	barFill:SetColor(DragonUI.KI:Lerp(DragonUI.GOLD, math.clamp((charge - PowerConfig.HairStart) / 0.5, 0, 1)))
+	percent.Text = math.floor(charge * 100 + 0.5) .. "%"
+	stage.TextColor3 = PAPER:Lerp(DragonUI.GOLD, math.clamp((charge - 0.5) * 2, 0, 1))
 	grade.Contrast = 0.12 * charge
 	grade.Saturation = 0.2 * charge
-	barFill.BackgroundColor3 = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, charge)
 	local text = STAGES[1][2]
 	for _, s in STAGES do
 		if charge >= s[1] then
@@ -2743,7 +3181,7 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="12">
+      <Item class="LocalScript" referent="13">
         <Properties>
           <string name="Name">PowerFX</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -3652,7 +4090,7 @@ end)
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">SSJCutscene</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -3664,11 +4102,13 @@ end)
 	  1.0 s   the camera sweeps up over your hair as it turns gold and blows upward
 	  2.2 s   (PowerConfig.ExplodeAt) the power explodes: a white flash, the camera slams back to
 	          a low angle and pulls away, and manga focus lines frame you
-	  2.6 s   a manga box drops in: "THIS IS—"
-	  3.25 s  ...then a bigger one: "SUPER SAIYAN!"   (PowerConfig.CutsceneText)
-	  end     the boxes fly off, the bars slide away and you get control back
+	  2.6 s   the screen turns into a manga page: black and white, inked outlines, screentone
+	          dots round the edges ... and a tall manga panel slides DOWN into frame: "THIS IS—"
+	  3.25 s  a second panel slides UP into frame: "SUPER SAIYAN!"   (PowerConfig.CutsceneText)
+	  end     the panels slide away, the colour floods back, the bars go and you get control
 ]]
 
+local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -3682,6 +4122,9 @@ local EXPLODE = PowerConfig.ExplodeAt or 2.2
 local EYES_END = math.min(1, EXPLODE * 0.45) -- the eye close-up, then the hair until the explosion
 local BAR = 0.13 -- height of each black bar (share of the screen)
 local FOCUS_LINES = 40
+local BLACK = Color3.new(0, 0, 0)
+local WHITE = Color3.new(1, 1, 1)
+local PAPER = Color3.fromRGB(250, 247, 238)
 
 local player = Players.LocalPlayer
 local rng = Random.new()
@@ -3702,6 +4145,11 @@ local function easeInOut(t: number): number
 	return t * t * (3 - 2 * t)
 end
 
+local function smooth(a: number, b: number, x: number): number
+	local t = math.clamp((x - a) / (b - a), 0, 1)
+	return t * t * (3 - 2 * t)
+end
+
 local function new(className: string, props, parent: Instance?)
 	local inst = Instance.new(className)
 	for k, v in props do
@@ -3711,6 +4159,26 @@ local function new(className: string, props, parent: Instance?)
 		inst.Parent = parent
 	end
 	return inst
+end
+
+local function tween(inst: Instance, seconds: number, props, style, direction)
+	local tw = TweenService:Create(
+		inst,
+		TweenInfo.new(seconds, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out),
+		props
+	)
+	tw:Play()
+	return tw
+end
+
+local function fadeLine(parent: Instance) -- thin at the start, solid at the end
+	return new("UIGradient", {
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.35, 0.35),
+			NumberSequenceKeypoint.new(1, 0),
+		}),
+	}, parent)
 end
 
 ----------------------------------------------------------------------------------------
@@ -3736,16 +4204,37 @@ local lines = new("Frame", {
 local flash = new("Frame", {
 	Name = "Flash",
 	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundColor3 = WHITE,
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ZIndex = 2,
 }, gui)
 
+-- the manga filter's screentone: halftone dots, bigger toward the edges of the screen
+local tone = new("CanvasGroup", {
+	Name = "Screentone",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	GroupTransparency = 1,
+	ZIndex = 3,
+}, gui)
+
+-- ... and a black panel border round the whole screen, like a page
+local page = new("Frame", {
+	Name = "PageBorder",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(1, -18, 1, -18),
+	BackgroundTransparency = 1,
+	Visible = false,
+	ZIndex = 4,
+}, gui)
+new("UIStroke", { Color = BLACK, Thickness = 5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, page)
+
 local topBar = new("Frame", {
 	Name = "TopBar",
 	Size = UDim2.fromScale(1, 0),
-	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundColor3 = BLACK,
 	BorderSizePixel = 0,
 	ZIndex = 5,
 }, gui)
@@ -3754,19 +4243,23 @@ local bottomBar = new("Frame", {
 	AnchorPoint = Vector2.new(0, 1),
 	Position = UDim2.fromScale(0, 1),
 	Size = UDim2.fromScale(1, 0),
-	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundColor3 = BLACK,
 	BorderSizePixel = 0,
 	ZIndex = 5,
 }, gui)
 
--- a manga text box: a white panel with a thick black border and a hard black shadow
-local function mangaBox(name: string, width: number, aspect: number, rotation: number)
+-- the manga filter's colour: black and white, hard contrast, a touch of paper warmth
+local grade = new("ColorCorrectionEffect", { Name = "MangaFilter", Enabled = false }, Lighting)
+
+----------------------------------------------------------------------------------------
+-- the manga panels: tall white panels with a double black border and a hard shadow
+----------------------------------------------------------------------------------------
+local function mangaPanel(name: string, size: UDim2, aspect: number, style: string)
 	local holder = new("Frame", {
 		Name = name,
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Size = UDim2.fromScale(width, width * 3),
+		Size = size,
 		BackgroundTransparency = 1,
-		Rotation = rotation,
 		Visible = false,
 		ZIndex = 10,
 	}, gui)
@@ -3775,44 +4268,126 @@ local function mangaBox(name: string, width: number, aspect: number, rotation: n
 	new("Frame", {
 		Name = "Shadow",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 8, 0.5, 8),
+		Position = UDim2.new(0.5, 10, 0.5, 10),
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundColor3 = BLACK,
 		BorderSizePixel = 0,
 		ZIndex = 10,
 	}, holder)
 	local panel = new("Frame", {
 		Name = "Panel",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		BackgroundColor3 = PAPER,
 		BorderSizePixel = 0,
+		ClipsDescendants = true,
 		ZIndex = 11,
 	}, holder)
-	new("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 4, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, panel)
+	new("UIStroke", { Color = BLACK, Thickness = 6, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, panel)
+	local inner = new("Frame", {
+		Name = "InnerBorder",
+		Position = UDim2.fromOffset(9, 9),
+		Size = UDim2.new(1, -18, 1, -18),
+		BackgroundTransparency = 1,
+		ZIndex = 14,
+	}, panel)
+	new("UIStroke", { Color = BLACK, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, inner)
+
+	if style == "speed" then
+		-- horizontal speed lines whooshing across
+		for k = 1, 16 do
+			local line = new("Frame", {
+				Name = "Speed",
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.fromScale(1, 0.08 + (k - 1) / 15 * 0.84 + rng:NextNumber(-0.02, 0.02)),
+				Size = UDim2.new(rng:NextNumber(0.35, 0.95), 0, 0, rng:NextNumber(2, 5)),
+				BackgroundColor3 = BLACK,
+				BorderSizePixel = 0,
+				ZIndex = 12,
+			}, panel)
+			fadeLine(line)
+		end
+	else
+		-- focus lines bursting out from behind the words
+		for k = 1, 28 do
+			local a = (k - 1) / 28 * math.pi * 2 + rng:NextNumber(-0.05, 0.05)
+			local d = rng:NextNumber(0.42, 0.5) -- (in panel widths) from the middle to the line's middle
+			local line = new("Frame", {
+				Name = "Burst",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5 + math.cos(a) * d, 0.5 + math.sin(a) * d * aspect),
+				Size = UDim2.new(0.62, 0, 0, rng:NextNumber(2, 6)),
+				Rotation = math.deg(a),
+				BackgroundColor3 = BLACK,
+				BorderSizePixel = 0,
+				ZIndex = 12,
+			}, panel)
+			fadeLine(line)
+		end
+	end
+	-- screentone fading up from the bottom of the panel
+	for row = 0, 6 do
+		for col = 0, 9 do
+			local size = 2 + row * 1.6
+			local dot = new("Frame", {
+				Name = "Tone",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new((col + 0.5 + (row % 2) * 0.5) / 10, 0, 0.66 + row * 0.052, 0),
+				Size = UDim2.fromOffset(size, size),
+				BackgroundColor3 = BLACK,
+				BackgroundTransparency = 0.25,
+				BorderSizePixel = 0,
+				ZIndex = 12,
+			}, panel)
+			new("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
+		end
+	end
 	local text = new("TextLabel", {
 		Name = "Text",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(0.9, 0.78),
+		Position = UDim2.fromScale(0.5, 0.42),
+		Size = UDim2.fromScale(0.86, 0.62),
 		BackgroundTransparency = 1,
 		Font = Enum.Font.Bangers,
 		TextScaled = true,
-		TextColor3 = Color3.new(0, 0, 0),
+		TextColor3 = BLACK,
 		Text = "",
-		ZIndex = 12,
+		ZIndex = 13,
 	}, panel)
-	return { Holder = holder, Scale = scale, Text = text, Rotation = rotation }
+	new("UIStroke", { Color = PAPER, Thickness = 4 }, text) -- a paper-white halo so it reads over the lines
+	return { Holder = holder, Scale = scale, Text = text }
 end
 
-local box1 = mangaBox("BoxThisIs", 0.3, 4.2, -4)
-local box2 = mangaBox("BoxSuperSaiyan", 0.46, 4.6, 3)
-local BOX1_AT = UDim2.fromScale(0.27, 0.28)
-local BOX2_AT = UDim2.fromScale(0.66, 0.72)
+local panel1 = mangaPanel("PanelThisIs", UDim2.fromScale(0.19, 0.66), 0.5, "speed")
+local panel2 = mangaPanel("PanelSuperSaiyan", UDim2.fromScale(0.25, 0.7), 0.58, "burst")
+local PANEL1_AT, PANEL1_FROM = UDim2.fromScale(0.21, 0.5), UDim2.fromScale(0.21, -0.6) -- slides down
+local PANEL2_AT, PANEL2_FROM = UDim2.fromScale(0.77, 0.5), UDim2.fromScale(0.77, 1.6) -- slides up
 
-local function buildFocusLines()
-	lines:ClearAllChildren()
+-- "SUPER SAIYAN!" -> "SUPER\nSAIYAN!": one word per line fills a tall panel
+local function stacked(text: string): string
+	return (text:gsub("%s+", "\n"))
+end
+
+local function slideIn(panel, from: UDim2, at: UDim2, text: string)
+	panel.Text.Text = stacked(text)
+	panel.Holder.Visible = true
+	panel.Holder.Position = from
+	panel.Scale.Scale = 1
+	tween(panel.Holder, 0.42, { Position = at }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	task.delay(0.4, function()
+		-- a little punch when it lands
+		panel.Scale.Scale = 1.08
+		tween(panel.Scale, 0.2, { Scale = 1 })
+	end)
+end
+
+local function slideOut(panel, to: UDim2)
+	tween(panel.Holder, 0.38, { Position = to }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+end
+
+----------------------------------------------------------------------------------------
+-- building the effects that depend on the screen size
+----------------------------------------------------------------------------------------
+local function screenSize(): Vector2
 	local okSize, size = pcall(function()
 		return gui.AbsoluteSize
 	end)
@@ -3820,6 +4395,11 @@ local function buildFocusLines()
 		local camera = Workspace.CurrentCamera
 		size = camera and camera.ViewportSize or Vector2.new(1280, 720)
 	end
+	return size
+end
+
+local function buildFocusLines(size: Vector2)
+	lines:ClearAllChildren()
 	local centre = size / 2
 	local inner = math.min(size.X, size.Y) * 0.36
 	local outer = size.Magnitude * 0.6
@@ -3833,18 +4413,46 @@ local function buildFocusLines()
 			Position = UDim2.fromOffset(mid.X, mid.Y),
 			Size = UDim2.fromOffset(length, rng:NextNumber(2, 7)),
 			Rotation = math.deg(a),
-			BackgroundColor3 = Color3.new(0, 0, 0),
+			BackgroundColor3 = BLACK,
 			BorderSizePixel = 0,
 			ZIndex = 1,
 		}, lines)
-		-- thin and faint at the inner end, thick and solid at the edge of the screen
-		new("UIGradient", {
-			Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 1),
-				NumberSequenceKeypoint.new(0.35, 0.35),
-				NumberSequenceKeypoint.new(1, 0),
-			}),
-		}, line)
+		fadeLine(line)
+	end
+end
+
+local toneBuiltFor = Vector2.zero
+local function buildScreentone(size: Vector2)
+	if (size - toneBuiltFor).Magnitude < 1 then
+		return -- already made for this screen size
+	end
+	toneBuiltFor = size
+	tone:ClearAllChildren()
+	-- a halftone grid (every other row shifted half a step, like printed screentone); each dot
+	-- grows with its distance from the middle of the screen, so the tone darkens to the edges
+	local step = math.clamp(size.Y * 0.03, 14, 24)
+	local centre = size / 2
+	local row = 0
+	for y = step / 2, size.Y, step * 0.87 do
+		local shift = (row % 2) * step / 2
+		row += 1
+		for x = step / 2 + shift, size.X, step do
+			local dx = (x - centre.X) / centre.X
+			local dy = (y - centre.Y) / centre.Y
+			local r = math.sqrt(dx * dx + dy * dy)
+			local d = step * 0.95 * smooth(0.6, 1.3, r)
+			if d >= 2 then
+				local dot = new("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromOffset(x, y),
+					Size = UDim2.fromOffset(d, d),
+					BackgroundColor3 = BLACK,
+					BackgroundTransparency = 0.12,
+					BorderSizePixel = 0,
+				}, tone)
+				new("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
+			end
+		end
 	end
 end
 
@@ -3856,36 +4464,55 @@ local function setLines(transparency: number)
 	end
 end
 
-local function tween(inst: Instance, seconds: number, props, style, direction)
-	local tw = TweenService:Create(
-		inst,
-		TweenInfo.new(seconds, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out),
-		props
-	)
-	tw:Play()
-	return tw
-end
+----------------------------------------------------------------------------------------
+-- the manga filter: turns the screen into a manga page, then fades it back
+----------------------------------------------------------------------------------------
+local ink: Highlight? = nil
 
-local function dropIn(box, at: UDim2, text: string)
-	box.Text.Text = text
-	box.Holder.Visible = true
-	box.Holder.Position = UDim2.new(at.X.Scale, at.X.Offset, at.Y.Scale - 0.55, at.Y.Offset)
-	box.Holder.Rotation = box.Rotation - 14
-	box.Scale.Scale = 1
-	tween(box.Holder, 0.38, { Position = at, Rotation = box.Rotation }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-	task.delay(0.36, function()
-		-- a little punch when it lands
-		box.Scale.Scale = 1.14
-		tween(box.Scale, 0.22, { Scale = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local function mangaOn(character: Model)
+	grade.Enabled = true
+	grade.Saturation, grade.Contrast, grade.Brightness, grade.TintColor = 0, 0, 0, WHITE
+	tween(grade, 0.25, { Saturation = -1, Contrast = 0.65, Brightness = 0.04, TintColor = PAPER })
+	tween(tone, 0.25, { GroupTransparency = 0 })
+	page.Visible = true
+	-- inked outline round your character
+	if ink then
+		ink:Destroy()
+	end
+	local okInk, made = pcall(function() -- (Roblox only draws so many highlights at once)
+		return new("Highlight", {
+			Name = "MangaInk",
+			DepthMode = Enum.HighlightDepthMode.Occluded,
+			OutlineColor = BLACK,
+			OutlineTransparency = 1,
+			FillColor = WHITE,
+			FillTransparency = 1,
+			Adornee = character,
+		}, character)
 	end)
+	ink = okInk and made or nil
+	if ink then
+		tween(ink, 0.25, { OutlineTransparency = 0, FillTransparency = 0.78 })
+	end
 end
 
-local function flyOut(box)
-	local at = box.Holder.Position
-	tween(box.Holder, 0.35, {
-		Position = UDim2.new(at.X.Scale, at.X.Offset, at.Y.Scale - 0.7, at.Y.Offset),
-		Rotation = box.Rotation + 10,
-	}, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+local function mangaOff(seconds: number)
+	tween(grade, seconds, { Saturation = 0, Contrast = 0, Brightness = 0, TintColor = WHITE })
+	tween(tone, seconds, { GroupTransparency = 1 })
+	page.Visible = false
+	if ink then
+		tween(ink, seconds, { OutlineTransparency = 1, FillTransparency = 1 })
+	end
+end
+
+local function mangaClear()
+	grade.Enabled = false
+	tone.GroupTransparency = 1
+	page.Visible = false
+	if ink then
+		ink:Destroy()
+		ink = nil
+	end
 end
 
 ----------------------------------------------------------------------------------------
@@ -3945,11 +4572,14 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 		UserInputService.ModalEnabled = true
 	end)
 	gui.Enabled = true
-	buildFocusLines()
+	local size = screenSize()
+	buildFocusLines(size)
+	buildScreentone(size) -- (made while the bars close in, hidden until the manga moment)
 	setLines(1)
+	mangaClear()
 	flash.BackgroundTransparency = 1
-	box1.Holder.Visible = false
-	box2.Holder.Visible = false
+	panel1.Holder.Visible = false
+	panel2.Holder.Visible = false
 	topBar.Size = UDim2.fromScale(1, 0)
 	bottomBar.Size = UDim2.fromScale(1, 0)
 	tween(topBar, 0.3, { Size = UDim2.fromScale(1, BAR) })
@@ -3973,6 +4603,7 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 		stopCurrent = nil
 		RunService:UnbindFromRenderStep("DWCutsceneCamera")
 		gui.Enabled = false
+		mangaClear()
 		Cutscene.Playing = false
 		player:SetAttribute("InCutscene", false)
 		pcall(function()
@@ -3996,16 +4627,18 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 			shake = 0.6
 			setLines(0.1)
 		end)
-		once("box1", EXPLODE + 0.4, t, function()
-			dropIn(box1, BOX1_AT, texts[1] or "")
+		once("panel1", EXPLODE + 0.4, t, function()
+			mangaOn(character)
+			slideIn(panel1, PANEL1_FROM, PANEL1_AT, texts[1] or "")
 		end)
-		once("box2", EXPLODE + 1.05, t, function()
-			dropIn(box2, BOX2_AT, texts[2] or "")
+		once("panel2", EXPLODE + 1.05, t, function()
+			slideIn(panel2, PANEL2_FROM, PANEL2_AT, texts[2] or "")
 			shake = math.max(shake, 0.25)
 		end)
 		once("leave", duration - 0.5, t, function()
-			flyOut(box1)
-			flyOut(box2)
+			slideOut(panel1, PANEL1_FROM) -- back up
+			slideOut(panel2, PANEL2_FROM) -- back down
+			mangaOff(0.45) -- the colour comes back as the panels go
 			tween(topBar, 0.4, { Size = UDim2.fromScale(1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 			tween(bottomBar, 0.4, { Size = UDim2.fromScale(1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 			setLines(1)
@@ -4041,21 +4674,25 @@ return Cutscene
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="14">
+      <Item class="LocalScript" referent="15">
         <Properties>
           <string name="Name">HUD</string>
           <ProtectedString name="Source"><![CDATA[--[[
 	HUD  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
 
-	Your Dragon Ball-style screen:
-	  top left   your face inside a glossy 4-star Dragon Ball (a live 3D portrait), your name and
-	             form, an HP bar (a red trail shows damage you just took) and a Ki gauge in five
-	             cells (blue in base form, gold as a Super Saiyan)
-	  below it   a Scouter lens reading your POWER LEVEL: it scrambles and counts up as you power
+	Your screen, dressed like the Dragon Ball fighting games (the look itself lives in
+	ReplicatedStorage > DragonUI: slanted slabs, ink / paper / gi orange, comic lettering):
+	  top left   your face on a slanted gi-orange card: a live 3D portrait whose head pops out
+	             over the top, a blue energy arc and a gi badge (気 "ki", or 超 "super" as a Super
+	             Saiyan). Beside it, on a dark panel that fades out in halftone dots: your name,
+	             your form, a yellow HP bar (a red chunk shows damage you just took) and your Ki
+	             in five slanted pips, with a Dragon Ball whose stars count the full ones
+	  under it   a Scouter readout of your POWER LEVEL: it scrambles and counts up as you power
 	             up ... and warns you when it's over 9000
 	  top right  a Dragon Radar: a sweeping green screen with a blip for every player nearby
 	             (up on the radar = the way your camera faces)
-	It shrinks to fit phones, and hides during the transformation cutscene.
+	It slides in when you spawn and again when the transformation cutscene ends, shakes when you
+	get hit, shrinks to fit phones, and hides during the cutscene.
 	Numbers: ReplicatedStorage > PowerConfig (KiMax, BasePowerLevel, SSJMultiplier, RadarRange).
 ]]
 
@@ -4067,66 +4704,30 @@ local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
 
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+local DragonUI = require(ReplicatedStorage:WaitForChild("DragonUI"))
+
+local new, Slab = DragonUI.new, DragonUI.Slab
+local INK, PAPER, GI, GOLD = DragonUI.INK, DragonUI.PAPER, DragonUI.GI, DragonUI.GOLD
+local K = DragonUI.SLANT
 
 local player = Players.LocalPlayer
 local rng = Random.new()
 
-local BASE_ACCENT = Color3.fromRGB(90, 200, 255)
-local SSJ_ACCENT = Color3.fromRGB(255, 205, 60)
-local DARK = Color3.fromRGB(10, 13, 28)
-local BLACK = Color3.new(0, 0, 0)
-local WHITE = Color3.new(1, 1, 1)
-local KI_CELLS = 5
+local KI_PIPS = 5
 local BLIPS = 12
-local RADAR_SCREEN = 128 -- pixels across the radar's green screen
+local RADAR_SCREEN = 124 -- pixels across the radar's green screen
+local PLATE_X, PLATE_Y = 12, 4
+local HEADROOM = 30 -- room above the plate for your head to pop out of the portrait card
+local RADAR_MARGIN = 16
+-- the portrait camera, from your head (head space: -Z is the way your face looks)
+local PORTRAIT_FOV = 30
+local PORTRAIT_EYE = Vector3.new(0.9, 0.3, -5.2)
+local PORTRAIT_LOOK = Vector3.new(0, 0.35, 0) -- above your head's middle, so your hair fits
 
 -- our own HP bar replaces Roblox's
 pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
 end)
-
-local function new(className: string, props, parent: Instance?)
-	local inst = Instance.new(className)
-	for k, v in props do
-		inst[k] = v
-	end
-	if parent then
-		inst.Parent = parent
-	end
-	return inst
-end
-
-local function round(parent: Instance, radius: UDim?)
-	return new("UICorner", { CornerRadius = radius or UDim.new(1, 0) }, parent)
-end
-
-local function stroke(parent: Instance, color: Color3, thickness: number, transparency: number?)
-	return new("UIStroke", {
-		Color = color,
-		Thickness = thickness,
-		Transparency = transparency or 0,
-		ApplyStrokeMode = parent:IsA("TextLabel") and Enum.ApplyStrokeMode.Contextual or Enum.ApplyStrokeMode.Border,
-	}, parent)
-end
-
-local function gradient(parent: Instance, a: Color3, b: Color3, rotation: number)
-	return new("UIGradient", { Color = ColorSequence.new(a, b), Rotation = rotation }, parent)
-end
-
-local function text(parent: Instance, props)
-	local l = new("TextLabel", {
-		BackgroundTransparency = 1,
-		TextColor3 = WHITE,
-		TextScaled = true,
-		Font = Enum.Font.GothamBold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, nil)
-	for k, v in props do
-		l[k] = v
-	end
-	l.Parent = parent
-	return l
-end
 
 local function commas(n: number): string
 	local s = tostring(math.floor(n + 0.5))
@@ -4134,8 +4735,39 @@ local function commas(n: number): string
 	return (out:gsub("^,", ""))
 end
 
+local function label(parent: Instance, props)
+	local l = new("TextLabel", {
+		BackgroundTransparency = 1,
+		TextColor3 = PAPER,
+		TextScaled = true,
+		Font = Enum.Font.Bangers,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+	for k, v in props do
+		l[k] = v
+	end
+	l.Parent = parent
+	return l
+end
+
+local function inkStroke(parent: Instance, thickness: number)
+	return new("UIStroke", { Color = INK, Thickness = thickness }, parent)
+end
+
+local function circle(parent: Instance, props)
+	local f = new("Frame", props, parent)
+	new("UICorner", { CornerRadius = UDim.new(1, 0) }, f)
+	return f
+end
+
+-- the guide every row of the plate starts on: a slanted line, so the rows step out like the
+-- slabs themselves (x where a row whose bottom is at y should start)
+local function guideX(y: number): number
+	return 140 + (70 - y) * K
+end
+
 ----------------------------------------------------------------------------------------
--- building the screen
+-- the screen
 ----------------------------------------------------------------------------------------
 local gui = new("ScreenGui", {
 	Name = "DragonHUD",
@@ -4147,276 +4779,245 @@ local gui = new("ScreenGui", {
 -- top left: the fighter plate (everything inside shrinks together on small screens)
 local plate = new("Frame", {
 	Name = "Plate",
-	Position = UDim2.fromOffset(14, 8),
-	Size = UDim2.fromOffset(410, 214),
+	Position = UDim2.fromOffset(PLATE_X, PLATE_Y),
+	Size = UDim2.fromOffset(500, 160),
 	BackgroundTransparency = 1,
 }, gui)
 local plateScale = new("UIScale", {}, plate)
 
--- name banner
-local banner = new("Frame", {
-	Name = "Banner",
-	Position = UDim2.fromOffset(92, 8),
-	Size = UDim2.fromOffset(300, 42),
-	BackgroundColor3 = DARK,
-	BackgroundTransparency = 0.1,
-}, plate)
-round(banner, UDim.new(0, 6))
-new("UIGradient", {
-	Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 0.1), NumberSequenceKeypoint.new(1, 0.7) }),
-}, banner)
-local bannerStroke = stroke(banner, BASE_ACCENT, 1.5, 0.35)
-local nameLabel = text(banner, {
-	Name = "Name",
-	Position = UDim2.fromOffset(34, 2),
-	Size = UDim2.new(1, -44, 0, 26),
-	Font = Enum.Font.Bangers,
-	Text = string.upper(player.DisplayName),
-})
-stroke(nameLabel, BLACK, 1.5)
-local formLabel = text(banner, {
-	Name = "Form",
-	Position = UDim2.fromOffset(35, 27),
-	Size = UDim2.new(1, -44, 0, 12),
-	Font = Enum.Font.GothamBlack,
-	Text = "SAIYAN  ·  BASE FORM",
-	TextColor3 = BASE_ACCENT,
-})
+-- the dark panel behind your name and bars, fading out to the right in halftone dots
+Slab.new(plate, "Panel", 92, 10, 356, 88, INK, { Transparency = 0.15, ZIndex = 1 })
+DragonUI.Halftone(plate, "Dots", 406, 10, 7, 11, 8, 7.5, INK, { Transparency = 0.15, Lean = K, ZIndex = 1 })
 
--- HP bar
-local hpBack = new("Frame", {
-	Name = "HP",
-	Position = UDim2.fromOffset(126, 58),
-	Size = UDim2.fromOffset(266, 20),
-	BackgroundColor3 = DARK,
-	BackgroundTransparency = 0.15,
-}, plate)
-round(hpBack, UDim.new(0, 4))
-stroke(hpBack, BLACK, 2)
-local hpTrail = new("Frame", {
-	Name = "Trail",
-	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = Color3.fromRGB(255, 90, 60),
-}, hpBack)
-round(hpTrail, UDim.new(0, 4))
-local hpFill = new("Frame", {
-	Name = "Fill",
-	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = WHITE,
-}, hpBack)
-round(hpFill, UDim.new(0, 4))
-local hpGradient = gradient(hpFill, Color3.fromRGB(215, 255, 95), Color3.fromRGB(60, 200, 70), 90)
-local hpShine = new("Frame", {
-	Name = "Shine",
-	Position = UDim2.fromOffset(4, 3),
-	Size = UDim2.new(1, -8, 0, 4),
-	BackgroundColor3 = WHITE,
-	BackgroundTransparency = 0.55,
-}, hpFill)
-round(hpShine, UDim.new(0, 2))
-local hpTag = text(hpBack, {
-	Name = "Label",
-	Position = UDim2.fromOffset(8, 1),
-	Size = UDim2.new(0, 30, 1, -2),
-	Font = Enum.Font.Bangers,
-	Text = "HP",
-})
-stroke(hpTag, BLACK, 1.5)
-local hpValue = text(hpBack, {
-	Name = "Value",
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -8, 0, 3),
-	Size = UDim2.new(0, 110, 1, -6),
-	TextXAlignment = Enum.TextXAlignment.Right,
-	Text = "100 / 100",
-})
-stroke(hpValue, BLACK, 1.2)
+-- the portrait card, its hard shadow and a two-tone shade
+Slab.new(plate, "CardShadow", 7, 25, 134, 90, INK, { ZIndex = 3 })
+local card = Slab.new(plate, "Card", 0, 18, 134, 90, GI, { ZIndex = 4 })
+local cardShade = card:Band("Shade", 58, 90, DragonUI.GI_DARK)
 
--- Ki gauge: five cells
-local kiFrame = new("Frame", {
-	Name = "Ki",
-	Position = UDim2.fromOffset(126, 85),
-	Size = UDim2.fromOffset(266, 16),
-	BackgroundTransparency = 1,
-}, plate)
-local kiFills, kiStrokes = {}, {}
-local cellWidth = (266 - (KI_CELLS - 1) * 4) / KI_CELLS
-for k = 1, KI_CELLS do
-	local cell = new("Frame", {
-		Name = "Cell" .. k,
-		Position = UDim2.fromOffset((k - 1) * (cellWidth + 4), 0),
-		Size = UDim2.fromOffset(cellWidth, 16),
-		BackgroundColor3 = DARK,
-		BackgroundTransparency = 0.15,
-	}, kiFrame)
-	round(cell, UDim.new(0, 3))
-	kiStrokes[k] = stroke(cell, BLACK, 1.5)
-	local fill = new("Frame", {
-		Name = "Fill",
-		Size = UDim2.fromScale(0, 1),
-		BackgroundColor3 = BASE_ACCENT,
-	}, cell)
-	round(fill, UDim.new(0, 3))
-	gradient(fill, WHITE, Color3.fromRGB(200, 200, 200), 90)
-	kiFills[k] = fill
+-- the energy arc swooping round the bottom of the card: three rings inside each other (an ink
+-- edge so it shows on a bright sky, the ki colour, a white-hot core); only their lower-left part
+-- shows
+local function ring(parent: Instance, name: string, grow: number, color: Color3, thickness: number)
+	local r = circle(parent, {
+		Name = name,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, grow, 1, grow),
+		BackgroundTransparency = 1,
+		ZIndex = 5,
+	})
+	local stroke = new("UIStroke", { Color = color, Thickness = thickness, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, r)
+	new("UIGradient", {
+		Rotation = 125,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, 1),
+			NumberSequenceKeypoint.new(0.85, 0),
+			NumberSequenceKeypoint.new(1, 0),
+		}),
+	}, stroke)
+	return r, stroke
 end
-local kiValue = text(plate, {
-	Name = "KiValue",
-	Position = UDim2.fromOffset(128, 104),
-	Size = UDim2.fromOffset(200, 14),
-	Font = Enum.Font.GothamBlack,
-	Text = "KI  30 / 100",
-	TextColor3 = BASE_ACCENT,
-})
-stroke(kiValue, BLACK, 1)
-
--- the Dragon Ball with your portrait (made after the bars so it sits on top of them)
-local orb = new("Frame", {
-	Name = "Orb",
-	Size = UDim2.fromOffset(120, 120),
+local arcHolder = new("Frame", {
+	Name = "Arc",
+	Position = UDim2.fromOffset(-7, -3),
+	Size = UDim2.fromOffset(138, 138),
 	BackgroundTransparency = 1,
+	ZIndex = 5,
 }, plate)
-local orbGlow = new("Frame", {
-	Name = "Glow",
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.new(1, 12, 1, 12),
-	BackgroundColor3 = BASE_ACCENT,
-	BackgroundTransparency = 0.7,
-}, orb)
-round(orbGlow)
-local ball = new("Frame", {
-	Name = "Ball",
-	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = WHITE,
-}, orb)
-round(ball)
-gradient(ball, Color3.fromRGB(255, 214, 110), Color3.fromRGB(232, 100, 18), 45)
-stroke(ball, Color3.fromRGB(110, 45, 10), 2.5)
+local arcInk = ring(arcHolder, "Edge", 0, INK, 9)
+local arcKi, arcStroke = ring(arcInk, "Ki", 2, DragonUI.KI, 7)
+ring(arcKi, "Core", 5, Color3.new(1, 1, 1), 1.5)
+
+-- your live 3D portrait: no background, and taller than the card, so your head pops out
 local portrait = new("ViewportFrame", {
 	Name = "Portrait",
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromScale(0.7, 0.7),
-	BackgroundColor3 = Color3.fromRGB(255, 196, 110),
+	Position = UDim2.fromOffset(12, -30),
+	Size = UDim2.fromOffset(110, 138), -- its bottom edge is the card's
+	BackgroundTransparency = 1,
 	Ambient = Color3.fromRGB(175, 165, 150),
 	LightColor = Color3.fromRGB(255, 245, 225),
 	LightDirection = Vector3.new(-0.5, -1, -0.7),
-}, ball)
-round(portrait)
-local gloss = new("Frame", {
-	Name = "Gloss",
-	Position = UDim2.fromScale(0.15, 0.09),
-	Size = UDim2.fromScale(0.3, 0.16),
-	Rotation = -28,
-	BackgroundColor3 = WHITE,
-	BackgroundTransparency = 0.4,
-}, ball)
-round(gloss)
-for k, angle in { 62, 82, 102, 122 } do -- four stars along the bottom of the ball
-	local a = math.rad(angle)
-	local star = text(ball, {
-		Name = "Star" .. k,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5 + 0.41 * math.cos(a), 0.5 + 0.41 * math.sin(a)),
-		Size = UDim2.fromOffset(19, 19),
-		Font = Enum.Font.GothamBlack,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		Text = "★",
-		TextColor3 = Color3.fromRGB(230, 30, 30),
-	})
-	stroke(star, Color3.fromRGB(90, 0, 0), 1)
+	ZIndex = 6,
+}, plate)
+
+-- the gi badge: a kanji in a white circle, like the one on Goku's gi
+local badge = circle(plate, {
+	Name = "Badge",
+	Position = UDim2.fromOffset(78, 80),
+	Size = UDim2.fromOffset(42, 42),
+	BackgroundColor3 = PAPER,
+	ZIndex = 7,
+})
+local badgeStroke = new("UIStroke", { Color = INK, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, badge)
+local badgeKanji = label(badge, {
+	Name = "Kanji",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.52),
+	Size = UDim2.fromScale(0.74, 0.74),
+	Font = Enum.Font.GothamBlack,
+	Text = "気",
+	TextColor3 = INK,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	ZIndex = 8,
+})
+
+-- your name, and a tag with your form
+local nameText = DragonUI.Lettering(plate, "Name", {
+	Position = UDim2.fromOffset(guideX(42), 12),
+	Size = UDim2.fromOffset(178, 30),
+	Text = string.upper(player.DisplayName),
+	ZIndex = 8,
+})
+local formTag = Slab.new(plate, "Form", 336, 17, 104, 20, PAPER, { ZIndex = 8 })
+local formText = label(formTag.Holder, {
+	Name = "Text",
+	Position = UDim2.fromOffset(10, 2),
+	Size = UDim2.new(1, -20, 1, -3),
+	Text = "BASE FORM",
+	TextColor3 = INK,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	ZIndex = 9,
+})
+
+-- HP: paper outline, ink back, a red chunk for damage you just took, the yellow bar on top
+local HP_X, HP_Y, HP_W, HP_H = guideX(70), 48, 272, 22
+local hpEdge = Slab.around(plate, "HPEdge", HP_X, HP_Y, HP_W, HP_H, 3, PAPER, { ZIndex = 8 })
+local hpBack = Slab.new(plate, "HP", HP_X, HP_Y, HP_W, HP_H, INK, { ZIndex = 9 })
+local hpTrail = Slab.new(hpBack.Holder, "Trail", 0, 0, HP_W, HP_H, DragonUI.DAMAGE, { ZIndex = 10 })
+local hpFill = Slab.new(hpBack.Holder, "Fill", 0, 0, HP_W, HP_H, DragonUI.HP, { ZIndex = 11 })
+hpFill:Band("Shade", 14, HP_H, DragonUI.GI_DARK, { Transparency = 0.6, ZIndex = 12 })
+hpFill:Band("Shine", 3, 6, PAPER, { Transparency = 0.25, ZIndex = 12 })
+local hpGlint = Slab.new(hpFill.Holder, "Glint", 0, 0, 18, HP_H, PAPER, { Transparency = 0.35, ZIndex = 13 })
+label(hpBack.Holder, {
+	Name = "Label",
+	Position = UDim2.fromOffset(14, 2),
+	Size = UDim2.fromOffset(30, HP_H - 3),
+	Text = "HP",
+	ZIndex = 14,
+})
+local hpValue = label(hpBack.Holder, {
+	Name = "Value",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -16, 0, 2),
+	Size = UDim2.fromOffset(100, HP_H - 3),
+	Text = "100",
+	TextXAlignment = Enum.TextXAlignment.Right,
+	ZIndex = 14,
+})
+for _, l in hpBack.Holder:GetChildren() do
+	if l:IsA("TextLabel") then
+		inkStroke(l, 2)
+	end
 end
 
--- the Scouter
+-- Ki: five slanted pips, and a Dragon Ball whose stars count the full ones
+local PIP_Y, PIP_W, PIP_H, PIP_GAP = 78, 46, 12, 5
+local pips = {}
+for k = 1, KI_PIPS do
+	local x = guideX(PIP_Y + PIP_H) + (k - 1) * (PIP_W + PIP_GAP)
+	local edge = Slab.around(plate, "KiEdge" .. k, x, PIP_Y, PIP_W, PIP_H, 2, PAPER, { ZIndex = 7 })
+	edge.Holder.Visible = false
+	local back = Slab.new(plate, "Ki" .. k, x, PIP_Y, PIP_W, PIP_H, DragonUI.INK_SOFT, { ZIndex = 8 })
+	local fill = Slab.new(back.Holder, "Fill", 0, 0, PIP_W, PIP_H, DragonUI.KI, { ZIndex = 9 })
+	fill:Band("Shine", 2, 4, PAPER, { Transparency = 0.3, ZIndex = 10 })
+	pips[k] = { Edge = edge, Back = back, Fill = fill, Full = false, PopAt = -1 }
+end
+local kiBall = DragonUI.Orb(plate, "KiBall", guideX(PIP_Y + PIP_H) + KI_PIPS * (PIP_W + PIP_GAP) + 2, PIP_Y - 14, 38, 9)
+
+-- the Scouter: a dark green readout with scan lines
+local SC_Y, SC_W, SC_H = 106, 226, 50
+local SC_X = guideX(SC_Y + SC_H)
 local scouter = new("Frame", {
 	Name = "Scouter",
-	Position = UDim2.fromOffset(4, 138),
-	Size = UDim2.fromOffset(222, 66),
-	Rotation = -2,
-	BackgroundColor3 = Color3.fromRGB(40, 255, 120),
-	BackgroundTransparency = 0.8,
+	Position = UDim2.fromOffset(SC_X, SC_Y),
+	Size = UDim2.fromOffset(SC_W, SC_H),
+	BackgroundTransparency = 1,
+	ZIndex = 8,
 }, plate)
-round(scouter, UDim.new(0, 8))
-stroke(scouter, Color3.fromRGB(90, 255, 150), 2, 0.15)
-for k = 1, 6 do -- scan lines
-	new("Frame", {
-		Name = "Scan" .. k,
-		Position = UDim2.new(0, 6, 0, 6 + (k - 1) * 10),
-		Size = UDim2.new(1, -12, 0, 1),
-		BackgroundColor3 = Color3.fromRGB(150, 255, 180),
-		BackgroundTransparency = 0.82,
-		BorderSizePixel = 0,
-	}, scouter)
+Slab.around(scouter, "Edge", 0, 0, SC_W, SC_H, 3, INK, { ZIndex = 8 })
+local glass = Slab.new(scouter, "Glass", 0, 0, SC_W, SC_H, Color3.fromRGB(22, 80, 46), { ZIndex = 9 })
+for a = 4, SC_H - 2, 5 do
+	glass:Band("Scan", a, a + 1, Color3.fromRGB(150, 255, 180), { Transparency = 0.86, ZIndex = 10 })
 end
-text(scouter, {
+glass:Band("Glare", 0, 9, Color3.new(1, 1, 1), { Transparency = 0.88, ZIndex = 10 })
+label(scouter, {
 	Name = "Title",
-	Position = UDim2.fromOffset(12, 6),
-	Size = UDim2.fromOffset(150, 12),
+	Position = UDim2.fromOffset(SC_H * K + 4, 4),
+	Size = UDim2.fromOffset(110, 11),
 	Font = Enum.Font.Code,
 	Text = "POWER LEVEL",
 	TextColor3 = Color3.fromRGB(170, 255, 190),
+	ZIndex = 11,
 })
-local powerValue = text(scouter, {
+local powerValue = label(scouter, {
 	Name = "Value",
-	Position = UDim2.fromOffset(12, 19),
-	Size = UDim2.new(1, -24, 0, 40),
+	Position = UDim2.fromOffset(SC_H * K - 2, 15),
+	Size = UDim2.fromOffset(SC_W - SC_H * K - 14, 32),
 	Font = Enum.Font.Sarpanch,
 	Text = commas(PowerConfig.BasePowerLevel),
 	TextColor3 = Color3.fromRGB(120, 255, 150),
+	ZIndex = 11,
 })
-stroke(powerValue, Color3.fromRGB(0, 60, 20), 1, 0.3)
-local warn9000 = text(scouter, {
-	Name = "Over9000",
+new("UIStroke", { Color = Color3.fromRGB(0, 60, 20), Thickness = 1, Transparency = 0.3 }, powerValue)
+local warn9000 = DragonUI.Lettering(scouter, "Over9000", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.55),
-	Size = UDim2.new(1, -10, 0, 34),
-	Font = Enum.Font.Bangers,
-	TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromScale(0.55, 0.56),
+	Size = UDim2.fromOffset(SC_W - 20, 36),
+	Rotation = -4,
 	Text = "IT'S OVER 9000!!",
-	TextColor3 = Color3.fromRGB(255, 60, 40),
-	Visible = false,
-	ZIndex = 3,
+	Color = DragonUI.DAMAGE,
+	BackColor = INK,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	ZIndex = 12,
 })
-stroke(warn9000, BLACK, 2)
+warn9000.Holder.Visible = false
 
 -- top right: the Dragon Radar
 local radar = new("Frame", {
 	Name = "Radar",
 	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -14, 0, 8),
-	Size = UDim2.fromOffset(156, 180),
+	Position = UDim2.new(1, -RADAR_MARGIN, 0, 6),
+	Size = UDim2.fromOffset(164, 198),
 	BackgroundTransparency = 1,
 }, gui)
 local radarScale = new("UIScale", {}, radar)
+circle(radar, { -- hard shadow
+	Name = "Shadow",
+	Position = UDim2.fromOffset(9, 19),
+	Size = UDim2.fromOffset(152, 152),
+	BackgroundColor3 = INK,
+	BackgroundTransparency = 0.2,
+	ZIndex = 1,
+})
 local nub = new("Frame", {
 	Name = "Button",
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.fromScale(0.5, 0),
-	Size = UDim2.fromOffset(32, 14),
-	BackgroundColor3 = Color3.fromRGB(205, 210, 222),
+	Position = UDim2.fromOffset(76, 0),
+	Size = UDim2.fromOffset(30, 14),
+	BackgroundColor3 = PAPER,
+	ZIndex = 2,
 }, radar)
-round(nub, UDim.new(0, 4))
-stroke(nub, Color3.fromRGB(35, 40, 58), 2)
-local bezel = new("Frame", {
+new("UIStroke", { Color = INK, Thickness = 2.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, nub)
+local bezel = circle(radar, {
 	Name = "Bezel",
-	Position = UDim2.fromOffset(0, 9),
-	Size = UDim2.fromOffset(156, 156),
-	BackgroundColor3 = WHITE,
-}, radar)
-round(bezel)
-gradient(bezel, Color3.fromRGB(250, 251, 255), Color3.fromRGB(165, 170, 186), 60)
-stroke(bezel, Color3.fromRGB(35, 40, 58), 3)
-local screen = new("Frame", {
+	Position = UDim2.fromOffset(0, 10),
+	Size = UDim2.fromOffset(152, 152),
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	ZIndex = 3,
+})
+new("UIGradient", { Color = ColorSequence.new(PAPER, Color3.fromRGB(176, 172, 164)), Rotation = 60 }, bezel)
+new("UIStroke", { Color = INK, Thickness = 3.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, bezel)
+local screen = circle(bezel, {
 	Name = "Screen",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(RADAR_SCREEN, RADAR_SCREEN),
-	BackgroundColor3 = WHITE,
-}, bezel)
-round(screen)
-gradient(screen, Color3.fromRGB(78, 178, 104), Color3.fromRGB(20, 66, 38), 45)
-stroke(screen, Color3.fromRGB(18, 38, 24), 2)
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	ZIndex = 4,
+})
+new("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(86, 186, 108), Color3.fromRGB(18, 62, 36)), Rotation = 45 }, screen)
+new("UIStroke", { Color = INK, Thickness = 2.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, screen)
 do -- the grid, each line cut to fit inside the round screen
 	local r = RADAR_SCREEN / 2
 	for k = -2, 2 do
@@ -4428,9 +5029,10 @@ do -- the grid, each line cut to fit inside the round screen
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = vertical and UDim2.new(0.5, d, 0.5, 0) or UDim2.new(0.5, 0, 0.5, d),
 				Size = vertical and UDim2.fromOffset(1, chord) or UDim2.fromOffset(chord, 1),
-				BackgroundColor3 = Color3.fromRGB(140, 235, 160),
-				BackgroundTransparency = k == 0 and 0.35 or 0.6,
+				BackgroundColor3 = Color3.fromRGB(150, 240, 170),
+				BackgroundTransparency = k == 0 and 0.35 or 0.62,
 				BorderSizePixel = 0,
+				ZIndex = 5,
 			}, screen)
 		end
 	end
@@ -4440,8 +5042,9 @@ local sweep = new("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(RADAR_SCREEN - 6, 2),
-	BackgroundColor3 = Color3.fromRGB(190, 255, 205),
+	BackgroundColor3 = Color3.fromRGB(200, 255, 215),
 	BorderSizePixel = 0,
+	ZIndex = 5,
 }, screen)
 new("UIGradient", { -- only the half from the centre outward shows, brightest at the rim
 	Transparency = NumberSequence.new({
@@ -4453,16 +5056,15 @@ new("UIGradient", { -- only the half from the centre outward shows, brightest at
 }, sweep)
 local blips = {}
 for k = 1, BLIPS do
-	local blip = new("Frame", {
+	local blip = circle(screen, {
 		Name = "Blip",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Size = UDim2.fromOffset(8, 8),
-		BackgroundColor3 = Color3.fromRGB(255, 70, 50),
+		BackgroundColor3 = DragonUI.DAMAGE,
 		Visible = false,
-		ZIndex = 2,
-	}, screen)
-	round(blip)
-	stroke(blip, Color3.fromRGB(90, 0, 0), 1)
+		ZIndex = 6,
+	})
+	new("UIStroke", { Color = INK, Thickness = 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, blip)
 	blips[k] = blip
 end
 local you = new("Frame", { -- you, in the middle
@@ -4471,22 +5073,31 @@ local you = new("Frame", { -- you, in the middle
 	Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(9, 9),
 	Rotation = 45,
-	BackgroundColor3 = Color3.fromRGB(255, 225, 60),
-	ZIndex = 3,
+	BackgroundColor3 = DragonUI.HP,
+	ZIndex = 7,
 }, screen)
-stroke(you, BLACK, 1)
-local radarLabel = text(radar, {
-	Name = "Label",
-	Position = UDim2.fromOffset(0, 167),
-	Size = UDim2.new(1, 0, 0, 13),
-	Font = Enum.Font.GothamBlack,
-	TextXAlignment = Enum.TextXAlignment.Center,
-	Text = "DRAGON RADAR  ·  " .. PowerConfig.RadarRange .. "m",
+new("UIStroke", { Color = INK, Thickness = 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, you)
+Slab.new(radar, "Tag", 2, 170, 150, 24, INK, { ZIndex = 8 })
+DragonUI.Lettering(radar, "Title", {
+	Position = UDim2.fromOffset(18, 173),
+	Size = UDim2.fromOffset(92, 18),
+	Text = "DRAGON RADAR",
+	Offset = 2,
+	ZIndex = 9,
 })
-stroke(radarLabel, BLACK, 1.2)
+local range = Slab.new(radar, "Range", 112, 174, 50, 17, GI, { ZIndex = 9 })
+label(range.Holder, {
+	Name = "Text",
+	Position = UDim2.fromOffset(6, 1),
+	Size = UDim2.new(1, -12, 1, -2),
+	Text = PowerConfig.RadarRange .. "m",
+	TextColor3 = INK,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	ZIndex = 10,
+})
 
 ----------------------------------------------------------------------------------------
--- the portrait: a copy of your character in the Dragon Ball, looking at your face
+-- the portrait: a copy of your character in a 3D view, looking at your face
 ----------------------------------------------------------------------------------------
 local portraitModel: Model? = nil
 local portraitForm = nil
@@ -4506,7 +5117,7 @@ local function buildPortrait(character: Model)
 		return
 	end
 	for _, d in copy:GetDescendants() do
-		if d:IsA("LuaSourceContainer") or d:IsA("Sound") or d:IsA("ParticleEmitter") then
+		if d:IsA("LuaSourceContainer") or d:IsA("Sound") or d:IsA("ParticleEmitter") or d:IsA("Beam") then
 			d:Destroy()
 		elseif d:IsA("BasePart") then
 			d.Anchored = true
@@ -4521,11 +5132,11 @@ local function buildPortrait(character: Model)
 		return
 	end
 	copy.Parent = portrait
-	local camera = portrait:FindFirstChildOfClass("Camera") or new("Camera", { FieldOfView = 34 }, portrait)
+	local camera = portrait:FindFirstChildOfClass("Camera") or new("Camera", {}, portrait)
+	camera.FieldOfView = PORTRAIT_FOV
 	portrait.CurrentCamera = camera
 	local h = head.CFrame
-	local look = h.Position + h.UpVector * 0.55
-	camera.CFrame = CFrame.lookAt(h * Vector3.new(0.35, 0.6, -4.6), look)
+	camera.CFrame = CFrame.lookAt(h * PORTRAIT_EYE, h * PORTRAIT_LOOK)
 	portraitModel = copy
 	portraitForm = character:GetAttribute("Form")
 end
@@ -4539,8 +5150,12 @@ local shownPower = PowerConfig.BasePowerLevel
 local scrambleUntil = 0
 local over9000Until = 0
 local lastTarget = PowerConfig.BasePowerLevel
-local accent = BASE_ACCENT
+local ssjMix = 0 -- 0 = base colours, 1 = Super Saiyan colours
 local sweepAngle = 0
+local enterAt = os.clock() -- the plate slides in from here
+local radarAway = 0 -- 1 = the radar has slid off screen (while you power up)
+local hitAt = -math.huge
+local wasHidden = false
 local character: Model? = nil
 
 local function powerTarget(c: Model): number
@@ -4560,9 +5175,14 @@ RunService.RenderStepped:Connect(function(dt)
 	local hidden = player:GetAttribute("InCutscene")
 	gui.Enabled = not hidden
 	if hidden then
-		-- frozen while the cutscene plays, so afterwards you see the Scouter count your new
-		-- power level up (and tell you it's over 9000)
+		-- frozen while the cutscene plays, so afterwards the HUD slides back in and the Scouter
+		-- counts your new power level up (and tells you it's over 9000)
+		wasHidden = true
 		return
+	end
+	if wasHidden then
+		wasHidden = false
+		enterAt = now
 	end
 	local camera = Workspace.CurrentCamera
 	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
@@ -4570,21 +5190,37 @@ RunService.RenderStepped:Connect(function(dt)
 	plateScale.Scale = scale
 	radarScale.Scale = scale
 
+	-- sliding in, and shaking when you get hit
+	local enter = DragonUI.BackOut((now - enterAt) / 0.5)
+	local shake = math.max(0, 1 - (now - hitAt) / 0.3)
+	local jitter = shake > 0 and Vector2.new(rng:NextNumber(-1, 1), rng:NextNumber(-1, 1)) * (6 * shake) or Vector2.zero
+	plate.Position = UDim2.fromOffset(PLATE_X - (1 - enter) * (520 * scale + 40) + jitter.X, PLATE_Y + HEADROOM * scale + jitter.Y)
+
 	character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not (character and humanoid) then
 		return
 	end
 
+	-- the radar slides away while you power up (the charge bar takes its place on phones)
+	local state = character:GetAttribute("PowerState")
+	local busy = state == "Charging" or state == "Bursting"
+	radarAway += ((busy and 1 or 0) - radarAway) * (1 - math.exp(-dt * 10))
+	local away = math.max(1 - enter, radarAway)
+	radar.Position = UDim2.new(1, -RADAR_MARGIN + away * (200 * scale + 40), 0, 6)
+
 	-- colours follow your form
 	local ssj = character:GetAttribute("Form") == "SSJ"
-	local target = ssj and SSJ_ACCENT or BASE_ACCENT
-	accent = accent:Lerp(target, 1 - math.exp(-dt * 6))
-	bannerStroke.Color = accent
-	formLabel.TextColor3 = accent
-	formLabel.Text = ssj and "SAIYAN  ·  SUPER SAIYAN" or "SAIYAN  ·  BASE FORM"
-	orbGlow.BackgroundColor3 = accent
-	kiValue.TextColor3 = accent
+	ssjMix += ((ssj and 1 or 0) - ssjMix) * (1 - math.exp(-dt * 6))
+	local kiColor = DragonUI.KI:Lerp(DragonUI.KI_SSJ, ssjMix)
+	card:SetColor(GI:Lerp(GOLD, ssjMix))
+	cardShade:SetColor(DragonUI.GI_DARK:Lerp(Color3.fromRGB(214, 128, 16), ssjMix))
+	arcStroke.Color = kiColor
+	formTag:SetColor(PAPER:Lerp(GOLD, ssjMix))
+	formText.Text = ssj and "SUPER SAIYAN" or "BASE FORM"
+	badgeKanji.Text = ssj and "超" or "気"
+	badgeStroke.Color = INK
+	nameText:SetColors(nil, GI:Lerp(DragonUI.DAMAGE, ssjMix))
 	if portraitForm ~= character:GetAttribute("Form") and character:FindFirstChild("Head") then
 		-- re-take the portrait a moment after your form changes, once the new hair shows
 		portraitForm = character:GetAttribute("Form")
@@ -4596,10 +5232,11 @@ RunService.RenderStepped:Connect(function(dt)
 		end)
 	end
 
-	-- HP: the bar drops at once; the red trail behind it catches up a moment later
+	-- HP: the bar drops at once; the red chunk behind it catches up a moment later
 	local health = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
 	if health < shownHealth - 0.001 then
 		trailWait = 0.5
+		hitAt = now
 	end
 	shownHealth = health
 	trailWait -= dt
@@ -4607,26 +5244,50 @@ RunService.RenderStepped:Connect(function(dt)
 		trailHealth += (shownHealth - trailHealth) * (1 - math.exp(-dt * 4))
 	end
 	trailHealth = math.max(trailHealth, shownHealth)
-	hpFill.Size = UDim2.fromScale(shownHealth, 1)
-	hpTrail.Size = UDim2.fromScale(trailHealth, 1)
-	if health < 0.3 then
-		hpGradient.Color = ColorSequence.new(Color3.fromRGB(255, 150, 80), Color3.fromRGB(220, 40, 30))
+	hpFill:SetFill(shownHealth)
+	hpTrail:SetFill(trailHealth)
+	if health < 0.3 then -- low: the bar throbs orange (red is the damage chunk's colour)
+		hpFill:SetColor(DragonUI.HP:Lerp(DragonUI.HP_LOW, 0.5 + 0.5 * math.sin(now * 9)))
 	else
-		hpGradient.Color = ColorSequence.new(Color3.fromRGB(215, 255, 95), Color3.fromRGB(60, 200, 70))
+		hpFill:SetColor(DragonUI.HP)
 	end
-	hpValue.Text = ("%d / %d"):format(math.ceil(humanoid.Health), math.floor(humanoid.MaxHealth))
+	hpEdge:SetColor(PAPER:Lerp(DragonUI.DAMAGE, shake))
+	portrait.ImageColor3 = Color3.new(1, 1, 1):Lerp(Color3.fromRGB(255, 90, 90), shake)
+	hpValue.Text = tostring(math.ceil(humanoid.Health))
+	-- a glint runs along the bar every few seconds
+	local fillWidth = hpFill.Width or 0
+	local run = ((now % 2.8) / 0.45)
+	if run < 1 and fillWidth > 30 then
+		local x = -18 + (fillWidth + 18) * DragonUI.QuadOut(run)
+		local left, right = math.max(x, 0), math.min(x + 18, fillWidth)
+		hpGlint.Holder.Position = UDim2.fromOffset(left, 0)
+		hpGlint:SetWidth(math.max(right - left, 0))
+	else
+		hpGlint:SetWidth(0)
+	end
 
-	-- Ki: five cells filling one after another
+	-- Ki: five pips filling one after another; each pops when it fills up
 	local ki = character:GetAttribute("Ki") or 0
 	shownKi += (ki - shownKi) * (1 - math.exp(-dt * 8))
-	local share = math.clamp(shownKi / PowerConfig.KiMax, 0, 1) * KI_CELLS
-	for k = 1, KI_CELLS do
+	local share = math.clamp(shownKi / PowerConfig.KiMax, 0, 1) * KI_PIPS
+	local full = 0
+	for k, pip in pips do
 		local f = math.clamp(share - (k - 1), 0, 1)
-		kiFills[k].Size = UDim2.fromScale(f, 1)
-		kiFills[k].BackgroundColor3 = accent
-		kiStrokes[k].Color = f >= 1 and accent or BLACK
+		pip.Fill:SetFill(f)
+		local isFull = f >= 0.999
+		if isFull and not pip.Full then
+			pip.PopAt = now
+		end
+		pip.Full = isFull
+		pip.Edge.Holder.Visible = isFull
+		local pop = math.max(0, 1 - (now - pip.PopAt) / 0.25)
+		pip.Fill:SetColor(kiColor:Lerp(PAPER, pop))
+		if isFull then
+			full += 1
+		end
 	end
-	kiValue.Text = ("KI  %d / %d"):format(math.floor(shownKi + 0.5), PowerConfig.KiMax)
+	kiBall:SetStars(full)
+	kiBall.Scale.Scale = full >= KI_PIPS and (1 + 0.06 * math.sin(now * 6)) or 1
 
 	-- the Scouter: counts toward your power level, scrambling when it jumps
 	local wanted = powerTarget(character)
@@ -4639,13 +5300,14 @@ RunService.RenderStepped:Connect(function(dt)
 	lastTarget = wanted
 	shownPower += (wanted - shownPower) * (1 - math.exp(-dt * 3))
 	if now < scrambleUntil then
-		powerValue.Text = commas(rng:NextInteger(10 ^ (#tostring(math.floor(wanted)) - 1), 10 ^ #tostring(math.floor(wanted)) - 1))
+		local digits = #tostring(math.floor(wanted))
+		powerValue.Text = commas(rng:NextInteger(10 ^ (digits - 1), 10 ^ digits - 1))
 	else
 		local wobble = (character:GetAttribute("PowerState") == "Idle") and 1 or (1 + rng:NextNumber(-0.01, 0.01))
 		powerValue.Text = commas(shownPower * wobble)
 	end
 	local warning = now < over9000Until
-	warn9000.Visible = warning and (math.floor(now * 8) % 2 == 0)
+	warn9000.Holder.Visible = warning and (math.floor(now * 8) % 2 == 0)
 	powerValue.TextTransparency = warning and 0.75 or 0
 
 	-- the Dragon Radar
@@ -4670,7 +5332,7 @@ RunService.RenderStepped:Connect(function(dt)
 					blip.Position = UDim2.new(0.5, flat.X * (RADAR_SCREEN / 2 - 6), 0.5, flat.Y * (RADAR_SCREEN / 2 - 6))
 					local pulse = 0.5 + 0.5 * math.sin(now * 6 + used)
 					blip.Size = UDim2.fromOffset(7 + 3 * pulse, 7 + 3 * pulse)
-					blip.BackgroundColor3 = (oc:GetAttribute("Form") == "SSJ") and SSJ_ACCENT or Color3.fromRGB(255, 70, 50)
+					blip.BackgroundColor3 = (oc:GetAttribute("Form") == "SSJ") and DragonUI.KI_SSJ or DragonUI.DAMAGE
 				end
 			end
 		end
@@ -4682,6 +5344,8 @@ end)
 
 player.CharacterAdded:Connect(function(c)
 	portraitForm = nil
+	enterAt = os.clock()
+	shownHealth, trailHealth = 1, 1
 	task.delay(1, function()
 		if player.Character == c then
 			buildPortrait(c)
@@ -4694,7 +5358,7 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="15">
+      <Item class="LocalScript" referent="16">
         <Properties>
           <string name="Name">HairFitTool</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -4983,11 +5647,11 @@ ContextActionService:SetPosition("HairFitTool", UDim2.new(1, -70, 0, 10))
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="16">
+    <Item class="Folder" referent="17">
       <Properties>
         <string name="Name">ServerStorage</string>
       </Properties>
-      <Item class="Folder" referent="17">
+      <Item class="Folder" referent="18">
         <Properties>
           <string name="Name">CharacterParts</string>
         </Properties>

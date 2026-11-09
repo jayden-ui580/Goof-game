@@ -7,18 +7,20 @@
 	  ReplicatedStorage      -> HairPhysics  (moves hair and belt ribbons)
 	                            HairConfig   (hair/belt settings: colours, stiffness, aura reaction)
 	                            PowerConfig  (power-up settings: keys, charge speed, aura colours)
+	                            DragonUI     (the look of the screens: slabs, lettering, colours)
 	  ServerScriptService    -> CharacterSetup (every player becomes the Base rig with hair + belt)
 	                            PowerUpServer  (referee for powering up / Super Saiyan)
 	  StarterPlayerScripts   -> HairPhysicsClient (runs the hair + belt physics on each screen)
 	                            PowerUpClient     (R / Space controls, front camera, power bar)
 	                            PowerFX           (aura, animation, dust, rocks, the explosion)
 	                            SSJCutscene       (ModuleScript: the transformation cutscene)
-	                            HUD               (Dragon Ball portrait, HP, Ki, Scouter, Radar)
+	                            HUD               (portrait card, HP, Ki, Scouter, Dragon Radar)
 	                            HairFitTool       (press H: nudge hair/belt into place)
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Replace every script with the ones in this kit (HUD and SSJCutscene are new: both go in
+	  Replace every script with the ones in this kit. DragonUI is new (a ModuleScript: it goes
+	  in ReplicatedStorage); HUD and SSJCutscene were new last time (both in
 	  StarterPlayerScripts). If you haven't yet, delete the old copies of these and import the
 	  new ones into ServerStorage > CharacterParts:
 	    BaseHair_Rigged.fbx  - the bangs now have bones
@@ -47,8 +49,9 @@
 	          A ring of light flares at your feet and a sheet of fire rises round you, bigger
 	          and faster as the bar fills; hair and belt blow upward. Once the bar is full it
 	          stays full, and (after at least 2.5 s of charging) you transform: the cutscene
-	          plays (your eyes, your hair, the explosion, "THIS IS—" / "SUPER SAIYAN!"), then
-	          the golden hair flows and the gold aura burns until you calm down (~20 s).
+	          plays (your eyes, your hair, the explosion, then the screen turns into a manga
+	          page while "THIS IS—" slides down and "SUPER SAIYAN!" slides up), then the
+	          golden hair flows and the gold aura burns until you calm down (~20 s).
 	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
 
 	TWEAKING
@@ -61,4 +64,7 @@
 	               (Cutscene, CutsceneText, BurstTime, ExplodeAt), calming down (SSJCalmAfter),
 	               aura colours, size and flicker, the HUD's numbers (ki, power level, radar
 	               range), camera distance and shake.
+	  DragonUI: the screens' colours (INK, PAPER, GI, HP, KI ...) and how far every slab
+	            leans (SLANT).
+	  HUD (top of the script): the portrait camera (PORTRAIT_FOV, PORTRAIT_EYE, PORTRAIT_LOOK).
 ]]

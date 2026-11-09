@@ -102,6 +102,7 @@ local function config()
 	return luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.luau"), { environment = { Color3 = roblox.Color3, Enum = roblox.Enum } })()
 end
 local PowerConfig = config()
+local DragonUI -- the shared UI module (loaded below, once the fake environment exists)
 -- stands in for the SSJCutscene module: records that it played and for how long
 cutsceneStub = { Plays = {}, Stopped = 0 }
 function cutsceneStub.Play(character, duration, onDone)
@@ -117,7 +118,16 @@ local function env(isServer)
 		math = math, table = table, string = string, tostring = tostring, pairs = pairs,
 		task = taskStub, os = { clock = function() return T end },
 		Instance = I,
-		require = function(m) if m == "SSJCutscene" then return cutsceneStub end return PowerConfig end,
+		ColorSequence = roblox.ColorSequence, NumberSequence = roblox.NumberSequence,
+		NumberSequenceKeypoint = roblox.NumberSequenceKeypoint,
+		require = function(m)
+			if m == "SSJCutscene" then
+				return cutsceneStub
+			elseif m == "DragonUI" then
+				return DragonUI
+			end
+			return PowerConfig
+		end,
 		script = { Parent = { WaitForChild = function(_, name) return name end } },
 	}
 	e.game = {
@@ -126,7 +136,7 @@ local function env(isServer)
 				return { LocalPlayer = player, PlayerRemoving = signal(), GetPlayers = function() return { player } end }
 			elseif n == "ReplicatedStorage" then
 				return {
-					WaitForChild = function(_, what) return what == "PowerUp" and remote or {} end,
+					WaitForChild = function(_, what) return what == "PowerUp" and remote or what end,
 					FindFirstChild = function(_, what) return what == "PowerUp" and remote or nil end,
 				}
 			elseif n == "RunService" then
@@ -151,6 +161,7 @@ local function env(isServer)
 	return e
 end
 
+DragonUI = luau.load(fs.readFile("src/ReplicatedStorage/DragonUI.luau"), { environment = env(false) })()
 luau.load(fs.readFile("src/ServerScriptService/PowerUpServer.server.luau"), { environment = env(true) })()
 local clientSource = fs.readFile("src/StarterPlayerScripts/PowerUpClient.client.luau")
 	:gsub("tapButton%.Activated:Connect%(tap%)", "-- (touch button skipped: test instances have no events)")

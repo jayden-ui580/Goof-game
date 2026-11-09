@@ -1,9 +1,9 @@
--- Runs the real HUD, PowerUpClient and SSJCutscene scripts against a fake game, plays a scenario
+-- Runs the real HUD, PowerUpClient and SSJCutscene scripts (and the DragonUI module they share) against a fake game, plays a scenario
 -- and writes every UI object they put on screen (with its layout properties) to JSON, which
 -- tools/preview/render_ui.py draws the way Roblox lays it out.
 -- usage (from the DragonWish folder):
 --   lune run tools/preview/ui_dump.luau <scenario> <width> <height> <out.json>
---   scenarios: idle | charging | ssj | cutscene:<seconds into the transformation>
+--   scenarios: idle | charging | ssj | hit | cutscene:<seconds into the transformation>
 local luau = require("@lune/luau")
 local fs = require("@lune/fs")
 local roblox = require("@lune/roblox")
@@ -232,6 +232,7 @@ local function run(path)
 	local src = fs.readFile(path):gsub("tapButton%.Activated:Connect%(tap%)", "-- (touch button skipped)")
 	return luau.load(src, { environment = env() })()
 end
+modules.DragonUI = run("src/ReplicatedStorage/DragonUI.luau")
 modules.SSJCutscene = run("src/StarterPlayerScripts/SSJCutscene.luau")
 run("src/StarterPlayerScripts/PowerUpClient.client.luau")
 run("src/StarterPlayerScripts/HUD.client.luau")
@@ -273,6 +274,9 @@ elseif scenario == "ssj" then
 	character:SetAttribute("Breeze", 1)
 	character:SetAttribute("Ki", 100)
 	frames(2.5)
+elseif scenario == "hit" then
+	hum.Health = 22
+	frames(0.12)
 elseif scenario:sub(1, 8) == "cutscene" then
 	local at = tonumber(scenario:sub(10)) or 3
 	press("DWPower")
@@ -317,6 +321,9 @@ local function dump(inst)
 			node.strokeT = get(inst, "TextStrokeTransparency", 1)
 			node.strokeC = color(get(inst, "TextStrokeColor3", roblox.Color3.new(0, 0, 0)))
 		end
+		if inst:IsA("CanvasGroup") then
+			node.groupT = get(inst, "GroupTransparency", 0)
+		end
 	elseif inst:IsA("UICorner") then
 		local r = get(inst, "CornerRadius", roblox.UDim.new(0, 8))
 		node.radius = { r.Scale, r.Offset }
@@ -348,10 +355,17 @@ local function dump(inst)
 	end
 	return node
 end
+-- screen effects on the 3D view (the manga filter's colour)
+local effects = {}
+for _, e in services.Lighting:GetChildren() do
+	if e:IsA("ColorCorrectionEffect") and e.Enabled then
+		table.insert(effects, { saturation = e.Saturation, contrast = e.Contrast, brightness = e.Brightness, tint = { e.TintColor.R, e.TintColor.G, e.TintColor.B } })
+	end
+end
 local guis = {}
 for _, g in playerGui:GetChildren() do
 	table.insert(guis, dump(g))
 end
 table.sort(guis, function(a, b) return (a.order or 0) < (b.order or 0) end)
-fs.writeFile(outPath, serde.encode("json", { width = W, height = H, touch = touch, scenario = scenario, guis = guis }, false))
+fs.writeFile(outPath, serde.encode("json", { width = W, height = H, touch = touch, scenario = scenario, guis = guis, effects = effects }, false))
 print(("wrote %s (%s, %dx%d, %d screens)"):format(outPath, scenario, W, H, #guis))
