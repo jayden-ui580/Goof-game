@@ -97,6 +97,8 @@ modules.HairPhysics = luau.load(fs.readFile("src/ReplicatedStorage/HairPhysics.l
 modules.HairConfig = luau.load(fs.readFile("src/ReplicatedStorage/HairConfig.luau"), { environment = mods })()
 modules.PowerConfig = luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.luau"), { environment = mods })()
 modules.PowerConfig.BurstTime = 0.3
+modules.PowerConfig.SSJCalmAfter = 0.3 -- (20 s in the game)
+modules.PowerConfig.SSJCalmTime = 0.3
 for _, n in { "HairPhysics", "HairConfig", "PowerConfig" } do local m = I.new("ModuleScript"); m.Name = n; m.Parent = RS end
 local fakeGame = { GetService = function(_, n)
 	if n == "Players" then return playersStub end
@@ -149,12 +151,14 @@ char.Name = "PlayerOne"; char.Parent = WS
 local h2 = char:FindFirstChildOfClass("Humanoid")
 h2.WalkSpeed = 16; h2.JumpPower = 50; h2.Health = 100
 local fakePlayer = { Character = char }
+playersStub.GetPlayers = function() return { fakePlayer } end
 local function send(...) remote.OnServerEvent:Fire(fakePlayer, ...) end
 local function show(tag)
 	local base_ = char.DW_BaseHair.BaseHair.Transparency
 	local ssj = char.DW_SSJHair.SSJHair.Transparency
-	print(("%-28s state %-9s form %-4s charge %.2f wind %.2f walk %2d | base hair %s, SSJ hair %s"):format(
+	print(("%-28s state %-9s form %-4s charge %.2f wind %.2f breeze %.2f ki %3d walk %2d | base hair %s, SSJ hair %s"):format(
 		tag, char:GetAttribute("PowerState"), char:GetAttribute("Form"), char:GetAttribute("Charge"), char:GetAttribute("AuraWind"),
+		char:GetAttribute("Breeze") or -1, char:GetAttribute("Ki") or -1,
 		h2.WalkSpeed, base_ < 1 and "shown" or "hidden", ssj < 1 and "shown" or "hidden"))
 end
 show("spawned")
@@ -163,8 +167,15 @@ clock += 0.1; send("Charge", 0.9); show("cheat: jumped to 0.9")
 for i = 1, 30 do clock += 0.1; send("Charge", math.min(1, i * 0.04)) end
 show("tapped for 3 s")
 send("Transform"); show("full -> transform")
-task.wait(0.5); heartbeat:Fire(0.016); show("after the burst")
+task.wait(0.4); heartbeat:Fire(0.016); show("after the burst")
+local glowing = char:GetAttribute("Breeze") == 1 and char:GetAttribute("AuraWind") > 0
+task.wait(0.8); heartbeat:Fire(0.016); show("calmed down (20 s in game)")
+print("SSJ glow on after transforming, then the hair and aura calm down:",
+	glowing and char:GetAttribute("Breeze") == 0 and char:GetAttribute("AuraWind") == 0)
 send("Start"); show("R as Super Saiyan (ignored)")
 send("PowerDown"); show("power down")
 send("Start"); clock += 0.1; send("Charge", 0.1); send("Cancel"); show("start then cancel")
 send("Start"); clock += 10; heartbeat:Fire(0.016); show("went quiet for 10 s")
+char:SetAttribute("Ki", 10)
+for _ = 1, 8 do heartbeat:Fire(0.25) end
+print("ki refills while idle (10 -> 13 after 2 s):", char:GetAttribute("Ki"))

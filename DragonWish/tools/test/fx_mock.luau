@@ -45,6 +45,7 @@ local workspaceStub = {
 	BulkMoveTo = function(_, parts, cfs) for i, p in parts do p.CFrame = cfs[i] end end,
 }
 local tweens = 0
+fakeClock = 0 -- the scripts' clock: moves with the simulated frames
 local env = {
 	Vector3 = V3, CFrame = CF, Color3 = roblox.Color3, Enum = roblox.Enum, ColorSequence = roblox.ColorSequence,
 	NumberSequence = roblox.NumberSequence, NumberSequenceKeypoint = roblox.NumberSequenceKeypoint, NumberRange = roblox.NumberRange, ColorSequenceKeypoint = roblox.ColorSequenceKeypoint,
@@ -66,7 +67,7 @@ local env = {
 			return r
 		end,
 	},
-	os = os,
+	os = { clock = function() return fakeClock end },
 	require = function() return luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.luau"), { environment = { Color3 = roblox.Color3, Enum = roblox.Enum } })() end,
 }
 env.game = { GetService = function(_, n)
@@ -86,7 +87,7 @@ local src = fs.readFile("src/StarterPlayerScripts/PowerFX.client.luau"):gsub("fo
 luau.load(src, { environment = env })()
 local folder = created[1]
 
-local function frame(dt) render:Fire(dt); stepped:Fire(dt) end
+local function frame(dt) fakeClock += dt; render:Fire(dt); stepped:Fire(dt) end
 local function find(name) for _, c in folder:GetChildren() do if c.Name == name then return c end end end
 local function report(tag)
 	local aura = find("Aura")
@@ -104,12 +105,14 @@ local function report(tag)
 			end
 		end
 	end
+	local ringLit = 0
+	for _, c in folder:GetChildren() do if c.Name == "AuraRing" and c.Transparency < 0.95 then ringLit += 1 end end
 	local rocks = 0
 	for _, c in folder:GetChildren() do if c.Name == "Rock" and c.Transparency < 1 then rocks += 1 end end
 	local function rx(n) return (select(1, motors[n].Transform:ToEulerAnglesXYZ())) end
 	local function rz(n) return (select(3, motors[n].Transform:ToEulerAnglesXYZ())) end
-	print(("%-20s flames %2d  tallest %4.1f  rocks %d  colour %-14s | waist %+.2f neck %+.2f L-arm out %+.2f elbow %+.2f knee %+.2f"):format(
-		tag, shown, tallest, rocks, colour, rx("Waist"), rx("Neck"), rz("LeftShoulder"), rx("LeftElbow"), rx("LeftKnee")))
+	print(("%-20s flames %2d  tallest %4.1f  ring %2d  rocks %d  colour %-14s | waist %+.2f neck %+.2f L-arm out %+.2f elbow %+.2f knee %+.2f"):format(
+		tag, shown, tallest, ringLit, rocks, colour, rx("Waist"), rx("Neck"), rz("LeftShoulder"), rx("LeftElbow"), rx("LeftKnee")))
 	if dumpPath and aura then
 		local beams = {}
 		for _, b in aura:GetChildren() do
@@ -123,10 +126,18 @@ local function report(tag)
 					cs0 = b.CurveSize0, cs1 = b.CurveSize1, w0 = b.Width0, w1 = b.Width1, colors = cols, trans = trs })
 			end
 		end
-		dumps[tag] = beams
+		local pieces = {}
+		for _, c in folder:GetChildren() do
+			if (c.Name == "AuraRing" or c.Name == "AuraRipple") and c.Transparency < 0.98 then
+				local cf = c.CFrame
+				table.insert(pieces, { cf = { cf:GetComponents() }, size = { c.Size.X, c.Size.Y, c.Size.Z },
+					t = c.Transparency, c = { c.Color.R, c.Color.G, c.Color.B } })
+			end
+		end
+		dumps[tag] = { beams = beams, pieces = pieces, aura = { aura.CFrame:GetComponents() } }
 		fs.writeFile(dumpPath, serde.encode("json", dumps, false))
 	end
-	return { waist = rx("Waist"), neck = rx("Neck"), arm = rz("LeftShoulder"), elbow = rx("LeftElbow"), flames = shown, tallest = tallest }
+	return { waist = rx("Waist"), neck = rx("Neck"), arm = rz("LeftShoulder"), elbow = rx("LeftElbow"), flames = shown, tallest = tallest, ring = ringLit }
 end
 local failed = false
 local function check(what, ok) print((ok and "  PASS " or "  FAIL ") .. what); if not ok then failed = true end end
@@ -144,20 +155,29 @@ for _ = 1, 30 do frame(1 / 60) end
 r = report("charged to full")
 check("hunched over with head down and arms out", r.waist < -0.2 and r.neck < -0.2 and r.arm < -0.55)
 check("aura bigger and fuller than at the start", r.flames > early.flames and r.tallest > early.tallest)
-char:SetAttribute("PowerState", "Bursting"); char:SetAttribute("Form", "SSJ")
-for _ = 1, 30 do frame(1 / 60) end
-r = report("bursting")
-check("release: leaning back, head up, arms lowered and out", r.waist > 0.2 and r.neck > 0.3 and r.arm < -0.5 and r.elbow < 0.4)
-print("burst tweens started (pillar + shockwave + flash):", tweens, " particles burst out:", emitted)
+check("glowing ring on the ground at your feet", r.ring > 20)
+char:SetAttribute("PowerState", "Bursting"); char:SetAttribute("Form", "SSJ"); char:SetAttribute("Breeze", 1)
+local before = tweens
+for _ = 1, 60 do frame(1 / 60) end
+r = report("power building")
+check("power builds first: still hunched, no explosion yet", r.waist < -0.2 and tweens == before)
+for _ = 1, 100 do frame(1 / 60) end
+r = report("exploded")
+check("explosion at ExplodeAt: leaning back, head up, arms lowered and out", r.waist > 0.2 and r.neck > 0.3 and r.arm < -0.5 and r.elbow < 0.4)
+print("explosion tweens started (pillar + shockwave + flash):", tweens - before, " particles burst out:", emitted)
 for _ = 1, 120 do frame(1 / 60) end
 r = report("still holding")
-check("holds the release pose while bursting", r.waist > 0.2 and r.neck > 0.3)
+check("holds the release pose while transforming", r.waist > 0.2 and r.neck > 0.3)
 char:SetAttribute("PowerState", "Idle"); char:SetAttribute("Charge", 0)
 for _ = 1, 240 do frame(1 / 60) end
-r = report("calm super saiyan")
-check("control back: pose released, soft gold aura stays", math.abs(r.waist) < 0.02 and r.flames > 0)
+r = report("super saiyan")
+check("control back: pose released, strong gold aura stays up", math.abs(r.waist) < 0.02 and r.flames >= 30 and r.ring > 20)
+char:SetAttribute("Breeze", 0) -- the server calms you down after a while
+for _ = 1, 400 do frame(1 / 60) end
+r = report("calmed down")
+check("aura fades away when you calm down", r.flames == 0 and r.ring == 0)
 char:SetAttribute("Form", "Base")
 for _ = 1, 400 do frame(1 / 60) end
 r = report("powered down")
-check("everything cleaned up", r.flames == 0 and find("Aura") == nil)
+check("everything cleaned up", r.flames == 0 and find("Aura") == nil and r.ring == 0)
 if failed then error("some checks failed") end

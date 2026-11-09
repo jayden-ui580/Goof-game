@@ -340,6 +340,8 @@ template:SetAttribute("Form", "Base")
 template:SetAttribute("PowerState", "Idle")
 template:SetAttribute("Charge", 0)
 template:SetAttribute("AuraWind", 0)
+template:SetAttribute("Breeze", 0)
+template:SetAttribute("Ki", PowerConfig.KiStart)
 template.Name = "StarterCharacter"
 
 local old = StarterPlayer:FindFirstChild("StarterCharacter")

@@ -5,9 +5,10 @@
 	  R      start powering up (the camera swings round to face you, you drop into a stance)
 	         R again while charging cancels; R as a Super Saiyan powers down
 	  Space  spam it to fill the power bar (phones: the big TAP button)
-	When the bar is full you burst into Super Saiyan: the screen flashes, the camera kicks back,
-	then hands control back to you. The aura, pose and hair are drawn by PowerFX and HairPhysics
-	for everyone, using the attributes PowerUpServer sets.
+	When the bar is full you burst into Super Saiyan: the transformation cutscene plays
+	(SSJCutscene: your eyes, your hair, the explosion, the manga boxes), then you get control
+	back. The aura, pose and hair are drawn by PowerFX and HairPhysics for everyone, using the
+	attributes PowerUpServer sets.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
 
@@ -23,6 +24,14 @@ local Workspace = game:GetService("Workspace")
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
 local remote = ReplicatedStorage:WaitForChild("PowerUp")
 local player = Players.LocalPlayer
+
+-- the transformation cutscene (if it's missing, transforming still works without it)
+local okCutscene, Cutscene = pcall(function()
+	return require(script.Parent:WaitForChild("SSJCutscene", 5))
+end)
+if not okCutscene then
+	Cutscene = nil
+end
 
 local SEND_EVERY = 0.1 -- seconds between bar updates sent to the server
 
@@ -66,6 +75,8 @@ panel.Size = UDim2.fromOffset(420, 130)
 panel.BackgroundTransparency = 1
 panel.Visible = false
 panel.Parent = gui
+local panelScale = Instance.new("UIScale") -- shrinks the panel on small screens
+panelScale.Parent = panel
 local prompt = label(panel, {
 	Name = "Prompt",
 	AnchorPoint = Vector2.new(0.5, 0),
@@ -114,6 +125,22 @@ tapButton.Parent = gui
 local tapCorner = Instance.new("UICorner")
 tapCorner.CornerRadius = UDim.new(1, 0)
 tapCorner.Parent = tapButton
+local tapStroke = Instance.new("UIStroke")
+tapStroke.Color = Color3.fromRGB(120, 60, 0)
+tapStroke.Thickness = 3
+tapStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+tapStroke.Parent = tapButton
+
+if UserInputService.TouchEnabled then
+	-- phones: the charge bar goes at the top (between the HUD and the radar) and the TAP button
+	-- at the bottom middle, between the thumbstick and the jump button, so it never covers JUMP
+	panel.AnchorPoint = Vector2.new(0.5, 0)
+	panel.Position = UDim2.new(0.6, 0, 0, 62)
+	panel.Size = UDim2.fromOffset(300, 130)
+	tapButton.AnchorPoint = Vector2.new(0.5, 1)
+	tapButton.Position = UDim2.new(0.5, 0, 1, -22)
+	tapButton.Size = UDim2.fromOffset(124, 124)
+end
 
 local flash = Instance.new("Frame")
 flash.Name = "Flash"
@@ -240,6 +267,10 @@ local function setTapBinding(on: boolean)
 end
 
 local function startCharging()
+	local okSize, viewport = pcall(function()
+		return Workspace.CurrentCamera.ViewportSize
+	end)
+	panelScale.Scale = (okSize and viewport and viewport.Y > 100) and math.clamp(viewport.Y / 720, 0.66, 1.15) or 1
 	charging = true
 	charge = 0
 	full = false
@@ -274,26 +305,41 @@ local function playBurst()
 	charging = false
 	panel.Visible = false
 	setTapBinding(false)
-	camShake = PowerConfig.CameraShake * 4
-	fovKick = 18
-	flash.BackgroundTransparency = 0
-	TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
-	grade.Brightness = 0.3
-	grade.Contrast = 0.25
-	grade.Saturation = 0.35
-	grade.TintColor = Color3.fromRGB(255, 236, 200)
-	TweenService:Create(grade, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Brightness = 0,
-		Contrast = 0,
-		Saturation = 0,
-		TintColor = Color3.new(1, 1, 1),
-	}):Play()
-	bigText.TextTransparency = 0
-	bigText.TextStrokeTransparency = 0.2
-	bigText.Size = UDim2.fromOffset(500, 70)
-	TweenService:Create(bigText, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(760, 100) }):Play()
-	task.delay(1.6, function()
-		TweenService:Create(bigText, TweenInfo.new(0.6), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+	local cutscene = PowerConfig.Cutscene and Cutscene and character
+	if cutscene then
+		gui.Enabled = false -- the cutscene has the screen to itself
+		Cutscene.Play(character, PowerConfig.BurstTime - 0.05, function()
+			gui.Enabled = true
+		end)
+	end
+	-- the moment the power explodes out
+	task.delay(PowerConfig.ExplodeAt or 0, function()
+		if not bursting then
+			return
+		end
+		camShake = PowerConfig.CameraShake * 4
+		fovKick = 18
+		grade.Brightness = 0.3
+		grade.Contrast = 0.25
+		grade.Saturation = 0.35
+		grade.TintColor = Color3.fromRGB(255, 236, 200)
+		TweenService:Create(grade, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Brightness = 0,
+			Contrast = 0,
+			Saturation = 0,
+			TintColor = Color3.new(1, 1, 1),
+		}):Play()
+		if not cutscene then
+			flash.BackgroundTransparency = 0
+			TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
+			bigText.TextTransparency = 0
+			bigText.TextStrokeTransparency = 0.2
+			bigText.Size = UDim2.fromOffset(500, 70)
+			TweenService:Create(bigText, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(760, 100) }):Play()
+			task.delay(1.6, function()
+				TweenService:Create(bigText, TweenInfo.new(0.6), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+			end)
+		end
 	end)
 	task.delay(PowerConfig.BurstTime, function()
 		bursting = false
@@ -377,6 +423,10 @@ local function onCharacter(newCharacter: Model)
 	charging, bursting = false, false
 	panel.Visible = false
 	setTapBinding(false)
+	if Cutscene then
+		Cutscene.Stop()
+	end
+	gui.Enabled = true
 	releaseCamera()
 	newCharacter:GetAttributeChangedSignal("PowerState"):Connect(function()
 		local state = newCharacter:GetAttribute("PowerState")
@@ -393,6 +443,9 @@ local function onCharacter(newCharacter: Model)
 		humanoid.Died:Connect(function()
 			stopCharging(false)
 			bursting = false
+			if Cutscene then
+				Cutscene.Stop()
+			end
 			releaseCamera()
 		end)
 	end

@@ -20,12 +20,16 @@
 	                            PowerUpServer  (referee for powering up / Super Saiyan)
 	  StarterPlayerScripts   -> HairPhysicsClient (runs the hair + belt physics on each screen)
 	                            PowerUpClient     (R / Space controls, front camera, power bar)
-	                            PowerFX           (aura, stance, dust, rocks, transformation burst)
+	                            PowerFX           (aura, animation, dust, rocks, the explosion)
+	                            SSJCutscene       (ModuleScript: the transformation cutscene)
+	                            HUD               (Dragon Ball portrait, HP, Ki, Scouter, Radar)
 	                            HairFitTool       (press H: nudge hair/belt into place)
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Delete the old copies and import the new ones into ServerStorage > CharacterParts:
+	  Replace every script with the ones in this kit (HUD and SSJCutscene are new: both go in
+	  StarterPlayerScripts). If you haven't yet, delete the old copies of these and import the
+	  new ones into ServerStorage > CharacterParts:
 	    BaseHair_Rigged.fbx  - the bangs now have bones
 	    SSJHair_Rigged.fbx   - its root bone was renamed (the old name clashed with the base
 	                           hair's, which tied it to the base hair's skeleton: it never moved)
@@ -48,10 +52,12 @@
 	          transform you lean back, head up, arms spread, and hold it a moment.
 	          R again cancels. As a Super Saiyan, R powers back down to base.
 	          (phones: the round POWER button on the right does the same as R)
-	  Space   spam it to fill the power bar (phones: the big TAP button).
-	          The aura grows bigger and faster, hair and belt blow upward. Once the bar is
-	          full it stays full, and (after at least 2.5 s of charging) you burst into
-	          Super Saiyan; the golden hair then flows calmly.
+	  Space   spam it to fill the power bar (phones: the big TAP button at the bottom).
+	          A ring of light flares at your feet and a sheet of fire rises round you, bigger
+	          and faster as the bar fills; hair and belt blow upward. Once the bar is full it
+	          stays full, and (after at least 2.5 s of charging) you transform: the cutscene
+	          plays (your eyes, your hair, the explosion, "THIS IS—" / "SUPER SAIYAN!"), then
+	          the golden hair flows and the gold aura burns until you calm down (~20 s).
 	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
 
 	TWEAKING
@@ -60,8 +66,10 @@
 	              the Super Saiyan hair's breeze to the left (LocalWind: make the X positive to
 	              blow it right), how hard the aura blows them (AuraLift / AuraSwirl), and the
 	              belt's room around the waist (FitGap; it's sized to the rig automatically).
-	  PowerConfig: keys, how fast the bar fills/drains, minimum charge time, aura colours and
-	               size, camera distance and shake.
+	  PowerConfig: keys, how fast the bar fills/drains, minimum charge time, the cutscene
+	               (Cutscene, CutsceneText, BurstTime, ExplodeAt), calming down (SSJCalmAfter),
+	               aura colours, size and flicker, the HUD's numbers (ki, power level, radar
+	               range), camera distance and shake.
 ]]
 ]]></ProtectedString>
       </Properties>
@@ -132,6 +140,10 @@ local DEFAULTS = {
 	-- X = their right, Y = up, Z = behind them): Vector3.new(-80, 0, 0) blows it to their left.
 	-- It fades out while the power-up aura blasts the hair upward.
 	LocalWind = Vector3.zero,
+	-- the breeze is multiplied by this character attribute (0..1) when it exists; the server
+	-- fades it to 0 when a Super Saiyan calms down
+	BreezeAttribute = "Breeze",
+	BreezeResponse = 1.2, -- how quickly the breeze follows that attribute (per second)
 	LocalWindFlutter = 0, -- 0..1: how much each strand's breeze rises and falls on its own
 	LocalWindFlutterSpeed = 2, -- how fast that ripple goes
 	SheetLinks = {},
@@ -576,6 +588,7 @@ end
 function Sim:Wake(partCF: CFrame)
 	self.Character = findCharacter(self.Part)
 	self.Aura = 0
+	self.Breeze = nil
 	self:BuildColliders(self.Character)
 	for _, col in self.Colliders do
 		col.From = col.Part.CFrame
@@ -842,7 +855,7 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 	local swirl = s.AuraSwirl * aura * h * h
 	local breeze = nil
 	if s.LocalWind.Magnitude > 0 then
-		breeze = rot:VectorToWorldSpace(s.LocalWind) * ((1 - math.min(aura, 1) ^ 2) * h * h)
+		breeze = rot:VectorToWorldSpace(s.LocalWind) * ((1 - math.min(aura, 1) ^ 2) * (self.Breeze or 1) * h * h)
 	end
 
 	for _, chain in self.Chains do
@@ -945,6 +958,12 @@ function Sim:Update(dt: number, cameraPosition: Vector3?)
 	local character = self.Character
 	local auraTarget = character and character:GetAttribute(self.Settings.AuraAttribute) or 0
 	self.Aura += (auraTarget - self.Aura) * (1 - math.exp(-dt * self.Settings.AuraResponse))
+	local breezeTarget = character and self.Settings.BreezeAttribute and character:GetAttribute(self.Settings.BreezeAttribute)
+	if breezeTarget then
+		self.Breeze = (self.Breeze or breezeTarget) + (breezeTarget - (self.Breeze or breezeTarget)) * (1 - math.exp(-dt * self.Settings.BreezeResponse))
+	else
+		self.Breeze = nil -- no attribute: full breeze
+	end
 	for _, col in self.Colliders do
 		col.From = col.To or col.Part.CFrame
 		col.To = col.Part.CFrame
@@ -1550,19 +1569,37 @@ PowerConfig.HairStart = 0.25 -- bar level where the hair and belt start lifting
 PowerConfig.LockMovement = true -- you can't walk or jump while powering up
 
 -- the transformation
-PowerConfig.BurstTime = 2.8 -- seconds you hold the release pose before you get control back
-PowerConfig.SSJCalmWind = 0.12 -- a gentle upward lift that stays on as a Super Saiyan (0..1); the
--- sideways breeze is the SSJ hair's LocalWind in HairConfig
-PowerConfig.SSJIdleAura = 0.22 -- a soft golden aura stays on after transforming (0 = none)
+PowerConfig.BurstTime = 5.4 -- seconds the transformation takes (the cutscene plays during it);
+-- you get control back after it
+PowerConfig.ExplodeAt = 2.2 -- seconds into the transformation when the power explodes out (pillar
+-- of light, shockwave, you throw your arms out)
+PowerConfig.SSJCalmWind = 0.12 -- a gentle upward lift on the hair while the Super Saiyan aura is up
+-- (0..1); the sideways breeze is the SSJ hair's LocalWind in HairConfig
+PowerConfig.SSJIdleAura = 0.75 -- how strong the golden aura stays after transforming (0 = none)
+PowerConfig.SSJCalmAfter = 20 -- seconds after you get control back until your hair and aura calm down
+PowerConfig.SSJCalmTime = 4 -- seconds the calming down takes
+
+-- the transformation cutscene (only the player transforming sees it)
+PowerConfig.Cutscene = true
+PowerConfig.CutsceneText = { "THIS IS—", "SUPER SAIYAN!" }
+
+-- HUD
+PowerConfig.KiMax = 100
+PowerConfig.KiStart = 30 -- ki when you spawn
+PowerConfig.KiRegen = 1.5 -- ki per second while you're not charging (charging fills it fast)
+PowerConfig.BasePowerLevel = 1500 -- what the scouter reads in base form at rest
+PowerConfig.ChargePowerBoost = 4 -- charging multiplies it up to this much more
+PowerConfig.SSJMultiplier = 50 -- Super Saiyan power level = base x this
+PowerConfig.RadarRange = 250 -- studs the Dragon Radar can see other players
 
 -- looks
-PowerConfig.BaseAuraColor = Color3.fromRGB(200, 228, 255) -- main colour of the flames
-PowerConfig.BaseAuraEdge = Color3.fromRGB(95, 160, 255) -- colour at the flame tips
+PowerConfig.BaseAuraColor = Color3.fromRGB(110, 205, 255) -- main colour of the flames
+PowerConfig.BaseAuraEdge = Color3.fromRGB(30, 115, 255) -- colour at the flame tips
 PowerConfig.SSJAuraColor = Color3.fromRGB(255, 210, 70)
 PowerConfig.SSJAuraEdge = Color3.fromRGB(255, 125, 25)
 PowerConfig.AuraSize = 1 -- scales the whole aura
 PowerConfig.AuraFlames = 1 -- how many flame tongues (1 = normal; lower it if lots of players lag)
-PowerConfig.AuraFrameRate = 15 -- how many times a second the aura's flames change shape. Low
+PowerConfig.AuraFrameRate = 24 -- how many times a second the aura's flames change shape. Low
 -- (12-15) flickers like hand-drawn anime frames; 60 is smooth
 
 -- camera (front view while powering up)
@@ -1925,6 +1962,8 @@ template:SetAttribute("Form", "Base")
 template:SetAttribute("PowerState", "Idle")
 template:SetAttribute("Charge", 0)
 template:SetAttribute("AuraWind", 0)
+template:SetAttribute("Breeze", 0)
+template:SetAttribute("Ki", PowerConfig.KiStart)
 template.Name = "StarterCharacter"
 
 local old = StarterPlayer:FindFirstChild("StarterCharacter")
@@ -2002,13 +2041,17 @@ end
 
 	The referee for powering up. Players' computers tell it "I started charging", "my bar is at
 	X", "I'm full — transform", "cancel" and "power down"; it checks those make sense and sets
-	attributes on the character that every player's screen reads to draw the aura, pose and
-	hair:
+	attributes on the character that every player's screen reads to draw the aura, pose, hair
+	and HUD:
 	  Form        "Base" or "SSJ"
-	  PowerState  "Idle", "Charging" or "Bursting" (the moment of transformation)
+	  PowerState  "Idle", "Charging" or "Bursting" (the transformation, cutscene included)
 	  Charge      0..1, how full the power bar is
 	  AuraWind    0..1, how hard the aura blows the hair and belt upward
-	It also swaps the visible hair (base <-> Super Saiyan) and stops you walking while charging.
+	  Breeze      0..1, the Super Saiyan glow: the SSJ hair's breeze and the golden aura. 1 when
+	              you transform, fading to 0 when you calm down (PowerConfig.SSJCalmAfter)
+	  Ki          0..KiMax, shown on the HUD: refills slowly, and charging fills it up
+	It also swaps the visible hair (base <-> Super Saiyan) and stops you walking while charging
+	and transforming.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
 
@@ -2027,12 +2070,18 @@ end
 
 local MAX_TAPS_PER_SECOND = 16 -- nobody taps faster than this, so the bar can't rise faster either
 local STALE_SECONDS = 4 -- a charging player who goes quiet this long is cancelled
+local KI_STEP = 0.25 -- seconds between ki refills
 
-local info = {} -- [character] = { Started, LastUpdate, WalkSpeed, JumpPower, JumpHeight }
+local info = {} -- [character] = { Started, LastUpdate, WalkSpeed, JumpPower, JumpHeight, Token }
 
 local function smoothstep(a: number, b: number, x: number): number
 	local t = math.clamp((x - a) / (b - a), 0, 1)
 	return t * t * (3 - 2 * t)
+end
+
+local function state(character: Model)
+	info[character] = info[character] or {}
+	return info[character]
 end
 
 -- shows the pieces that belong to a form and hides the rest
@@ -2071,8 +2120,12 @@ local function lockMovement(character: Model, lock: boolean)
 	end
 end
 
+-- the hair lift that stays on when you're not charging: only while the Super Saiyan glow is up
 local function idleWind(character: Model): number
-	return character:GetAttribute("Form") == "SSJ" and PowerConfig.SSJCalmWind or 0
+	if character:GetAttribute("Form") ~= "SSJ" then
+		return 0
+	end
+	return PowerConfig.SSJCalmWind * (character:GetAttribute("Breeze") or 0)
 end
 
 local function stopCharging(character: Model)
@@ -2082,14 +2135,42 @@ local function stopCharging(character: Model)
 	lockMovement(character, false)
 end
 
+-- A while after transforming, the hair stops flowing and the golden aura fades (both read the
+-- Breeze attribute). token makes sure an old transformation never calms a newer one.
+local function calmDown(character: Model, token: number)
+	local st = state(character)
+	local steps = math.max(1, math.floor(PowerConfig.SSJCalmTime / 0.1))
+	for i = 1, steps do
+		if not character.Parent or st.Token ~= token or character:GetAttribute("Form") ~= "SSJ" then
+			return
+		end
+		if character:GetAttribute("PowerState") == "Idle" then
+			local f = 1 - i / steps
+			character:SetAttribute("Breeze", math.floor(f * 100 + 0.5) / 100)
+			character:SetAttribute("AuraWind", PowerConfig.SSJCalmWind * f)
+		end
+		task.wait(0.1)
+	end
+end
+
 local function burst(character: Model)
+	local st = state(character)
+	st.Token = (st.Token or 0) + 1
+	local token = st.Token
 	character:SetAttribute("PowerState", "Bursting")
 	character:SetAttribute("Charge", 1)
 	character:SetAttribute("AuraWind", 1)
+	character:SetAttribute("Breeze", 1)
+	character:SetAttribute("Ki", PowerConfig.KiMax)
 	applyForm(character, "SSJ")
 	task.delay(PowerConfig.BurstTime, function()
 		if character.Parent and character:GetAttribute("PowerState") == "Bursting" then
 			stopCharging(character)
+		end
+	end)
+	task.delay(PowerConfig.BurstTime + PowerConfig.SSJCalmAfter, function()
+		if character.Parent and st.Token == token then
+			calmDown(character, token)
 		end
 	end)
 end
@@ -2100,47 +2181,53 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 	if not (character and humanoid and humanoid.Health > 0) then
 		return
 	end
-	local state = character:GetAttribute("PowerState") or "Idle"
+	local powerState = character:GetAttribute("PowerState") or "Idle"
 	local form = character:GetAttribute("Form") or "Base"
 	local now = os.clock()
-	info[character] = info[character] or {}
-	local st = info[character]
+	local st = state(character)
 
 	if action == "Start" then
-		if state == "Idle" and form == "Base" then
+		if powerState == "Idle" and form == "Base" then
 			st.Started, st.LastUpdate = now, now
 			character:SetAttribute("PowerState", "Charging")
 			character:SetAttribute("Charge", 0)
 			lockMovement(character, true)
 		end
 	elseif action == "Charge" then
-		if state == "Charging" and typeof(value) == "number" and value == value then
+		if powerState == "Charging" and typeof(value) == "number" and value == value then
 			local previous = character:GetAttribute("Charge") or 0
 			local allowedRise = PowerConfig.ChargePerTap * MAX_TAPS_PER_SECOND * (now - (st.LastUpdate or now)) + 0.02
 			local charge = math.clamp(math.min(value, previous + allowedRise), 0, 1)
 			st.LastUpdate = now
 			character:SetAttribute("Charge", math.floor(charge * 100 + 0.5) / 100)
 			character:SetAttribute("AuraWind", smoothstep(PowerConfig.HairStart, 1, charge))
+			-- charging fills your ki
+			local ki = character:GetAttribute("Ki") or 0
+			character:SetAttribute("Ki", math.max(ki, math.floor(charge * PowerConfig.KiMax)))
 		end
 	elseif action == "Transform" then
 		local charge = character:GetAttribute("Charge") or 0
-		if state == "Charging" and charge >= 0.95 and now - (st.Started or now) >= PowerConfig.MinChargeTime - 0.2 then
+		if powerState == "Charging" and charge >= 0.95 and now - (st.Started or now) >= PowerConfig.MinChargeTime - 0.2 then
 			burst(character)
 		end
 	elseif action == "Cancel" then
-		if state == "Charging" then
+		if powerState == "Charging" then
 			stopCharging(character)
 		end
 	elseif action == "PowerDown" then
-		if state == "Idle" and form == "SSJ" then
+		if powerState == "Idle" and form == "SSJ" then
+			st.Token = (st.Token or 0) + 1 -- cancels a pending calm-down
 			applyForm(character, "Base")
 			character:SetAttribute("AuraWind", 0)
+			character:SetAttribute("Breeze", 0)
 		end
 	end
 end)
 
--- a charging player who stopped talking (closed the game, lagged out) is cancelled
-RunService.Heartbeat:Connect(function()
+-- a charging player who stopped talking (closed the game, lagged out) is cancelled; and ki
+-- slowly refills
+local kiClock = 0
+RunService.Heartbeat:Connect(function(dt)
 	local now = os.clock()
 	for character, st in info do
 		if not character.Parent then
@@ -2148,6 +2235,17 @@ RunService.Heartbeat:Connect(function()
 		elseif character:GetAttribute("PowerState") == "Charging" and now - (st.LastUpdate or now) > STALE_SECONDS then
 			stopCharging(character)
 		end
+	end
+	kiClock += dt
+	if kiClock >= KI_STEP then
+		for _, player in Players:GetPlayers() do
+			local character = player.Character
+			local ki = character and character:GetAttribute("Ki")
+			if ki and ki < PowerConfig.KiMax and character:GetAttribute("PowerState") ~= "Charging" then
+				character:SetAttribute("Ki", math.min(PowerConfig.KiMax, ki + PowerConfig.KiRegen * kiClock))
+			end
+		end
+		kiClock = 0
 	end
 end)
 
@@ -2192,9 +2290,10 @@ HairPhysics.StartClient()
 	  R      start powering up (the camera swings round to face you, you drop into a stance)
 	         R again while charging cancels; R as a Super Saiyan powers down
 	  Space  spam it to fill the power bar (phones: the big TAP button)
-	When the bar is full you burst into Super Saiyan: the screen flashes, the camera kicks back,
-	then hands control back to you. The aura, pose and hair are drawn by PowerFX and HairPhysics
-	for everyone, using the attributes PowerUpServer sets.
+	When the bar is full you burst into Super Saiyan: the transformation cutscene plays
+	(SSJCutscene: your eyes, your hair, the explosion, the manga boxes), then you get control
+	back. The aura, pose and hair are drawn by PowerFX and HairPhysics for everyone, using the
+	attributes PowerUpServer sets.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
 
@@ -2210,6 +2309,14 @@ local Workspace = game:GetService("Workspace")
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
 local remote = ReplicatedStorage:WaitForChild("PowerUp")
 local player = Players.LocalPlayer
+
+-- the transformation cutscene (if it's missing, transforming still works without it)
+local okCutscene, Cutscene = pcall(function()
+	return require(script.Parent:WaitForChild("SSJCutscene", 5))
+end)
+if not okCutscene then
+	Cutscene = nil
+end
 
 local SEND_EVERY = 0.1 -- seconds between bar updates sent to the server
 
@@ -2253,6 +2360,8 @@ panel.Size = UDim2.fromOffset(420, 130)
 panel.BackgroundTransparency = 1
 panel.Visible = false
 panel.Parent = gui
+local panelScale = Instance.new("UIScale") -- shrinks the panel on small screens
+panelScale.Parent = panel
 local prompt = label(panel, {
 	Name = "Prompt",
 	AnchorPoint = Vector2.new(0.5, 0),
@@ -2301,6 +2410,22 @@ tapButton.Parent = gui
 local tapCorner = Instance.new("UICorner")
 tapCorner.CornerRadius = UDim.new(1, 0)
 tapCorner.Parent = tapButton
+local tapStroke = Instance.new("UIStroke")
+tapStroke.Color = Color3.fromRGB(120, 60, 0)
+tapStroke.Thickness = 3
+tapStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+tapStroke.Parent = tapButton
+
+if UserInputService.TouchEnabled then
+	-- phones: the charge bar goes at the top (between the HUD and the radar) and the TAP button
+	-- at the bottom middle, between the thumbstick and the jump button, so it never covers JUMP
+	panel.AnchorPoint = Vector2.new(0.5, 0)
+	panel.Position = UDim2.new(0.6, 0, 0, 62)
+	panel.Size = UDim2.fromOffset(300, 130)
+	tapButton.AnchorPoint = Vector2.new(0.5, 1)
+	tapButton.Position = UDim2.new(0.5, 0, 1, -22)
+	tapButton.Size = UDim2.fromOffset(124, 124)
+end
 
 local flash = Instance.new("Frame")
 flash.Name = "Flash"
@@ -2427,6 +2552,10 @@ local function setTapBinding(on: boolean)
 end
 
 local function startCharging()
+	local okSize, viewport = pcall(function()
+		return Workspace.CurrentCamera.ViewportSize
+	end)
+	panelScale.Scale = (okSize and viewport and viewport.Y > 100) and math.clamp(viewport.Y / 720, 0.66, 1.15) or 1
 	charging = true
 	charge = 0
 	full = false
@@ -2461,26 +2590,41 @@ local function playBurst()
 	charging = false
 	panel.Visible = false
 	setTapBinding(false)
-	camShake = PowerConfig.CameraShake * 4
-	fovKick = 18
-	flash.BackgroundTransparency = 0
-	TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
-	grade.Brightness = 0.3
-	grade.Contrast = 0.25
-	grade.Saturation = 0.35
-	grade.TintColor = Color3.fromRGB(255, 236, 200)
-	TweenService:Create(grade, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Brightness = 0,
-		Contrast = 0,
-		Saturation = 0,
-		TintColor = Color3.new(1, 1, 1),
-	}):Play()
-	bigText.TextTransparency = 0
-	bigText.TextStrokeTransparency = 0.2
-	bigText.Size = UDim2.fromOffset(500, 70)
-	TweenService:Create(bigText, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(760, 100) }):Play()
-	task.delay(1.6, function()
-		TweenService:Create(bigText, TweenInfo.new(0.6), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+	local cutscene = PowerConfig.Cutscene and Cutscene and character
+	if cutscene then
+		gui.Enabled = false -- the cutscene has the screen to itself
+		Cutscene.Play(character, PowerConfig.BurstTime - 0.05, function()
+			gui.Enabled = true
+		end)
+	end
+	-- the moment the power explodes out
+	task.delay(PowerConfig.ExplodeAt or 0, function()
+		if not bursting then
+			return
+		end
+		camShake = PowerConfig.CameraShake * 4
+		fovKick = 18
+		grade.Brightness = 0.3
+		grade.Contrast = 0.25
+		grade.Saturation = 0.35
+		grade.TintColor = Color3.fromRGB(255, 236, 200)
+		TweenService:Create(grade, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Brightness = 0,
+			Contrast = 0,
+			Saturation = 0,
+			TintColor = Color3.new(1, 1, 1),
+		}):Play()
+		if not cutscene then
+			flash.BackgroundTransparency = 0
+			TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
+			bigText.TextTransparency = 0
+			bigText.TextStrokeTransparency = 0.2
+			bigText.Size = UDim2.fromOffset(500, 70)
+			TweenService:Create(bigText, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(760, 100) }):Play()
+			task.delay(1.6, function()
+				TweenService:Create(bigText, TweenInfo.new(0.6), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+			end)
+		end
 	end)
 	task.delay(PowerConfig.BurstTime, function()
 		bursting = false
@@ -2564,6 +2708,10 @@ local function onCharacter(newCharacter: Model)
 	charging, bursting = false, false
 	panel.Visible = false
 	setTapBinding(false)
+	if Cutscene then
+		Cutscene.Stop()
+	end
+	gui.Enabled = true
 	releaseCamera()
 	newCharacter:GetAttributeChangedSignal("PowerState"):Connect(function()
 		local state = newCharacter:GetAttribute("PowerState")
@@ -2580,6 +2728,9 @@ local function onCharacter(newCharacter: Model)
 		humanoid.Died:Connect(function()
 			stopCharging(false)
 			bursting = false
+			if Cutscene then
+				Cutscene.Stop()
+			end
 			releaseCamera()
 		end)
 	end
@@ -2604,15 +2755,17 @@ end
 	      start     standing tall, fists clenched at the waist, elbows out
 	      charging  the fuller the bar, the more you hunch over with your head down and your
 	                elbows thrown wide, trembling with effort
-	      release   at the transformation you lean back, head up, arms lowered and spread, and
-	                hold it until you get control back
-	  * the aura, Dragon Ball style: a flame-shaped shell that surrounds you (widest near the
-	    ground with flares sticking out sideways, narrowing to a spiky top), filled with
-	    see-through flames and a white-hot core, flickering in steps like hand-drawn anime
-	    frames. Energy streaks swirl up and light streaks shoot past. It grows bigger and
-	    faster as the bar fills; white-blue in base form, gold as a Super Saiyan.
+	      transform you stay hunched as the power builds, then at the explosion you lean back,
+	                head up, arms lowered and spread, and hold it until you get control back
+	  * the aura: a glowing ring on the ground at your feet with a sheet of fire rising from it
+	    all the way round you. The flames are rooted on the ring, lean outward as they rise and
+	    fade at their tips; thin streaks shoot up through them and licks of flame break off and
+	    rise. Energy swirls round you, ripples pulse out along the ground and sparks float up.
+	    It grows bigger and faster as the bar fills; blue in base form, gold as a Super Saiyan.
+	    After transforming the gold aura stays up, then fades when you calm down (the Breeze
+	    attribute).
 	  * dust blasting off the ground and rocks lifting at high power,
-	  * the transformation burst: a pillar of light, a flash, a shockwave ring and a spray.
+	  * the transformation explosion: a pillar of light, a flash, a shockwave ring and a spray.
 	The hair and belt being blown upward is HairPhysics reacting to the AuraWind attribute.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
@@ -2629,6 +2782,7 @@ local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 local ROCKS = 8
 local S = PowerConfig.AuraSize
+local EXPLODE_AT = PowerConfig.ExplodeAt or 0
 local rng = Random.new()
 
 local folder = Instance.new("Folder")
@@ -2688,7 +2842,7 @@ local STRAIN = { -- hunched over, head down, elbows thrown wide, knees bent
 	LeftAnkle = CFrame.Angles(0.45, 0, 0.15),
 	RightAnkle = CFrame.Angles(0.45, 0, -0.15),
 }
-local RELEASE = { -- the transformation: leaning back, head up, arms lowered and spread
+local RELEASE = { -- the explosion: leaning back, head up, arms lowered and spread
 	Root = CFrame.new(0, -0.08, 0) * CFrame.Angles(0.1, 0, 0),
 	Waist = CFrame.Angles(0.3, 0, 0),
 	Neck = CFrame.Angles(0.45, 0, 0),
@@ -2709,8 +2863,7 @@ local RELEASE = { -- the transformation: leaning back, head up, arms lowered and
 local SHAKE = { Root = 0.5, Waist = 1, Neck = 1.2, LeftShoulder = 0.7, RightShoulder = 0.7, LeftElbow = 0.5, RightElbow = 0.5 }
 
 ----------------------------------------------------------------------------------------
--- the aura: tongues of flame made from Beams (tapered ribbons that always face the
--- camera, so each one reads as a sharp anime flame shape)
+-- the aura
 ----------------------------------------------------------------------------------------
 local function seq(points): NumberSequence
 	local keys = {}
@@ -2728,52 +2881,43 @@ local function colours(points): ColorSequence
 	return ColorSequence.new(keys)
 end
 
--- The aura is a flame-shaped shell around the body, drawn from the reference: widest near the
--- ground, bulging, then narrowing to a spiky top. PROFILE is its outline: at each height (0 =
--- feet, 1 = top of the shell) how far out it reaches, as a share of its widest point.
-local PROFILE = { { 0, 0.5 }, { 0.1, 1 }, { 0.3, 0.9 }, { 0.55, 0.68 }, { 0.8, 0.42 }, { 1, 0.12 } }
-local SHELL_HEIGHT = { 5.5, 8 } -- studs from the feet to the top of the shell {no power, full power}
-local SHELL_WIDTH = { 2.8, 3.8 } -- studs from the middle out to its widest point
+-- sizes in studs, each {at no power, at full power}
+local RING_RADIUS = { 1.7, 2.4 } -- the glowing ring on the ground the flames rise from
+local FLAME_HEIGHT = { 2.6, 8.5 } -- the tallest flames
+local FLAME_LEAN = { 0.4, 2.2 } -- how far the tops of the tallest flames lean out
+local RING_SEGMENTS = 36 -- glowing pieces the ground ring is made of
+local RIPPLE_SEGMENTS = 24 -- ... and each ripple pulsing out from it
+local SWOOSHES = 4 -- energy streaks swirling up around you
 
-local function outline(u: number): number
-	u = math.clamp(u, 0, 1)
-	for k = 2, #PROFILE do
-		local a, b = PROFILE[k - 1], PROFILE[k]
-		if u <= b[1] then
-			return lerp(a[2], b[2], (u - a[1]) / (b[1] - a[1]))
-		end
-	end
-	return PROFILE[#PROFILE][2]
-end
-
--- The flames, as Beams. Per group: how many, how many times a second each one licks up
--- {no power, full power}, how wide at the base, how see-through from base (0) to tip (1),
--- and its colours.
+-- The flames are Beams: tapered ribbons that always face the camera, so each one reads as a
+-- flame tongue. Per group: how many; how tall (share of FLAME_HEIGHT) and wide at the base;
+-- how fast they flicker {no power, full power}; how see-through from root (0) to tip (1); and
+-- colours. The sheet's flames overlap all the way round, so together they look like one fire,
+-- brightest at its edges where you look through the most flames.
 local GROUPS = {
-	{ -- jagged spikes sticking out of the shell: sideways at the bottom, straight up on top
-		Kind = "Spike", Count = 36, Speed = { 1.6, 3.6 }, Width = { 0.7, 1.4 },
-		Transparency = seq({ { 0, 0.65 }, { 0.35, 0.2 }, { 0.85, 0.35 }, { 1, 0.8 } }),
+	{ -- the sheet of fire, rooted on the ground ring
+		Kind = "Sheet", Count = 30, Height = { 0.55, 1 }, Width = { 0.9, 1.5 }, Speed = { 2, 5 },
+		Transparency = seq({ { 0, 0.78 }, { 0.15, 0.5 }, { 0.45, 0.45 }, { 0.8, 0.78 }, { 1, 1 } }),
 		Paint = function(core, main, edge)
-			return colours({ { 0, core }, { 0.45, main }, { 1, edge } })
+			return colours({ { 0, main }, { 0.5, main }, { 1, edge } })
 		end,
 	},
-	{ -- broad see-through flames filling the shell, from the feet to the top
-		Kind = "Body", Count = 8, Speed = { 0.8, 1.8 }, Width = { 2.2, 3.6 },
-		Transparency = seq({ { 0, 0.9 }, { 0.3, 0.72 }, { 0.8, 0.76 }, { 1, 1 } }),
-		Paint = function(core, main, edge)
-			return colours({ { 0, Color3.new(1, 1, 1) }, { 0.6, core }, { 1, main } })
-		end,
-	},
-	{ -- white-hot flames hugging the body
-		Kind = "Core", Count = 6, Speed = { 1.2, 2.6 }, Width = { 0.8, 1.4 },
-		Transparency = seq({ { 0, 0.8 }, { 0.25, 0.35 }, { 0.8, 0.5 }, { 1, 0.95 } }),
+	{ -- thin bright streaks shooting up through it
+		Kind = "Streak", Count = 8, Height = { 0.6, 1 }, Width = { 0.18, 0.3 }, Speed = { 4, 8 },
+		Transparency = seq({ { 0, 0.75 }, { 0.25, 0.3 }, { 0.7, 0.55 }, { 1, 1 } }),
 		Paint = function(core, main, edge)
 			return colours({ { 0, Color3.new(1, 1, 1) }, { 0.5, core }, { 1, main } })
 		end,
 	},
+	{ -- licks of flame breaking off and rising (Speed = licks per second)
+		Kind = "Lick", Count = 10, Height = { 0.25, 0.45 }, Width = { 0.6, 1.1 }, Speed = { 1.2, 2.4 },
+		Transparency = seq({ { 0, 1 }, { 0.2, 0.45 }, { 0.6, 0.55 }, { 1, 1 } }),
+		Paint = function(core, main, edge)
+			return colours({ { 0, main }, { 0.5, main }, { 1, edge } })
+		end,
+	},
 }
-local AURA_FPS = math.max(PowerConfig.AuraFrameRate or 15, 1)
-local SWOOSHES = 3 -- energy streaks swirling up around the body
+local AURA_FPS = math.max(PowerConfig.AuraFrameRate or 24, 1)
 
 -- an attachment frame whose axis (X) points straight up
 local UP_FRAME = CFrame.fromMatrix(Vector3.zero, Vector3.yAxis, -Vector3.xAxis)
@@ -2838,31 +2982,26 @@ local function newBeam(parent: Instance, transparency: NumberSequence)
 	return beam, a0, a1
 end
 
--- gives a flame a new place, size and speed for its next lick
-local function respawn(t)
-	local slot = (t.Index - 1) / t.Of * math.pi * 2 + t.Offset
-	t.Angle = slot + rng:NextNumber(-0.5, 0.5) * (math.pi * 2 / t.Of)
-	t.LenMul = rng:NextNumber(0.75, 1.2)
-	t.WidthMul = rng:NextNumber(0.75, 1.2)
-	t.SpeedMul = rng:NextNumber(0.8, 1.25)
-	if t.Kind == "Spike" then
-		-- where on the shell: plenty low down (the side flares), most in the middle, some on top
-		local r = rng:NextNumber()
-		t.U = r < 0.3 and rng:NextNumber(0.04, 0.2) or r < 0.75 and rng:NextNumber(0.2, 0.7) or rng:NextNumber(0.7, 0.97)
-	elseif t.Kind == "Body" then
-		t.R0 = rng:NextNumber(0.3, 1)
-		t.TipU = rng:NextNumber(0.85, 1.05)
-		t.TipOff = rng:NextNumber(-0.5, 0.5)
-	else
-		t.R0 = rng:NextNumber(0.5, 0.9)
-		t.Lift = rng:NextNumber(0.2, 1.5)
-		t.TipU = rng:NextNumber(0.45, 0.7)
+local function ringPiece(name: string): Part
+	local p = fxPart(name, Vector3.new(0.4, 0.06, 0.2))
+	p.Material = Enum.Material.Neon
+	return p
+end
+
+-- a new random start for a flame (and, for a lick, a new place to break off from)
+local function reroll(t)
+	t.WidthMul = rng:NextNumber(0.75, 1.25)
+	t.HeightMul = rng:NextNumber(0, 1)
+	t.LeanMul = rng:NextNumber(0.7, 1.3)
+	t.SpeedMul = rng:NextNumber(0.75, 1.3)
+	if t.Kind == "Lick" then
+		t.Angle = rng:NextNumber(0, math.pi * 2)
 	end
 end
 
 local function resetSwoosh(w, feet: number, first: boolean)
 	w.Angle = rng:NextNumber(0, math.pi * 2)
-	w.R = rng:NextNumber(2, 3) * S
+	w.R = rng:NextNumber(2.2, 3.2) * S
 	w.Y = feet + (first and rng:NextNumber(0, 6) or rng:NextNumber(0, 1)) * S
 	w.Top = feet + rng:NextNumber(6, 9) * S
 	w.Rise = rng:NextNumber(4, 7) * S
@@ -2896,10 +3035,12 @@ local function newFX(character: Model, root: BasePart)
 		Flare = 1,
 		Gold = 0,
 		PaintedGold = -1,
+		Spin = 0, -- the whole fire slowly turns round you
+		RipplePhase = 0,
 		-- how far below the HumanoidRootPart's centre the feet are
 		FootDrop = (humanoid and humanoid.HipHeight or 2) + root.Size.Y / 2,
 	}
-	fx.Aura = fxPart("Aura", Vector3.new(3.2, 5.6, 3.2) * S)
+	fx.Aura = fxPart("Aura", Vector3.new(4.8, 6, 4.8) * S)
 
 	fx.Tongues = {}
 	local amount = math.max(PowerConfig.AuraFlames or 1, 0)
@@ -2909,21 +3050,37 @@ local function newFX(character: Model, root: BasePart)
 		for k = 1, count do
 			local beam, a0, a1 = newBeam(fx.Aura, group.Transparency)
 			local t = {
-				Group = group, GroupIndex = gi, Kind = group.Kind, Index = k, Of = count, Offset = offset,
-				Beam = beam, A0 = a0, A1 = a1, Boil = 1,
+				Group = group, GroupIndex = gi, Kind = group.Kind, Index = k, Of = count,
+				Beam = beam, A0 = a0, A1 = a1, Boil = 1, BoilAngle = 0,
+				-- spread evenly round the ring, a little uneven
+				Angle = (k - 1) / count * math.pi * 2 + offset + rng:NextNumber(-0.4, 0.4) * (math.pi * 2 / count),
+				Phase = rng:NextNumber(0, math.pi * 2),
+				Life = rng:NextNumber(),
 			}
-			respawn(t)
-			t.Phase = rng:NextNumber()
+			reroll(t)
 			table.insert(fx.Tongues, t)
 		end
 	end
 	fx.FrameClock = math.huge -- draw the first frame straight away
+
 	fx.Swooshes = {}
 	for _ = 1, SWOOSHES do
 		local beam, a0, a1 = newBeam(fx.Aura, seq({ { 0, 1 }, { 0.5, 0.35 }, { 1, 0.05 } }))
 		local w = { Beam = beam, A0 = a0, A1 = a1 }
 		resetSwoosh(w, -fx.FootDrop, true)
 		table.insert(fx.Swooshes, w)
+	end
+
+	-- the glowing ring on the ground, and the ripples pulsing out of it
+	fx.Ring, fx.RingLocal = {}, {}
+	for k = 1, RING_SEGMENTS do
+		fx.Ring[k] = ringPiece("AuraRing")
+		fx.RingLocal[k] = CFrame.identity
+	end
+	fx.RipplePieces, fx.RippleLocal = {}, {}
+	for k = 1, RIPPLE_SEGMENTS do
+		fx.RipplePieces[k] = ringPiece("AuraRipple")
+		fx.RippleLocal[k] = CFrame.identity
 	end
 
 	fx.Streaks = emitter(fx.Aura, { -- light streaks shooting up past the body
@@ -2939,16 +3096,21 @@ local function newFX(character: Model, root: BasePart)
 		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35 * S), NumberSequenceKeypoint.new(1, 0.1 * S) }),
 		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) }),
 	})
-	fx.Sparks = emitter(fx.Aura, {
+	fx.Sparks = emitter(fx.Aura, { -- sparks floating up through the fire
 		Texture = SPARK,
 		LightEmission = 1,
 		Shape = Enum.ParticleEmitterShape.Cylinder,
 		ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
 		EmissionDirection = Enum.NormalId.Top,
-		Lifetime = NumberRange.new(0.3, 0.6),
-		Speed = NumberRange.new(12, 22),
-		SpreadAngle = Vector2.new(30, 30),
-		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3 * S), NumberSequenceKeypoint.new(1, 0) }),
+		Lifetime = NumberRange.new(0.8, 1.6),
+		Speed = NumberRange.new(3, 9),
+		SpreadAngle = Vector2.new(25, 25),
+		Acceleration = Vector3.new(0, 2, 0),
+		Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.2, 0.28 * S),
+			NumberSequenceKeypoint.new(1, 0),
+		}),
 	})
 	fx.Haze = emitter(fx.Aura, { -- a soft glow around the flames
 		Texture = SMOKE,
@@ -2957,7 +3119,7 @@ local function newFX(character: Model, root: BasePart)
 		Lifetime = NumberRange.new(0.7, 1.1),
 		Speed = NumberRange.new(1, 3),
 		SpreadAngle = Vector2.new(20, 20),
-		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.86), NumberSequenceKeypoint.new(1, 1) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.88), NumberSequenceKeypoint.new(1, 1) }),
 	})
 	fx.Light = Instance.new("PointLight")
 	fx.Light.Shadows = false
@@ -2987,7 +3149,7 @@ local function newFX(character: Model, root: BasePart)
 		table.insert(fx.Rocks, {
 			Part = rock,
 			Angle = (i / ROCKS) * math.pi * 2 + rng:NextNumber(-0.3, 0.3),
-			Radius = rng:NextNumber(3, 5.5) * S,
+			Radius = rng:NextNumber(3.5, 6) * S,
 			Top = rng:NextNumber(1.2, 3.8),
 			Height = 0,
 			Spin = rng:NextNumber(-1.5, 1.5),
@@ -3020,6 +3182,12 @@ local function destroyFX(fx)
 	for _, r in fx.Rocks do
 		r.Part:Destroy()
 	end
+	for _, p in fx.Ring do
+		p:Destroy()
+	end
+	for _, p in fx.RipplePieces do
+		p:Destroy()
+	end
 	if fx.Pillar then
 		fx.Pillar:Destroy()
 	end
@@ -3030,7 +3198,7 @@ local function destroyFX(fx)
 	end
 end
 
--- recolours everything when the aura's colour changes (base white-blue <-> Super Saiyan gold)
+-- recolours everything when the aura's colour changes (base blue <-> Super Saiyan gold)
 local function paint(fx)
 	local g = fx.Gold
 	local main = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, g)
@@ -3045,6 +3213,13 @@ local function paint(fx)
 	for _, w in fx.Swooshes do
 		w.Beam.Color = swoosh
 	end
+	local ringColor = main:Lerp(Color3.new(1, 1, 1), 0.25)
+	for _, p in fx.Ring do
+		p.Color = ringColor
+	end
+	for _, p in fx.RipplePieces do
+		p.Color = main
+	end
 	fx.Streaks.Color = ColorSequence.new(core, main)
 	fx.Sparks.Color = ColorSequence.new(core)
 	fx.Haze.Color = ColorSequence.new(main)
@@ -3054,7 +3229,7 @@ local function paint(fx)
 end
 
 ----------------------------------------------------------------------------------------
--- the transformation burst
+-- the transformation explosion
 ----------------------------------------------------------------------------------------
 local function playBurst(fx, root: BasePart, groundY: number)
 	fx.Streaks:Emit(70)
@@ -3132,15 +3307,16 @@ local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 groundParams.IgnoreWater = true
 
-local function targetIntensity(character: Model): number
+local function targetIntensity(character: Model, fx): number
 	local state = character:GetAttribute("PowerState")
 	if state == "Charging" then
 		local c = character:GetAttribute("Charge") or 0
 		return c >= PowerConfig.AuraStart and math.max(c, 0.12) or 0
 	elseif state == "Bursting" then
-		return 1.3
+		return (fx and fx.Exploded) and 1.25 or 1 -- the power builds, then explodes out
 	elseif character:GetAttribute("Form") == "SSJ" then
-		return PowerConfig.SSJIdleAura
+		-- the golden aura stays up after transforming and fades when you calm down
+		return PowerConfig.SSJIdleAura * (character:GetAttribute("Breeze") or 1)
 	end
 	return 0
 end
@@ -3155,18 +3331,20 @@ local function characters()
 	return list
 end
 
--- moves the flames, streaks and swirls of one character's aura
+-- moves the flames, ring, streaks and swirls of one character's aura
 local function updateAura(fx, i: number, dt: number, camDir: Vector3?)
 	-- glow, light and particles change smoothly every frame
 	local visible = i > 0.02
+	local k = math.min(i, 1.4)
 	fx.Streaks.Rate = i > 0.3 and 70 * (i - 0.3) or 0
-	fx.Sparks.Rate = i > 0.5 and 60 * (i - 0.5) or 0
+	fx.Sparks.Rate = visible and (6 + 34 * i) or 0
 	fx.Haze.Rate = visible and (6 + 18 * i) or 0
 	fx.Haze.Size = NumberSequence.new(5 * S * (0.7 + 0.5 * i))
 	fx.Light.Range = visible and (8 + 18 * i) or 0
 	fx.Light.Brightness = ease(fx.Light.Brightness, visible and (1 + 5 * i) or 0, 6, dt)
+	fx.Spin += dt * (0.25 + 0.35 * k)
 
-	-- the flames change shape in steps, like hand-drawn anime frames
+	-- the shapes change in steps (AuraFrameRate a second); a low rate flickers like anime
 	fx.FrameClock += dt
 	if fx.FrameClock < 1 / AURA_FPS then
 		return
@@ -3175,68 +3353,90 @@ local function updateAura(fx, i: number, dt: number, camDir: Vector3?)
 	fx.FrameClock = 0
 
 	local feet = -fx.FootDrop
-	local k = math.min(i, 1.4)
-	local height = lerp(SHELL_HEIGHT[1], SHELL_HEIGHT[2], k) * S * fx.Flare
-	local half = lerp(SHELL_WIDTH[1], SHELL_WIDTH[2], math.min(k, 1.2)) * S
-	local share = i > 0.02 and math.clamp(0.3 + 0.8 * i, 0, 1) or 0 -- fewer flames at low power
+	local ringRadius = lerp(RING_RADIUS[1], RING_RADIUS[2], math.min(k, 1.2)) * S
+	local tallest = lerp(FLAME_HEIGHT[1], FLAME_HEIGHT[2], k) * S * fx.Flare
+	local leanMax = lerp(FLAME_LEAN[1], FLAME_LEAN[2], k) * S
+	local share = visible and math.clamp(0.35 + 0.75 * i, 0, 1) or 0 -- fewer flames at low power
+
 	for _, t in fx.Tongues do
 		local group = t.Group
-		t.Phase += step * lerp(group.Speed[1], group.Speed[2], math.min(k, 1.2)) * t.SpeedMul
-		if t.Phase >= 1 then
-			t.Phase -= math.floor(t.Phase)
-			respawn(t)
-		end
+		local speed = lerp(group.Speed[1], group.Speed[2], math.min(k, 1.2)) * t.SpeedMul
 		if t.Index > math.ceil(t.Of * share) then
 			if t.Beam.Width0 ~= 0 then
 				t.Beam.Width0 = 0
 			end
 			continue
 		end
-		-- every drawn frame each flame wobbles a little, as if redrawn by hand
-		t.Boil = rng:NextNumber(0.85, 1.15)
-		local a = t.Angle + rng:NextNumber(-0.06, 0.06)
-		-- each lick shoots out fast, then thins away and starts again somewhere else
-		local p = t.Phase
-		local grow = smooth(0, 0.3, p)
-		local fade = 1 - smooth(0.65, 1, p)
+		-- each drawn frame every flame wobbles a little, as if redrawn by hand
+		t.Boil = rng:NextNumber(0.9, 1.1)
+		t.BoilAngle = rng:NextNumber(-0.04, 0.04)
+		local a = t.Angle + fx.Spin + t.BoilAngle
 		local out = Vector3.new(math.cos(a), 0, math.sin(a))
-		local width = lerp(group.Width[1], group.Width[2], k) * S * t.WidthMul * (0.4 + 0.6 * grow) * (0.25 + 0.75 * fade)
-		if camDir then
-			-- flames between the camera and the character thin out so they don't hide them
-			width *= 1 - 0.65 * smooth(0.3, 0.85, out:Dot(camDir))
-		end
-		if t.Kind == "Spike" then
-			-- sits on the shell and points outward: sideways low down, diagonally in the middle,
-			-- straight up on top, curling upward at the tip
-			local u = t.U
-			local dir = (out * (1.15 - 0.95 * u) + Vector3.yAxis * (-0.1 + 1.45 * u)).Unit
-			local len = (0.18 + 0.22 * u) * height * t.LenMul * t.Boil * (0.5 + 0.5 * grow)
-			local base = out * (outline(u) * half * 0.8) + Vector3.new(0, feet + u * height, 0)
-			t.A0.CFrame = pointing(base, dir)
-			t.A1.CFrame = pointing(base + dir * len, (dir + Vector3.yAxis * 0.5).Unit)
-			t.Beam.CurveSize0 = len * 0.3
-			t.Beam.CurveSize1 = len * 0.25
-		elseif t.Kind == "Body" then
-			-- rises from the feet, bows outward along the shell and meets the top
-			local top = t.TipU * height * t.Boil * (0.6 + 0.4 * grow)
-			local base = out * (t.R0 * S) + Vector3.new(0, feet + 0.1 * S, 0)
-			t.A0.CFrame = pointing(base, (out * 0.9 + Vector3.yAxis * 0.7).Unit)
-			t.A1.CFrame = CFrame.new(-out * (t.TipOff * S) + Vector3.new(0, feet + top, 0)) * UP_FRAME
-			t.Beam.CurveSize0 = top * 0.45
-			t.Beam.CurveSize1 = top * 0.2
+		local front = camDir and smooth(0.05, 0.6, out:Dot(camDir)) or 0 -- between the camera and you
+		local width = lerp(group.Width[1], group.Width[2], math.min(k, 1)) * S * t.WidthMul
+		local height, lean, baseY, radius
+		if t.Kind == "Lick" then
+			-- breaks off near the ground and rises along the fire, shrinking as it goes
+			t.Life += step * speed
+			if t.Life >= 1 then
+				t.Life -= math.floor(t.Life)
+				reroll(t)
+			end
+			local life = t.Life
+			height = lerp(group.Height[1], group.Height[2], t.HeightMul) * tallest * (1 - 0.5 * life) * t.Boil
+			baseY = feet + 0.15 * S + life * 0.6 * tallest
+			lean = leanMax * t.LeanMul * (baseY - feet) / math.max(tallest, 0.1)
+			radius = ringRadius + lean
+			width *= (1 - life) * smooth(0, 0.15, life)
 		else
-			local h = t.TipU * height * t.Boil * (0.5 + 0.5 * grow)
-			local base = out * (t.R0 * S) + Vector3.new(0, feet + t.Lift * S, 0)
-			t.A0.CFrame = CFrame.new(base) * UP_FRAME
-			t.A1.CFrame = CFrame.new(base + out * (0.3 * S) + Vector3.new(0, h, 0)) * UP_FRAME
-			t.Beam.CurveSize0 = h * 0.35
-			t.Beam.CurveSize1 = h * 0.2
+			-- rooted on the ring; licks up and down
+			t.Phase += step * speed
+			local lick = 0.8 + 0.2 * math.sin(t.Phase) + 0.08 * math.sin(t.Phase * 2.7 + t.Index)
+			height = lerp(group.Height[1], group.Height[2], t.HeightMul) * tallest * lick * t.Boil
+			baseY = feet + 0.03 * S
+			radius = ringRadius * (t.Kind == "Streak" and 0.9 or 0.97)
+			lean = 0
 		end
+		local tipLean = leanMax * t.LeanMul * height / math.max(tallest, 0.1)
+		width *= 1 - 0.85 * front
+		local base = out * radius + Vector3.new(0, baseY, 0)
+		local tip = out * (radius + tipLean) + Vector3.new(0, baseY + height, 0)
+		t.A0.CFrame = CFrame.new(base) * UP_FRAME
+		t.A1.CFrame = pointing(tip, (Vector3.yAxis * height + out * (tipLean * 1.3)).Unit)
 		t.Beam.Width0 = width
+		t.Beam.CurveSize0 = height * 0.4
+		t.Beam.CurveSize1 = height * 0.2
 	end
 
-	-- energy streaks swirling up around the body
-	local swirl = smooth(0.35, 0.8, i)
+	-- the glowing ground ring: flickers, and swells with power
+	local ringOn = visible and smooth(0.02, 0.25, i) or 0
+	local length = 2 * ringRadius * math.sin(math.pi / #fx.Ring) * 1.15
+	for n, p in fx.Ring do
+		local a = (n - 1) / #fx.Ring * math.pi * 2 + fx.Spin * 0.3
+		local r = ringRadius * (1 + rng:NextNumber(-0.025, 0.025))
+		fx.RingLocal[n] = CFrame.new(math.cos(a) * r, feet + 0.04, math.sin(a) * r) * CFrame.Angles(0, -(a + math.pi / 2), 0)
+		p.Size = Vector3.new(length, 0.06 * S, (0.14 + 0.12 * k) * S * rng:NextNumber(0.8, 1.25))
+		p.Transparency = 1 - ringOn * rng:NextNumber(0.55, 0.9)
+	end
+	-- ripples pulse out of it along the ground while the power is high
+	fx.RipplePhase += step * (0.9 + 0.8 * k)
+	if fx.RipplePhase >= 1 then
+		fx.RipplePhase -= math.floor(fx.RipplePhase)
+	end
+	local ripple = fx.RipplePhase
+	local rippleOn = visible and smooth(0.3, 0.7, i) or 0
+	local rippleRadius = ringRadius * (1 + 0.9 * ripple)
+	local rippleLength = 2 * rippleRadius * math.sin(math.pi / #fx.RipplePieces) * 1.15
+	for n, p in fx.RipplePieces do
+		local a = (n - 1) / #fx.RipplePieces * math.pi * 2
+		fx.RippleLocal[n] = CFrame.new(math.cos(a) * rippleRadius, feet + 0.03, math.sin(a) * rippleRadius)
+			* CFrame.Angles(0, -(a + math.pi / 2), 0)
+		p.Size = Vector3.new(rippleLength, 0.05 * S, 0.1 * S)
+		p.Transparency = 1 - rippleOn * 0.6 * (1 - ripple)
+	end
+
+	-- energy streaks swirling up around you
+	local swirl = smooth(0.3, 0.75, i)
 	for _, w in fx.Swooshes do
 		w.Angle += step * w.Spin * (0.6 + i)
 		w.Y += step * w.Rise * (0.6 + i)
@@ -3277,16 +3477,29 @@ RunService.RenderStepped:Connect(function(dt)
 	for _, character in characters() do
 		seen[character] = true
 		local root = character:FindFirstChild("HumanoidRootPart")
-		local want = targetIntensity(character)
 		local state = character:GetAttribute("PowerState")
 		local fx = active[character]
+		local want = targetIntensity(character, fx)
 		if not fx and (want > 0 or state == "Charging") and root then
 			fx = newFX(character, root)
 			active[character] = fx
 		end
 		if fx and root then
+			-- the transformation: the power builds for ExplodeAt seconds, then explodes out
+			if state == "Bursting" then
+				fx.BurstAt = fx.BurstAt or now
+				if not fx.Exploded and now - fx.BurstAt >= EXPLODE_AT then
+					fx.Exploded = true
+					local hit = Workspace:Raycast(root.Position, Vector3.new(0, -12, 0), groundParams)
+					playBurst(fx, root, hit and hit.Position.Y or root.Position.Y - fx.FootDrop)
+				end
+			else
+				fx.BurstAt, fx.Exploded = nil, false
+			end
+			want = targetIntensity(character, fx)
+
 			-- smooth ramps: fast up, slower down
-			fx.Intensity = ease(fx.Intensity, want, want > fx.Intensity and 5 or 2, dt)
+			fx.Intensity = ease(fx.Intensity, want, want > fx.Intensity and 5 or 1.5, dt)
 			local i = fx.Intensity
 			fx.Flare = ease(fx.Flare, 1, 2.5, dt)
 			local gold = (character:GetAttribute("Form") == "SSJ" or state == "Bursting") and 1 or 0
@@ -3295,20 +3508,10 @@ RunService.RenderStepped:Connect(function(dt)
 				paint(fx)
 			end
 
-			if state == "Bursting" and not fx.Burst then
-				fx.Burst = true
-				local hit = Workspace:Raycast(root.Position, Vector3.new(0, -12, 0), groundParams)
-				playBurst(fx, root, hit and hit.Position.Y or root.Position.Y - fx.FootDrop)
-			elseif state ~= "Bursting" then
-				fx.Burst = false
-			end
-
 			-- the aura follows the character, kept upright
 			local look = root.CFrame.LookVector
 			local flat = Vector3.new(look.X, 0, look.Z)
 			local auraCF = flat.Magnitude > 1e-3 and CFrame.lookAt(root.Position, root.Position + flat) or CFrame.new(root.Position)
-			table.insert(moveParts, fx.Aura)
-			table.insert(moveFrames, auraCF)
 			local camDir = nil
 			if camPos then
 				local rel = auraCF:PointToObjectSpace(camPos)
@@ -3318,6 +3521,16 @@ RunService.RenderStepped:Connect(function(dt)
 				end
 			end
 			updateAura(fx, i, dt, camDir)
+			table.insert(moveParts, fx.Aura)
+			table.insert(moveFrames, auraCF)
+			for n, p in fx.Ring do
+				table.insert(moveParts, p)
+				table.insert(moveFrames, auraCF * fx.RingLocal[n])
+			end
+			for n, p in fx.RipplePieces do
+				table.insert(moveParts, p)
+				table.insert(moveFrames, auraCF * fx.RippleLocal[n])
+			end
 
 			-- ground: dust and lifting rocks (only if there's ground close below)
 			local hit = Workspace:Raycast(root.Position, Vector3.new(0, -(fx.FootDrop + 5), 0), groundParams)
@@ -3355,10 +3568,15 @@ RunService.RenderStepped:Connect(function(dt)
 				fx.Strain = ease(fx.Strain, smooth(0.2, 0.85, charge), 3, dt)
 				fx.Release = ease(fx.Release, 0, 10, dt)
 			elseif state == "Bursting" then
-				fx.Release = ease(fx.Release, 1, 14, dt) -- snaps into the release pose and holds it
+				if fx.Exploded then
+					fx.Release = ease(fx.Release, 1, 14, dt) -- snaps into the release pose and holds it
+				else
+					fx.Strain = ease(fx.Strain, 1, 4, dt) -- hunched, straining, as the power builds
+				end
 			end
 			fx.Shudder = math.max(fx.Shudder - dt * 0.8, 0)
-			fx.Tremble = 0.035 * fx.Strain * (1 - fx.Release) + 0.03 * fx.Shudder
+			local building = (state == "Bursting" and not fx.Exploded) and 0.5 or 0
+			fx.Tremble = 0.035 * fx.Strain * (1 - fx.Release) + 0.03 * fx.Shudder + 0.02 * building
 
 			-- tidy up once fully calm
 			if want <= 0 and fx.Intensity < 0.01 and fx.Pose < 0.01 and state ~= "Charging" then
@@ -3434,7 +3652,1049 @@ end)
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="13">
+      <Item class="ModuleScript" referent="13">
+        <Properties>
+          <string name="Name">SSJCutscene</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	SSJCutscene  (ModuleScript — lives in StarterPlayer > StarterPlayerScripts, next to
+	PowerUpClient, which plays it)
+
+	The transformation cutscene the transforming player sees:
+	  0.0 s   black bars slide in; an extreme close-up pans across your eyes
+	  1.0 s   the camera sweeps up over your hair as it turns gold and blows upward
+	  2.2 s   (PowerConfig.ExplodeAt) the power explodes: a white flash, the camera slams back to
+	          a low angle and pulls away, and manga focus lines frame you
+	  2.6 s   a manga box drops in: "THIS IS—"
+	  3.25 s  ...then a bigger one: "SUPER SAIYAN!"   (PowerConfig.CutsceneText)
+	  end     the boxes fly off, the bars slide away and you get control back
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+
+local EXPLODE = PowerConfig.ExplodeAt or 2.2
+local EYES_END = math.min(1, EXPLODE * 0.45) -- the eye close-up, then the hair until the explosion
+local BAR = 0.13 -- height of each black bar (share of the screen)
+local FOCUS_LINES = 40
+
+local player = Players.LocalPlayer
+local rng = Random.new()
+
+local Cutscene = { Playing = false }
+
+local function lerp(a: number, b: number, t: number): number
+	return a + (b - a) * t
+end
+
+local function easeOut(t: number): number
+	t = math.clamp(t, 0, 1)
+	return 1 - (1 - t) ^ 3
+end
+
+local function easeInOut(t: number): number
+	t = math.clamp(t, 0, 1)
+	return t * t * (3 - 2 * t)
+end
+
+local function new(className: string, props, parent: Instance?)
+	local inst = Instance.new(className)
+	for k, v in props do
+		inst[k] = v
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+
+----------------------------------------------------------------------------------------
+-- the screen layer (built once, shown only during the cutscene)
+----------------------------------------------------------------------------------------
+local gui = new("ScreenGui", {
+	Name = "SSJCutscene",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	DisplayOrder = 50,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	Enabled = false,
+}, player:WaitForChild("PlayerGui"))
+
+-- manga focus lines: thin black wedges pointing in at you from the edges of the screen
+local lines = new("Frame", {
+	Name = "FocusLines",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	ZIndex = 1,
+}, gui)
+
+local flash = new("Frame", {
+	Name = "Flash",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ZIndex = 2,
+}, gui)
+
+local topBar = new("Frame", {
+	Name = "TopBar",
+	Size = UDim2.fromScale(1, 0),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BorderSizePixel = 0,
+	ZIndex = 5,
+}, gui)
+local bottomBar = new("Frame", {
+	Name = "BottomBar",
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.fromScale(0, 1),
+	Size = UDim2.fromScale(1, 0),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BorderSizePixel = 0,
+	ZIndex = 5,
+}, gui)
+
+-- a manga text box: a white panel with a thick black border and a hard black shadow
+local function mangaBox(name: string, width: number, aspect: number, rotation: number)
+	local holder = new("Frame", {
+		Name = name,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromScale(width, width * 3),
+		BackgroundTransparency = 1,
+		Rotation = rotation,
+		Visible = false,
+		ZIndex = 10,
+	}, gui)
+	new("UIAspectRatioConstraint", { AspectRatio = aspect }, holder)
+	local scale = new("UIScale", { Scale = 1 }, holder)
+	new("Frame", {
+		Name = "Shadow",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 8, 0.5, 8),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BorderSizePixel = 0,
+		ZIndex = 10,
+	}, holder)
+	local panel = new("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+		ZIndex = 11,
+	}, holder)
+	new("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 4, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, panel)
+	local text = new("TextLabel", {
+		Name = "Text",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.9, 0.78),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.Bangers,
+		TextScaled = true,
+		TextColor3 = Color3.new(0, 0, 0),
+		Text = "",
+		ZIndex = 12,
+	}, panel)
+	return { Holder = holder, Scale = scale, Text = text, Rotation = rotation }
+end
+
+local box1 = mangaBox("BoxThisIs", 0.3, 4.2, -4)
+local box2 = mangaBox("BoxSuperSaiyan", 0.46, 4.6, 3)
+local BOX1_AT = UDim2.fromScale(0.27, 0.28)
+local BOX2_AT = UDim2.fromScale(0.66, 0.72)
+
+local function buildFocusLines()
+	lines:ClearAllChildren()
+	local okSize, size = pcall(function()
+		return gui.AbsoluteSize
+	end)
+	if not okSize or not size or size.X < 10 then
+		local camera = Workspace.CurrentCamera
+		size = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	end
+	local centre = size / 2
+	local inner = math.min(size.X, size.Y) * 0.36
+	local outer = size.Magnitude * 0.6
+	for k = 1, FOCUS_LINES do
+		local a = (k - 1) / FOCUS_LINES * math.pi * 2 + rng:NextNumber(-0.06, 0.06)
+		local r0 = inner * rng:NextNumber(0.9, 1.3)
+		local length = outer - r0
+		local mid = centre + Vector2.new(math.cos(a), math.sin(a)) * (r0 + length / 2)
+		local line = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset(mid.X, mid.Y),
+			Size = UDim2.fromOffset(length, rng:NextNumber(2, 7)),
+			Rotation = math.deg(a),
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BorderSizePixel = 0,
+			ZIndex = 1,
+		}, lines)
+		-- thin and faint at the inner end, thick and solid at the edge of the screen
+		new("UIGradient", {
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.35, 0.35),
+				NumberSequenceKeypoint.new(1, 0),
+			}),
+		}, line)
+	end
+end
+
+local function setLines(transparency: number)
+	for _, line in lines:GetChildren() do
+		if line:IsA("Frame") then
+			line.BackgroundTransparency = transparency
+		end
+	end
+end
+
+local function tween(inst: Instance, seconds: number, props, style, direction)
+	local tw = TweenService:Create(
+		inst,
+		TweenInfo.new(seconds, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out),
+		props
+	)
+	tw:Play()
+	return tw
+end
+
+local function dropIn(box, at: UDim2, text: string)
+	box.Text.Text = text
+	box.Holder.Visible = true
+	box.Holder.Position = UDim2.new(at.X.Scale, at.X.Offset, at.Y.Scale - 0.55, at.Y.Offset)
+	box.Holder.Rotation = box.Rotation - 14
+	box.Scale.Scale = 1
+	tween(box.Holder, 0.38, { Position = at, Rotation = box.Rotation }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	task.delay(0.36, function()
+		-- a little punch when it lands
+		box.Scale.Scale = 1.14
+		tween(box.Scale, 0.22, { Scale = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	end)
+end
+
+local function flyOut(box)
+	local at = box.Holder.Position
+	tween(box.Holder, 0.35, {
+		Position = UDim2.new(at.X.Scale, at.X.Offset, at.Y.Scale - 0.7, at.Y.Offset),
+		Rotation = box.Rotation + 10,
+	}, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+end
+
+----------------------------------------------------------------------------------------
+-- the camera shots (all measured from your head / body as they move)
+----------------------------------------------------------------------------------------
+local function eyesShot(head: BasePart, u: number): (CFrame, number)
+	local h = head.CFrame
+	local e = easeInOut(u)
+	local eye = h * Vector3.new(lerp(0.32, -0.32, e), 0.12, -1.45)
+	local look = h * Vector3.new(lerp(0.12, -0.12, e), 0.1, 0)
+	return CFrame.lookAt(eye, look, h.UpVector), lerp(24, 17, e)
+end
+
+local function hairShot(head: BasePart, u: number): (CFrame, number)
+	local h = head.CFrame
+	local e = easeInOut(u)
+	local eye = h * Vector3.new(lerp(0.55, 0.2, e), lerp(0.25, 1.9, e), lerp(-2.1, -2.9, e))
+	local look = h * Vector3.new(0, lerp(0.5, 2.2, e), 0)
+	return CFrame.lookAt(eye, look, h.UpVector), lerp(42, 50, e)
+end
+
+local function pullShot(root: BasePart, u: number): (CFrame, number)
+	local r = root.CFrame
+	local e = easeOut(u * 1.6)
+	local eye = r * Vector3.new(lerp(0.8, 2.6, e), lerp(-1.6, 0.3, e), lerp(-4.5, -13, e))
+	local look = r * Vector3.new(0, lerp(1.9, 1.3, e), 0)
+	return CFrame.lookAt(eye, look), lerp(80, 62, e)
+end
+
+----------------------------------------------------------------------------------------
+-- playing it
+----------------------------------------------------------------------------------------
+local stopCurrent: (() -> ())? = nil
+
+-- Plays the cutscene on character for duration seconds. onDone runs when it ends.
+function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
+	if stopCurrent then
+		stopCurrent()
+	end
+	local head = character:FindFirstChild("Head")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local camera = Workspace.CurrentCamera
+	if not (head and root and camera) then
+		if onDone then
+			onDone()
+		end
+		return
+	end
+	local texts = PowerConfig.CutsceneText or { "THIS IS—", "SUPER SAIYAN!" }
+	Cutscene.Playing = true
+	player:SetAttribute("InCutscene", true)
+	-- hide the phone's thumbstick and jump button for the cinematic
+	local okModal, wasModal = pcall(function()
+		return UserInputService.ModalEnabled
+	end)
+	pcall(function()
+		UserInputService.ModalEnabled = true
+	end)
+	gui.Enabled = true
+	buildFocusLines()
+	setLines(1)
+	flash.BackgroundTransparency = 1
+	box1.Holder.Visible = false
+	box2.Holder.Visible = false
+	topBar.Size = UDim2.fromScale(1, 0)
+	bottomBar.Size = UDim2.fromScale(1, 0)
+	tween(topBar, 0.3, { Size = UDim2.fromScale(1, BAR) })
+	tween(bottomBar, 0.3, { Size = UDim2.fromScale(1, BAR) })
+
+	local start = os.clock()
+	local fired = {}
+	local function once(key: string, at: number, t: number, fn: () -> ())
+		if not fired[key] and t >= at then
+			fired[key] = true
+			fn()
+		end
+	end
+	local shake = 0
+	local finished = false
+	local function stop()
+		if finished then
+			return
+		end
+		finished = true
+		stopCurrent = nil
+		RunService:UnbindFromRenderStep("DWCutsceneCamera")
+		gui.Enabled = false
+		Cutscene.Playing = false
+		player:SetAttribute("InCutscene", false)
+		pcall(function()
+			UserInputService.ModalEnabled = okModal and wasModal or false
+		end)
+		if onDone then
+			onDone()
+		end
+	end
+	stopCurrent = stop
+
+	RunService:BindToRenderStep("DWCutsceneCamera", Enum.RenderPriority.Camera.Value + 2, function()
+		local t = os.clock() - start
+		if t >= duration or not character.Parent or not head.Parent then
+			stop()
+			return
+		end
+		once("explode", EXPLODE, t, function()
+			flash.BackgroundTransparency = 0
+			tween(flash, 0.7, { BackgroundTransparency = 1 })
+			shake = 0.6
+			setLines(0.1)
+		end)
+		once("box1", EXPLODE + 0.4, t, function()
+			dropIn(box1, BOX1_AT, texts[1] or "")
+		end)
+		once("box2", EXPLODE + 1.05, t, function()
+			dropIn(box2, BOX2_AT, texts[2] or "")
+			shake = math.max(shake, 0.25)
+		end)
+		once("leave", duration - 0.5, t, function()
+			flyOut(box1)
+			flyOut(box2)
+			tween(topBar, 0.4, { Size = UDim2.fromScale(1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			tween(bottomBar, 0.4, { Size = UDim2.fromScale(1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			setLines(1)
+		end)
+
+		local cf, fov
+		if t < EYES_END then
+			cf, fov = eyesShot(head, t / EYES_END)
+			shake = 0.008
+		elseif t < EXPLODE then
+			cf, fov = hairShot(head, (t - EYES_END) / (EXPLODE - EYES_END))
+			shake = 0.02
+		else
+			cf, fov = pullShot(root, (t - EXPLODE) / math.max(duration - EXPLODE, 0.1))
+		end
+		local jolt = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-1, 1), rng:NextNumber(-1, 1)) * shake
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = cf + jolt
+		camera.FieldOfView = fov
+		if t >= EXPLODE then
+			shake = math.max(shake * 0.9, 0.03)
+		end
+	end)
+end
+
+function Cutscene.Stop()
+	if stopCurrent then
+		stopCurrent()
+	end
+end
+
+return Cutscene
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="14">
+        <Properties>
+          <string name="Name">HUD</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HUD  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Your Dragon Ball-style screen:
+	  top left   your face inside a glossy 4-star Dragon Ball (a live 3D portrait), your name and
+	             form, an HP bar (a red trail shows damage you just took) and a Ki gauge in five
+	             cells (blue in base form, gold as a Super Saiyan)
+	  below it   a Scouter lens reading your POWER LEVEL: it scrambles and counts up as you power
+	             up ... and warns you when it's over 9000
+	  top right  a Dragon Radar: a sweeping green screen with a blip for every player nearby
+	             (up on the radar = the way your camera faces)
+	It shrinks to fit phones, and hides during the transformation cutscene.
+	Numbers: ReplicatedStorage > PowerConfig (KiMax, BasePowerLevel, SSJMultiplier, RadarRange).
+]]
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local Workspace = game:GetService("Workspace")
+
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+
+local player = Players.LocalPlayer
+local rng = Random.new()
+
+local BASE_ACCENT = Color3.fromRGB(90, 200, 255)
+local SSJ_ACCENT = Color3.fromRGB(255, 205, 60)
+local DARK = Color3.fromRGB(10, 13, 28)
+local BLACK = Color3.new(0, 0, 0)
+local WHITE = Color3.new(1, 1, 1)
+local KI_CELLS = 5
+local BLIPS = 12
+local RADAR_SCREEN = 128 -- pixels across the radar's green screen
+
+-- our own HP bar replaces Roblox's
+pcall(function()
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+end)
+
+local function new(className: string, props, parent: Instance?)
+	local inst = Instance.new(className)
+	for k, v in props do
+		inst[k] = v
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+
+local function round(parent: Instance, radius: UDim?)
+	return new("UICorner", { CornerRadius = radius or UDim.new(1, 0) }, parent)
+end
+
+local function stroke(parent: Instance, color: Color3, thickness: number, transparency: number?)
+	return new("UIStroke", {
+		Color = color,
+		Thickness = thickness,
+		Transparency = transparency or 0,
+		ApplyStrokeMode = parent:IsA("TextLabel") and Enum.ApplyStrokeMode.Contextual or Enum.ApplyStrokeMode.Border,
+	}, parent)
+end
+
+local function gradient(parent: Instance, a: Color3, b: Color3, rotation: number)
+	return new("UIGradient", { Color = ColorSequence.new(a, b), Rotation = rotation }, parent)
+end
+
+local function text(parent: Instance, props)
+	local l = new("TextLabel", {
+		BackgroundTransparency = 1,
+		TextColor3 = WHITE,
+		TextScaled = true,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, nil)
+	for k, v in props do
+		l[k] = v
+	end
+	l.Parent = parent
+	return l
+end
+
+local function commas(n: number): string
+	local s = tostring(math.floor(n + 0.5))
+	local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	return (out:gsub("^,", ""))
+end
+
+----------------------------------------------------------------------------------------
+-- building the screen
+----------------------------------------------------------------------------------------
+local gui = new("ScreenGui", {
+	Name = "DragonHUD",
+	ResetOnSpawn = false,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	DisplayOrder = 5,
+}, player:WaitForChild("PlayerGui"))
+
+-- top left: the fighter plate (everything inside shrinks together on small screens)
+local plate = new("Frame", {
+	Name = "Plate",
+	Position = UDim2.fromOffset(14, 8),
+	Size = UDim2.fromOffset(410, 214),
+	BackgroundTransparency = 1,
+}, gui)
+local plateScale = new("UIScale", {}, plate)
+
+-- name banner
+local banner = new("Frame", {
+	Name = "Banner",
+	Position = UDim2.fromOffset(92, 8),
+	Size = UDim2.fromOffset(300, 42),
+	BackgroundColor3 = DARK,
+	BackgroundTransparency = 0.1,
+}, plate)
+round(banner, UDim.new(0, 6))
+new("UIGradient", {
+	Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 0.1), NumberSequenceKeypoint.new(1, 0.7) }),
+}, banner)
+local bannerStroke = stroke(banner, BASE_ACCENT, 1.5, 0.35)
+local nameLabel = text(banner, {
+	Name = "Name",
+	Position = UDim2.fromOffset(34, 2),
+	Size = UDim2.new(1, -44, 0, 26),
+	Font = Enum.Font.Bangers,
+	Text = string.upper(player.DisplayName),
+})
+stroke(nameLabel, BLACK, 1.5)
+local formLabel = text(banner, {
+	Name = "Form",
+	Position = UDim2.fromOffset(35, 27),
+	Size = UDim2.new(1, -44, 0, 12),
+	Font = Enum.Font.GothamBlack,
+	Text = "SAIYAN  ·  BASE FORM",
+	TextColor3 = BASE_ACCENT,
+})
+
+-- HP bar
+local hpBack = new("Frame", {
+	Name = "HP",
+	Position = UDim2.fromOffset(126, 58),
+	Size = UDim2.fromOffset(266, 20),
+	BackgroundColor3 = DARK,
+	BackgroundTransparency = 0.15,
+}, plate)
+round(hpBack, UDim.new(0, 4))
+stroke(hpBack, BLACK, 2)
+local hpTrail = new("Frame", {
+	Name = "Trail",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.fromRGB(255, 90, 60),
+}, hpBack)
+round(hpTrail, UDim.new(0, 4))
+local hpFill = new("Frame", {
+	Name = "Fill",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = WHITE,
+}, hpBack)
+round(hpFill, UDim.new(0, 4))
+local hpGradient = gradient(hpFill, Color3.fromRGB(215, 255, 95), Color3.fromRGB(60, 200, 70), 90)
+local hpShine = new("Frame", {
+	Name = "Shine",
+	Position = UDim2.fromOffset(4, 3),
+	Size = UDim2.new(1, -8, 0, 4),
+	BackgroundColor3 = WHITE,
+	BackgroundTransparency = 0.55,
+}, hpFill)
+round(hpShine, UDim.new(0, 2))
+local hpTag = text(hpBack, {
+	Name = "Label",
+	Position = UDim2.fromOffset(8, 1),
+	Size = UDim2.new(0, 30, 1, -2),
+	Font = Enum.Font.Bangers,
+	Text = "HP",
+})
+stroke(hpTag, BLACK, 1.5)
+local hpValue = text(hpBack, {
+	Name = "Value",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -8, 0, 3),
+	Size = UDim2.new(0, 110, 1, -6),
+	TextXAlignment = Enum.TextXAlignment.Right,
+	Text = "100 / 100",
+})
+stroke(hpValue, BLACK, 1.2)
+
+-- Ki gauge: five cells
+local kiFrame = new("Frame", {
+	Name = "Ki",
+	Position = UDim2.fromOffset(126, 85),
+	Size = UDim2.fromOffset(266, 16),
+	BackgroundTransparency = 1,
+}, plate)
+local kiFills, kiStrokes = {}, {}
+local cellWidth = (266 - (KI_CELLS - 1) * 4) / KI_CELLS
+for k = 1, KI_CELLS do
+	local cell = new("Frame", {
+		Name = "Cell" .. k,
+		Position = UDim2.fromOffset((k - 1) * (cellWidth + 4), 0),
+		Size = UDim2.fromOffset(cellWidth, 16),
+		BackgroundColor3 = DARK,
+		BackgroundTransparency = 0.15,
+	}, kiFrame)
+	round(cell, UDim.new(0, 3))
+	kiStrokes[k] = stroke(cell, BLACK, 1.5)
+	local fill = new("Frame", {
+		Name = "Fill",
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = BASE_ACCENT,
+	}, cell)
+	round(fill, UDim.new(0, 3))
+	gradient(fill, WHITE, Color3.fromRGB(200, 200, 200), 90)
+	kiFills[k] = fill
+end
+local kiValue = text(plate, {
+	Name = "KiValue",
+	Position = UDim2.fromOffset(128, 104),
+	Size = UDim2.fromOffset(200, 14),
+	Font = Enum.Font.GothamBlack,
+	Text = "KI  30 / 100",
+	TextColor3 = BASE_ACCENT,
+})
+stroke(kiValue, BLACK, 1)
+
+-- the Dragon Ball with your portrait (made after the bars so it sits on top of them)
+local orb = new("Frame", {
+	Name = "Orb",
+	Size = UDim2.fromOffset(120, 120),
+	BackgroundTransparency = 1,
+}, plate)
+local orbGlow = new("Frame", {
+	Name = "Glow",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(1, 12, 1, 12),
+	BackgroundColor3 = BASE_ACCENT,
+	BackgroundTransparency = 0.7,
+}, orb)
+round(orbGlow)
+local ball = new("Frame", {
+	Name = "Ball",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = WHITE,
+}, orb)
+round(ball)
+gradient(ball, Color3.fromRGB(255, 214, 110), Color3.fromRGB(232, 100, 18), 45)
+stroke(ball, Color3.fromRGB(110, 45, 10), 2.5)
+local portrait = new("ViewportFrame", {
+	Name = "Portrait",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromScale(0.7, 0.7),
+	BackgroundColor3 = Color3.fromRGB(255, 196, 110),
+	Ambient = Color3.fromRGB(175, 165, 150),
+	LightColor = Color3.fromRGB(255, 245, 225),
+	LightDirection = Vector3.new(-0.5, -1, -0.7),
+}, ball)
+round(portrait)
+local gloss = new("Frame", {
+	Name = "Gloss",
+	Position = UDim2.fromScale(0.15, 0.09),
+	Size = UDim2.fromScale(0.3, 0.16),
+	Rotation = -28,
+	BackgroundColor3 = WHITE,
+	BackgroundTransparency = 0.4,
+}, ball)
+round(gloss)
+for k, angle in { 62, 82, 102, 122 } do -- four stars along the bottom of the ball
+	local a = math.rad(angle)
+	local star = text(ball, {
+		Name = "Star" .. k,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5 + 0.41 * math.cos(a), 0.5 + 0.41 * math.sin(a)),
+		Size = UDim2.fromOffset(19, 19),
+		Font = Enum.Font.GothamBlack,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Text = "★",
+		TextColor3 = Color3.fromRGB(230, 30, 30),
+	})
+	stroke(star, Color3.fromRGB(90, 0, 0), 1)
+end
+
+-- the Scouter
+local scouter = new("Frame", {
+	Name = "Scouter",
+	Position = UDim2.fromOffset(4, 138),
+	Size = UDim2.fromOffset(222, 66),
+	Rotation = -2,
+	BackgroundColor3 = Color3.fromRGB(40, 255, 120),
+	BackgroundTransparency = 0.8,
+}, plate)
+round(scouter, UDim.new(0, 8))
+stroke(scouter, Color3.fromRGB(90, 255, 150), 2, 0.15)
+for k = 1, 6 do -- scan lines
+	new("Frame", {
+		Name = "Scan" .. k,
+		Position = UDim2.new(0, 6, 0, 6 + (k - 1) * 10),
+		Size = UDim2.new(1, -12, 0, 1),
+		BackgroundColor3 = Color3.fromRGB(150, 255, 180),
+		BackgroundTransparency = 0.82,
+		BorderSizePixel = 0,
+	}, scouter)
+end
+text(scouter, {
+	Name = "Title",
+	Position = UDim2.fromOffset(12, 6),
+	Size = UDim2.fromOffset(150, 12),
+	Font = Enum.Font.Code,
+	Text = "POWER LEVEL",
+	TextColor3 = Color3.fromRGB(170, 255, 190),
+})
+local powerValue = text(scouter, {
+	Name = "Value",
+	Position = UDim2.fromOffset(12, 19),
+	Size = UDim2.new(1, -24, 0, 40),
+	Font = Enum.Font.Sarpanch,
+	Text = commas(PowerConfig.BasePowerLevel),
+	TextColor3 = Color3.fromRGB(120, 255, 150),
+})
+stroke(powerValue, Color3.fromRGB(0, 60, 20), 1, 0.3)
+local warn9000 = text(scouter, {
+	Name = "Over9000",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.55),
+	Size = UDim2.new(1, -10, 0, 34),
+	Font = Enum.Font.Bangers,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Text = "IT'S OVER 9000!!",
+	TextColor3 = Color3.fromRGB(255, 60, 40),
+	Visible = false,
+	ZIndex = 3,
+})
+stroke(warn9000, BLACK, 2)
+
+-- top right: the Dragon Radar
+local radar = new("Frame", {
+	Name = "Radar",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -14, 0, 8),
+	Size = UDim2.fromOffset(156, 180),
+	BackgroundTransparency = 1,
+}, gui)
+local radarScale = new("UIScale", {}, radar)
+local nub = new("Frame", {
+	Name = "Button",
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.fromScale(0.5, 0),
+	Size = UDim2.fromOffset(32, 14),
+	BackgroundColor3 = Color3.fromRGB(205, 210, 222),
+}, radar)
+round(nub, UDim.new(0, 4))
+stroke(nub, Color3.fromRGB(35, 40, 58), 2)
+local bezel = new("Frame", {
+	Name = "Bezel",
+	Position = UDim2.fromOffset(0, 9),
+	Size = UDim2.fromOffset(156, 156),
+	BackgroundColor3 = WHITE,
+}, radar)
+round(bezel)
+gradient(bezel, Color3.fromRGB(250, 251, 255), Color3.fromRGB(165, 170, 186), 60)
+stroke(bezel, Color3.fromRGB(35, 40, 58), 3)
+local screen = new("Frame", {
+	Name = "Screen",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(RADAR_SCREEN, RADAR_SCREEN),
+	BackgroundColor3 = WHITE,
+}, bezel)
+round(screen)
+gradient(screen, Color3.fromRGB(78, 178, 104), Color3.fromRGB(20, 66, 38), 45)
+stroke(screen, Color3.fromRGB(18, 38, 24), 2)
+do -- the grid, each line cut to fit inside the round screen
+	local r = RADAR_SCREEN / 2
+	for k = -2, 2 do
+		local d = k * RADAR_SCREEN / 6
+		local chord = 2 * math.sqrt(math.max(r * r - d * d, 0)) - 4
+		for _, vertical in { false, true } do
+			new("Frame", {
+				Name = "Grid",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = vertical and UDim2.new(0.5, d, 0.5, 0) or UDim2.new(0.5, 0, 0.5, d),
+				Size = vertical and UDim2.fromOffset(1, chord) or UDim2.fromOffset(chord, 1),
+				BackgroundColor3 = Color3.fromRGB(140, 235, 160),
+				BackgroundTransparency = k == 0 and 0.35 or 0.6,
+				BorderSizePixel = 0,
+			}, screen)
+		end
+	end
+end
+local sweep = new("Frame", {
+	Name = "Sweep",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(RADAR_SCREEN - 6, 2),
+	BackgroundColor3 = Color3.fromRGB(190, 255, 205),
+	BorderSizePixel = 0,
+}, screen)
+new("UIGradient", { -- only the half from the centre outward shows, brightest at the rim
+	Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.5, 1),
+		NumberSequenceKeypoint.new(0.51, 0.7),
+		NumberSequenceKeypoint.new(1, 0),
+	}),
+}, sweep)
+local blips = {}
+for k = 1, BLIPS do
+	local blip = new("Frame", {
+		Name = "Blip",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(8, 8),
+		BackgroundColor3 = Color3.fromRGB(255, 70, 50),
+		Visible = false,
+		ZIndex = 2,
+	}, screen)
+	round(blip)
+	stroke(blip, Color3.fromRGB(90, 0, 0), 1)
+	blips[k] = blip
+end
+local you = new("Frame", { -- you, in the middle
+	Name = "You",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(9, 9),
+	Rotation = 45,
+	BackgroundColor3 = Color3.fromRGB(255, 225, 60),
+	ZIndex = 3,
+}, screen)
+stroke(you, BLACK, 1)
+local radarLabel = text(radar, {
+	Name = "Label",
+	Position = UDim2.fromOffset(0, 167),
+	Size = UDim2.new(1, 0, 0, 13),
+	Font = Enum.Font.GothamBlack,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Text = "DRAGON RADAR  ·  " .. PowerConfig.RadarRange .. "m",
+})
+stroke(radarLabel, BLACK, 1.2)
+
+----------------------------------------------------------------------------------------
+-- the portrait: a copy of your character in the Dragon Ball, looking at your face
+----------------------------------------------------------------------------------------
+local portraitModel: Model? = nil
+local portraitForm = nil
+
+local function buildPortrait(character: Model)
+	if portraitModel then
+		portraitModel:Destroy()
+		portraitModel = nil
+	end
+	local archivable = character.Archivable
+	character.Archivable = true
+	local ok, copy = pcall(function()
+		return character:Clone()
+	end)
+	character.Archivable = archivable
+	if not ok or not copy then
+		return
+	end
+	for _, d in copy:GetDescendants() do
+		if d:IsA("LuaSourceContainer") or d:IsA("Sound") or d:IsA("ParticleEmitter") then
+			d:Destroy()
+		elseif d:IsA("BasePart") then
+			d.Anchored = true
+			if CollectionService:HasTag(d, "HairPhysics") then
+				CollectionService:RemoveTag(d, "HairPhysics") -- no hair physics for the copy
+			end
+		end
+	end
+	local head = copy:FindFirstChild("Head")
+	if not (head and head:IsA("BasePart")) then
+		copy:Destroy()
+		return
+	end
+	copy.Parent = portrait
+	local camera = portrait:FindFirstChildOfClass("Camera") or new("Camera", { FieldOfView = 34 }, portrait)
+	portrait.CurrentCamera = camera
+	local h = head.CFrame
+	local look = h.Position + h.UpVector * 0.55
+	camera.CFrame = CFrame.lookAt(h * Vector3.new(0.35, 0.6, -4.6), look)
+	portraitModel = copy
+	portraitForm = character:GetAttribute("Form")
+end
+
+----------------------------------------------------------------------------------------
+-- every frame
+----------------------------------------------------------------------------------------
+local shownHealth, trailHealth, trailWait = 1, 1, 0
+local shownKi = 0
+local shownPower = PowerConfig.BasePowerLevel
+local scrambleUntil = 0
+local over9000Until = 0
+local lastTarget = PowerConfig.BasePowerLevel
+local accent = BASE_ACCENT
+local sweepAngle = 0
+local character: Model? = nil
+
+local function powerTarget(c: Model): number
+	local base = PowerConfig.BasePowerLevel
+	local state = c:GetAttribute("PowerState")
+	if c:GetAttribute("Form") == "SSJ" then
+		return base * PowerConfig.SSJMultiplier
+	elseif state == "Charging" or state == "Bursting" then
+		return base * (1 + PowerConfig.ChargePowerBoost * (c:GetAttribute("Charge") or 0))
+	end
+	return base
+end
+
+RunService.RenderStepped:Connect(function(dt)
+	dt = math.min(dt, 0.1)
+	local now = os.clock()
+	local hidden = player:GetAttribute("InCutscene")
+	gui.Enabled = not hidden
+	if hidden then
+		-- frozen while the cutscene plays, so afterwards you see the Scouter count your new
+		-- power level up (and tell you it's over 9000)
+		return
+	end
+	local camera = Workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	local scale = math.clamp(viewport.Y / 720, 0.68, 1.15)
+	plateScale.Scale = scale
+	radarScale.Scale = scale
+
+	character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not (character and humanoid) then
+		return
+	end
+
+	-- colours follow your form
+	local ssj = character:GetAttribute("Form") == "SSJ"
+	local target = ssj and SSJ_ACCENT or BASE_ACCENT
+	accent = accent:Lerp(target, 1 - math.exp(-dt * 6))
+	bannerStroke.Color = accent
+	formLabel.TextColor3 = accent
+	formLabel.Text = ssj and "SAIYAN  ·  SUPER SAIYAN" or "SAIYAN  ·  BASE FORM"
+	orbGlow.BackgroundColor3 = accent
+	kiValue.TextColor3 = accent
+	if portraitForm ~= character:GetAttribute("Form") and character:FindFirstChild("Head") then
+		-- re-take the portrait a moment after your form changes, once the new hair shows
+		portraitForm = character:GetAttribute("Form")
+		local c = character
+		task.delay(0.4, function()
+			if player.Character == c then
+				buildPortrait(c)
+			end
+		end)
+	end
+
+	-- HP: the bar drops at once; the red trail behind it catches up a moment later
+	local health = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
+	if health < shownHealth - 0.001 then
+		trailWait = 0.5
+	end
+	shownHealth = health
+	trailWait -= dt
+	if trailWait <= 0 then
+		trailHealth += (shownHealth - trailHealth) * (1 - math.exp(-dt * 4))
+	end
+	trailHealth = math.max(trailHealth, shownHealth)
+	hpFill.Size = UDim2.fromScale(shownHealth, 1)
+	hpTrail.Size = UDim2.fromScale(trailHealth, 1)
+	if health < 0.3 then
+		hpGradient.Color = ColorSequence.new(Color3.fromRGB(255, 150, 80), Color3.fromRGB(220, 40, 30))
+	else
+		hpGradient.Color = ColorSequence.new(Color3.fromRGB(215, 255, 95), Color3.fromRGB(60, 200, 70))
+	end
+	hpValue.Text = ("%d / %d"):format(math.ceil(humanoid.Health), math.floor(humanoid.MaxHealth))
+
+	-- Ki: five cells filling one after another
+	local ki = character:GetAttribute("Ki") or 0
+	shownKi += (ki - shownKi) * (1 - math.exp(-dt * 8))
+	local share = math.clamp(shownKi / PowerConfig.KiMax, 0, 1) * KI_CELLS
+	for k = 1, KI_CELLS do
+		local f = math.clamp(share - (k - 1), 0, 1)
+		kiFills[k].Size = UDim2.fromScale(f, 1)
+		kiFills[k].BackgroundColor3 = accent
+		kiStrokes[k].Color = f >= 1 and accent or BLACK
+	end
+	kiValue.Text = ("KI  %d / %d"):format(math.floor(shownKi + 0.5), PowerConfig.KiMax)
+
+	-- the Scouter: counts toward your power level, scrambling when it jumps
+	local wanted = powerTarget(character)
+	if wanted > lastTarget * 1.3 then
+		scrambleUntil = now + 0.35
+	end
+	if lastTarget <= 9000 and wanted > 9000 then
+		over9000Until = now + 1.6
+	end
+	lastTarget = wanted
+	shownPower += (wanted - shownPower) * (1 - math.exp(-dt * 3))
+	if now < scrambleUntil then
+		powerValue.Text = commas(rng:NextInteger(10 ^ (#tostring(math.floor(wanted)) - 1), 10 ^ #tostring(math.floor(wanted)) - 1))
+	else
+		local wobble = (character:GetAttribute("PowerState") == "Idle") and 1 or (1 + rng:NextNumber(-0.01, 0.01))
+		powerValue.Text = commas(shownPower * wobble)
+	end
+	local warning = now < over9000Until
+	warn9000.Visible = warning and (math.floor(now * 8) % 2 == 0)
+	powerValue.TextTransparency = warning and 0.75 or 0
+
+	-- the Dragon Radar
+	sweepAngle = (sweepAngle + dt * 150) % 360
+	sweep.Rotation = sweepAngle
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local used = 0
+	if root and camera then
+		local look = camera.CFrame.LookVector
+		local yaw = math.atan2(-look.X, -look.Z)
+		local turn = CFrame.Angles(0, -yaw, 0)
+		for _, other in Players:GetPlayers() do
+			local oc = other ~= player and other.Character
+			local oroot = oc and oc:FindFirstChild("HumanoidRootPart")
+			if oroot and used < BLIPS then
+				local rel = turn * (oroot.Position - root.Position)
+				local flat = Vector2.new(rel.X, rel.Z) / PowerConfig.RadarRange
+				if flat.Magnitude <= 1 then
+					used += 1
+					local blip = blips[used]
+					blip.Visible = true
+					blip.Position = UDim2.new(0.5, flat.X * (RADAR_SCREEN / 2 - 6), 0.5, flat.Y * (RADAR_SCREEN / 2 - 6))
+					local pulse = 0.5 + 0.5 * math.sin(now * 6 + used)
+					blip.Size = UDim2.fromOffset(7 + 3 * pulse, 7 + 3 * pulse)
+					blip.BackgroundColor3 = (oc:GetAttribute("Form") == "SSJ") and SSJ_ACCENT or Color3.fromRGB(255, 70, 50)
+				end
+			end
+		end
+	end
+	for k = used + 1, BLIPS do
+		blips[k].Visible = false
+	end
+end)
+
+player.CharacterAdded:Connect(function(c)
+	portraitForm = nil
+	task.delay(1, function()
+		if player.Character == c then
+			buildPortrait(c)
+		end
+	end)
+end)
+if player.Character then
+	task.defer(buildPortrait, player.Character)
+end
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="15">
         <Properties>
           <string name="Name">HairFitTool</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -3723,11 +4983,11 @@ ContextActionService:SetPosition("HairFitTool", UDim2.new(1, -70, 0, 10))
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="14">
+    <Item class="Folder" referent="16">
       <Properties>
         <string name="Name">ServerStorage</string>
       </Properties>
-      <Item class="Folder" referent="15">
+      <Item class="Folder" referent="17">
         <Properties>
           <string name="Name">CharacterParts</string>
         </Properties>

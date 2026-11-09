@@ -7,15 +7,17 @@
 	      start     standing tall, fists clenched at the waist, elbows out
 	      charging  the fuller the bar, the more you hunch over with your head down and your
 	                elbows thrown wide, trembling with effort
-	      release   at the transformation you lean back, head up, arms lowered and spread, and
-	                hold it until you get control back
-	  * the aura, Dragon Ball style: a flame-shaped shell that surrounds you (widest near the
-	    ground with flares sticking out sideways, narrowing to a spiky top), filled with
-	    see-through flames and a white-hot core, flickering in steps like hand-drawn anime
-	    frames. Energy streaks swirl up and light streaks shoot past. It grows bigger and
-	    faster as the bar fills; white-blue in base form, gold as a Super Saiyan.
+	      transform you stay hunched as the power builds, then at the explosion you lean back,
+	                head up, arms lowered and spread, and hold it until you get control back
+	  * the aura: a glowing ring on the ground at your feet with a sheet of fire rising from it
+	    all the way round you. The flames are rooted on the ring, lean outward as they rise and
+	    fade at their tips; thin streaks shoot up through them and licks of flame break off and
+	    rise. Energy swirls round you, ripples pulse out along the ground and sparks float up.
+	    It grows bigger and faster as the bar fills; blue in base form, gold as a Super Saiyan.
+	    After transforming the gold aura stays up, then fades when you calm down (the Breeze
+	    attribute).
 	  * dust blasting off the ground and rocks lifting at high power,
-	  * the transformation burst: a pillar of light, a flash, a shockwave ring and a spray.
+	  * the transformation explosion: a pillar of light, a flash, a shockwave ring and a spray.
 	The hair and belt being blown upward is HairPhysics reacting to the AuraWind attribute.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
@@ -32,6 +34,7 @@ local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 local ROCKS = 8
 local S = PowerConfig.AuraSize
+local EXPLODE_AT = PowerConfig.ExplodeAt or 0
 local rng = Random.new()
 
 local folder = Instance.new("Folder")
@@ -91,7 +94,7 @@ local STRAIN = { -- hunched over, head down, elbows thrown wide, knees bent
 	LeftAnkle = CFrame.Angles(0.45, 0, 0.15),
 	RightAnkle = CFrame.Angles(0.45, 0, -0.15),
 }
-local RELEASE = { -- the transformation: leaning back, head up, arms lowered and spread
+local RELEASE = { -- the explosion: leaning back, head up, arms lowered and spread
 	Root = CFrame.new(0, -0.08, 0) * CFrame.Angles(0.1, 0, 0),
 	Waist = CFrame.Angles(0.3, 0, 0),
 	Neck = CFrame.Angles(0.45, 0, 0),
@@ -112,8 +115,7 @@ local RELEASE = { -- the transformation: leaning back, head up, arms lowered and
 local SHAKE = { Root = 0.5, Waist = 1, Neck = 1.2, LeftShoulder = 0.7, RightShoulder = 0.7, LeftElbow = 0.5, RightElbow = 0.5 }
 
 ----------------------------------------------------------------------------------------
--- the aura: tongues of flame made from Beams (tapered ribbons that always face the
--- camera, so each one reads as a sharp anime flame shape)
+-- the aura
 ----------------------------------------------------------------------------------------
 local function seq(points): NumberSequence
 	local keys = {}
@@ -131,52 +133,43 @@ local function colours(points): ColorSequence
 	return ColorSequence.new(keys)
 end
 
--- The aura is a flame-shaped shell around the body, drawn from the reference: widest near the
--- ground, bulging, then narrowing to a spiky top. PROFILE is its outline: at each height (0 =
--- feet, 1 = top of the shell) how far out it reaches, as a share of its widest point.
-local PROFILE = { { 0, 0.5 }, { 0.1, 1 }, { 0.3, 0.9 }, { 0.55, 0.68 }, { 0.8, 0.42 }, { 1, 0.12 } }
-local SHELL_HEIGHT = { 5.5, 8 } -- studs from the feet to the top of the shell {no power, full power}
-local SHELL_WIDTH = { 2.8, 3.8 } -- studs from the middle out to its widest point
+-- sizes in studs, each {at no power, at full power}
+local RING_RADIUS = { 1.7, 2.4 } -- the glowing ring on the ground the flames rise from
+local FLAME_HEIGHT = { 2.6, 8.5 } -- the tallest flames
+local FLAME_LEAN = { 0.4, 2.2 } -- how far the tops of the tallest flames lean out
+local RING_SEGMENTS = 36 -- glowing pieces the ground ring is made of
+local RIPPLE_SEGMENTS = 24 -- ... and each ripple pulsing out from it
+local SWOOSHES = 4 -- energy streaks swirling up around you
 
-local function outline(u: number): number
-	u = math.clamp(u, 0, 1)
-	for k = 2, #PROFILE do
-		local a, b = PROFILE[k - 1], PROFILE[k]
-		if u <= b[1] then
-			return lerp(a[2], b[2], (u - a[1]) / (b[1] - a[1]))
-		end
-	end
-	return PROFILE[#PROFILE][2]
-end
-
--- The flames, as Beams. Per group: how many, how many times a second each one licks up
--- {no power, full power}, how wide at the base, how see-through from base (0) to tip (1),
--- and its colours.
+-- The flames are Beams: tapered ribbons that always face the camera, so each one reads as a
+-- flame tongue. Per group: how many; how tall (share of FLAME_HEIGHT) and wide at the base;
+-- how fast they flicker {no power, full power}; how see-through from root (0) to tip (1); and
+-- colours. The sheet's flames overlap all the way round, so together they look like one fire,
+-- brightest at its edges where you look through the most flames.
 local GROUPS = {
-	{ -- jagged spikes sticking out of the shell: sideways at the bottom, straight up on top
-		Kind = "Spike", Count = 36, Speed = { 1.6, 3.6 }, Width = { 0.7, 1.4 },
-		Transparency = seq({ { 0, 0.65 }, { 0.35, 0.2 }, { 0.85, 0.35 }, { 1, 0.8 } }),
+	{ -- the sheet of fire, rooted on the ground ring
+		Kind = "Sheet", Count = 30, Height = { 0.55, 1 }, Width = { 0.9, 1.5 }, Speed = { 2, 5 },
+		Transparency = seq({ { 0, 0.78 }, { 0.15, 0.5 }, { 0.45, 0.45 }, { 0.8, 0.78 }, { 1, 1 } }),
 		Paint = function(core, main, edge)
-			return colours({ { 0, core }, { 0.45, main }, { 1, edge } })
+			return colours({ { 0, main }, { 0.5, main }, { 1, edge } })
 		end,
 	},
-	{ -- broad see-through flames filling the shell, from the feet to the top
-		Kind = "Body", Count = 8, Speed = { 0.8, 1.8 }, Width = { 2.2, 3.6 },
-		Transparency = seq({ { 0, 0.9 }, { 0.3, 0.72 }, { 0.8, 0.76 }, { 1, 1 } }),
-		Paint = function(core, main, edge)
-			return colours({ { 0, Color3.new(1, 1, 1) }, { 0.6, core }, { 1, main } })
-		end,
-	},
-	{ -- white-hot flames hugging the body
-		Kind = "Core", Count = 6, Speed = { 1.2, 2.6 }, Width = { 0.8, 1.4 },
-		Transparency = seq({ { 0, 0.8 }, { 0.25, 0.35 }, { 0.8, 0.5 }, { 1, 0.95 } }),
+	{ -- thin bright streaks shooting up through it
+		Kind = "Streak", Count = 8, Height = { 0.6, 1 }, Width = { 0.18, 0.3 }, Speed = { 4, 8 },
+		Transparency = seq({ { 0, 0.75 }, { 0.25, 0.3 }, { 0.7, 0.55 }, { 1, 1 } }),
 		Paint = function(core, main, edge)
 			return colours({ { 0, Color3.new(1, 1, 1) }, { 0.5, core }, { 1, main } })
 		end,
 	},
+	{ -- licks of flame breaking off and rising (Speed = licks per second)
+		Kind = "Lick", Count = 10, Height = { 0.25, 0.45 }, Width = { 0.6, 1.1 }, Speed = { 1.2, 2.4 },
+		Transparency = seq({ { 0, 1 }, { 0.2, 0.45 }, { 0.6, 0.55 }, { 1, 1 } }),
+		Paint = function(core, main, edge)
+			return colours({ { 0, main }, { 0.5, main }, { 1, edge } })
+		end,
+	},
 }
-local AURA_FPS = math.max(PowerConfig.AuraFrameRate or 15, 1)
-local SWOOSHES = 3 -- energy streaks swirling up around the body
+local AURA_FPS = math.max(PowerConfig.AuraFrameRate or 24, 1)
 
 -- an attachment frame whose axis (X) points straight up
 local UP_FRAME = CFrame.fromMatrix(Vector3.zero, Vector3.yAxis, -Vector3.xAxis)
@@ -241,31 +234,26 @@ local function newBeam(parent: Instance, transparency: NumberSequence)
 	return beam, a0, a1
 end
 
--- gives a flame a new place, size and speed for its next lick
-local function respawn(t)
-	local slot = (t.Index - 1) / t.Of * math.pi * 2 + t.Offset
-	t.Angle = slot + rng:NextNumber(-0.5, 0.5) * (math.pi * 2 / t.Of)
-	t.LenMul = rng:NextNumber(0.75, 1.2)
-	t.WidthMul = rng:NextNumber(0.75, 1.2)
-	t.SpeedMul = rng:NextNumber(0.8, 1.25)
-	if t.Kind == "Spike" then
-		-- where on the shell: plenty low down (the side flares), most in the middle, some on top
-		local r = rng:NextNumber()
-		t.U = r < 0.3 and rng:NextNumber(0.04, 0.2) or r < 0.75 and rng:NextNumber(0.2, 0.7) or rng:NextNumber(0.7, 0.97)
-	elseif t.Kind == "Body" then
-		t.R0 = rng:NextNumber(0.3, 1)
-		t.TipU = rng:NextNumber(0.85, 1.05)
-		t.TipOff = rng:NextNumber(-0.5, 0.5)
-	else
-		t.R0 = rng:NextNumber(0.5, 0.9)
-		t.Lift = rng:NextNumber(0.2, 1.5)
-		t.TipU = rng:NextNumber(0.45, 0.7)
+local function ringPiece(name: string): Part
+	local p = fxPart(name, Vector3.new(0.4, 0.06, 0.2))
+	p.Material = Enum.Material.Neon
+	return p
+end
+
+-- a new random start for a flame (and, for a lick, a new place to break off from)
+local function reroll(t)
+	t.WidthMul = rng:NextNumber(0.75, 1.25)
+	t.HeightMul = rng:NextNumber(0, 1)
+	t.LeanMul = rng:NextNumber(0.7, 1.3)
+	t.SpeedMul = rng:NextNumber(0.75, 1.3)
+	if t.Kind == "Lick" then
+		t.Angle = rng:NextNumber(0, math.pi * 2)
 	end
 end
 
 local function resetSwoosh(w, feet: number, first: boolean)
 	w.Angle = rng:NextNumber(0, math.pi * 2)
-	w.R = rng:NextNumber(2, 3) * S
+	w.R = rng:NextNumber(2.2, 3.2) * S
 	w.Y = feet + (first and rng:NextNumber(0, 6) or rng:NextNumber(0, 1)) * S
 	w.Top = feet + rng:NextNumber(6, 9) * S
 	w.Rise = rng:NextNumber(4, 7) * S
@@ -299,10 +287,12 @@ local function newFX(character: Model, root: BasePart)
 		Flare = 1,
 		Gold = 0,
 		PaintedGold = -1,
+		Spin = 0, -- the whole fire slowly turns round you
+		RipplePhase = 0,
 		-- how far below the HumanoidRootPart's centre the feet are
 		FootDrop = (humanoid and humanoid.HipHeight or 2) + root.Size.Y / 2,
 	}
-	fx.Aura = fxPart("Aura", Vector3.new(3.2, 5.6, 3.2) * S)
+	fx.Aura = fxPart("Aura", Vector3.new(4.8, 6, 4.8) * S)
 
 	fx.Tongues = {}
 	local amount = math.max(PowerConfig.AuraFlames or 1, 0)
@@ -312,21 +302,37 @@ local function newFX(character: Model, root: BasePart)
 		for k = 1, count do
 			local beam, a0, a1 = newBeam(fx.Aura, group.Transparency)
 			local t = {
-				Group = group, GroupIndex = gi, Kind = group.Kind, Index = k, Of = count, Offset = offset,
-				Beam = beam, A0 = a0, A1 = a1, Boil = 1,
+				Group = group, GroupIndex = gi, Kind = group.Kind, Index = k, Of = count,
+				Beam = beam, A0 = a0, A1 = a1, Boil = 1, BoilAngle = 0,
+				-- spread evenly round the ring, a little uneven
+				Angle = (k - 1) / count * math.pi * 2 + offset + rng:NextNumber(-0.4, 0.4) * (math.pi * 2 / count),
+				Phase = rng:NextNumber(0, math.pi * 2),
+				Life = rng:NextNumber(),
 			}
-			respawn(t)
-			t.Phase = rng:NextNumber()
+			reroll(t)
 			table.insert(fx.Tongues, t)
 		end
 	end
 	fx.FrameClock = math.huge -- draw the first frame straight away
+
 	fx.Swooshes = {}
 	for _ = 1, SWOOSHES do
 		local beam, a0, a1 = newBeam(fx.Aura, seq({ { 0, 1 }, { 0.5, 0.35 }, { 1, 0.05 } }))
 		local w = { Beam = beam, A0 = a0, A1 = a1 }
 		resetSwoosh(w, -fx.FootDrop, true)
 		table.insert(fx.Swooshes, w)
+	end
+
+	-- the glowing ring on the ground, and the ripples pulsing out of it
+	fx.Ring, fx.RingLocal = {}, {}
+	for k = 1, RING_SEGMENTS do
+		fx.Ring[k] = ringPiece("AuraRing")
+		fx.RingLocal[k] = CFrame.identity
+	end
+	fx.RipplePieces, fx.RippleLocal = {}, {}
+	for k = 1, RIPPLE_SEGMENTS do
+		fx.RipplePieces[k] = ringPiece("AuraRipple")
+		fx.RippleLocal[k] = CFrame.identity
 	end
 
 	fx.Streaks = emitter(fx.Aura, { -- light streaks shooting up past the body
@@ -342,16 +348,21 @@ local function newFX(character: Model, root: BasePart)
 		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35 * S), NumberSequenceKeypoint.new(1, 0.1 * S) }),
 		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) }),
 	})
-	fx.Sparks = emitter(fx.Aura, {
+	fx.Sparks = emitter(fx.Aura, { -- sparks floating up through the fire
 		Texture = SPARK,
 		LightEmission = 1,
 		Shape = Enum.ParticleEmitterShape.Cylinder,
 		ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
 		EmissionDirection = Enum.NormalId.Top,
-		Lifetime = NumberRange.new(0.3, 0.6),
-		Speed = NumberRange.new(12, 22),
-		SpreadAngle = Vector2.new(30, 30),
-		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3 * S), NumberSequenceKeypoint.new(1, 0) }),
+		Lifetime = NumberRange.new(0.8, 1.6),
+		Speed = NumberRange.new(3, 9),
+		SpreadAngle = Vector2.new(25, 25),
+		Acceleration = Vector3.new(0, 2, 0),
+		Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.2, 0.28 * S),
+			NumberSequenceKeypoint.new(1, 0),
+		}),
 	})
 	fx.Haze = emitter(fx.Aura, { -- a soft glow around the flames
 		Texture = SMOKE,
@@ -360,7 +371,7 @@ local function newFX(character: Model, root: BasePart)
 		Lifetime = NumberRange.new(0.7, 1.1),
 		Speed = NumberRange.new(1, 3),
 		SpreadAngle = Vector2.new(20, 20),
-		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.86), NumberSequenceKeypoint.new(1, 1) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.88), NumberSequenceKeypoint.new(1, 1) }),
 	})
 	fx.Light = Instance.new("PointLight")
 	fx.Light.Shadows = false
@@ -390,7 +401,7 @@ local function newFX(character: Model, root: BasePart)
 		table.insert(fx.Rocks, {
 			Part = rock,
 			Angle = (i / ROCKS) * math.pi * 2 + rng:NextNumber(-0.3, 0.3),
-			Radius = rng:NextNumber(3, 5.5) * S,
+			Radius = rng:NextNumber(3.5, 6) * S,
 			Top = rng:NextNumber(1.2, 3.8),
 			Height = 0,
 			Spin = rng:NextNumber(-1.5, 1.5),
@@ -423,6 +434,12 @@ local function destroyFX(fx)
 	for _, r in fx.Rocks do
 		r.Part:Destroy()
 	end
+	for _, p in fx.Ring do
+		p:Destroy()
+	end
+	for _, p in fx.RipplePieces do
+		p:Destroy()
+	end
 	if fx.Pillar then
 		fx.Pillar:Destroy()
 	end
@@ -433,7 +450,7 @@ local function destroyFX(fx)
 	end
 end
 
--- recolours everything when the aura's colour changes (base white-blue <-> Super Saiyan gold)
+-- recolours everything when the aura's colour changes (base blue <-> Super Saiyan gold)
 local function paint(fx)
 	local g = fx.Gold
 	local main = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, g)
@@ -448,6 +465,13 @@ local function paint(fx)
 	for _, w in fx.Swooshes do
 		w.Beam.Color = swoosh
 	end
+	local ringColor = main:Lerp(Color3.new(1, 1, 1), 0.25)
+	for _, p in fx.Ring do
+		p.Color = ringColor
+	end
+	for _, p in fx.RipplePieces do
+		p.Color = main
+	end
 	fx.Streaks.Color = ColorSequence.new(core, main)
 	fx.Sparks.Color = ColorSequence.new(core)
 	fx.Haze.Color = ColorSequence.new(main)
@@ -457,7 +481,7 @@ local function paint(fx)
 end
 
 ----------------------------------------------------------------------------------------
--- the transformation burst
+-- the transformation explosion
 ----------------------------------------------------------------------------------------
 local function playBurst(fx, root: BasePart, groundY: number)
 	fx.Streaks:Emit(70)
@@ -535,15 +559,16 @@ local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 groundParams.IgnoreWater = true
 
-local function targetIntensity(character: Model): number
+local function targetIntensity(character: Model, fx): number
 	local state = character:GetAttribute("PowerState")
 	if state == "Charging" then
 		local c = character:GetAttribute("Charge") or 0
 		return c >= PowerConfig.AuraStart and math.max(c, 0.12) or 0
 	elseif state == "Bursting" then
-		return 1.3
+		return (fx and fx.Exploded) and 1.25 or 1 -- the power builds, then explodes out
 	elseif character:GetAttribute("Form") == "SSJ" then
-		return PowerConfig.SSJIdleAura
+		-- the golden aura stays up after transforming and fades when you calm down
+		return PowerConfig.SSJIdleAura * (character:GetAttribute("Breeze") or 1)
 	end
 	return 0
 end
@@ -558,18 +583,20 @@ local function characters()
 	return list
 end
 
--- moves the flames, streaks and swirls of one character's aura
+-- moves the flames, ring, streaks and swirls of one character's aura
 local function updateAura(fx, i: number, dt: number, camDir: Vector3?)
 	-- glow, light and particles change smoothly every frame
 	local visible = i > 0.02
+	local k = math.min(i, 1.4)
 	fx.Streaks.Rate = i > 0.3 and 70 * (i - 0.3) or 0
-	fx.Sparks.Rate = i > 0.5 and 60 * (i - 0.5) or 0
+	fx.Sparks.Rate = visible and (6 + 34 * i) or 0
 	fx.Haze.Rate = visible and (6 + 18 * i) or 0
 	fx.Haze.Size = NumberSequence.new(5 * S * (0.7 + 0.5 * i))
 	fx.Light.Range = visible and (8 + 18 * i) or 0
 	fx.Light.Brightness = ease(fx.Light.Brightness, visible and (1 + 5 * i) or 0, 6, dt)
+	fx.Spin += dt * (0.25 + 0.35 * k)
 
-	-- the flames change shape in steps, like hand-drawn anime frames
+	-- the shapes change in steps (AuraFrameRate a second); a low rate flickers like anime
 	fx.FrameClock += dt
 	if fx.FrameClock < 1 / AURA_FPS then
 		return
@@ -578,68 +605,90 @@ local function updateAura(fx, i: number, dt: number, camDir: Vector3?)
 	fx.FrameClock = 0
 
 	local feet = -fx.FootDrop
-	local k = math.min(i, 1.4)
-	local height = lerp(SHELL_HEIGHT[1], SHELL_HEIGHT[2], k) * S * fx.Flare
-	local half = lerp(SHELL_WIDTH[1], SHELL_WIDTH[2], math.min(k, 1.2)) * S
-	local share = i > 0.02 and math.clamp(0.3 + 0.8 * i, 0, 1) or 0 -- fewer flames at low power
+	local ringRadius = lerp(RING_RADIUS[1], RING_RADIUS[2], math.min(k, 1.2)) * S
+	local tallest = lerp(FLAME_HEIGHT[1], FLAME_HEIGHT[2], k) * S * fx.Flare
+	local leanMax = lerp(FLAME_LEAN[1], FLAME_LEAN[2], k) * S
+	local share = visible and math.clamp(0.35 + 0.75 * i, 0, 1) or 0 -- fewer flames at low power
+
 	for _, t in fx.Tongues do
 		local group = t.Group
-		t.Phase += step * lerp(group.Speed[1], group.Speed[2], math.min(k, 1.2)) * t.SpeedMul
-		if t.Phase >= 1 then
-			t.Phase -= math.floor(t.Phase)
-			respawn(t)
-		end
+		local speed = lerp(group.Speed[1], group.Speed[2], math.min(k, 1.2)) * t.SpeedMul
 		if t.Index > math.ceil(t.Of * share) then
 			if t.Beam.Width0 ~= 0 then
 				t.Beam.Width0 = 0
 			end
 			continue
 		end
-		-- every drawn frame each flame wobbles a little, as if redrawn by hand
-		t.Boil = rng:NextNumber(0.85, 1.15)
-		local a = t.Angle + rng:NextNumber(-0.06, 0.06)
-		-- each lick shoots out fast, then thins away and starts again somewhere else
-		local p = t.Phase
-		local grow = smooth(0, 0.3, p)
-		local fade = 1 - smooth(0.65, 1, p)
+		-- each drawn frame every flame wobbles a little, as if redrawn by hand
+		t.Boil = rng:NextNumber(0.9, 1.1)
+		t.BoilAngle = rng:NextNumber(-0.04, 0.04)
+		local a = t.Angle + fx.Spin + t.BoilAngle
 		local out = Vector3.new(math.cos(a), 0, math.sin(a))
-		local width = lerp(group.Width[1], group.Width[2], k) * S * t.WidthMul * (0.4 + 0.6 * grow) * (0.25 + 0.75 * fade)
-		if camDir then
-			-- flames between the camera and the character thin out so they don't hide them
-			width *= 1 - 0.65 * smooth(0.3, 0.85, out:Dot(camDir))
-		end
-		if t.Kind == "Spike" then
-			-- sits on the shell and points outward: sideways low down, diagonally in the middle,
-			-- straight up on top, curling upward at the tip
-			local u = t.U
-			local dir = (out * (1.15 - 0.95 * u) + Vector3.yAxis * (-0.1 + 1.45 * u)).Unit
-			local len = (0.18 + 0.22 * u) * height * t.LenMul * t.Boil * (0.5 + 0.5 * grow)
-			local base = out * (outline(u) * half * 0.8) + Vector3.new(0, feet + u * height, 0)
-			t.A0.CFrame = pointing(base, dir)
-			t.A1.CFrame = pointing(base + dir * len, (dir + Vector3.yAxis * 0.5).Unit)
-			t.Beam.CurveSize0 = len * 0.3
-			t.Beam.CurveSize1 = len * 0.25
-		elseif t.Kind == "Body" then
-			-- rises from the feet, bows outward along the shell and meets the top
-			local top = t.TipU * height * t.Boil * (0.6 + 0.4 * grow)
-			local base = out * (t.R0 * S) + Vector3.new(0, feet + 0.1 * S, 0)
-			t.A0.CFrame = pointing(base, (out * 0.9 + Vector3.yAxis * 0.7).Unit)
-			t.A1.CFrame = CFrame.new(-out * (t.TipOff * S) + Vector3.new(0, feet + top, 0)) * UP_FRAME
-			t.Beam.CurveSize0 = top * 0.45
-			t.Beam.CurveSize1 = top * 0.2
+		local front = camDir and smooth(0.05, 0.6, out:Dot(camDir)) or 0 -- between the camera and you
+		local width = lerp(group.Width[1], group.Width[2], math.min(k, 1)) * S * t.WidthMul
+		local height, lean, baseY, radius
+		if t.Kind == "Lick" then
+			-- breaks off near the ground and rises along the fire, shrinking as it goes
+			t.Life += step * speed
+			if t.Life >= 1 then
+				t.Life -= math.floor(t.Life)
+				reroll(t)
+			end
+			local life = t.Life
+			height = lerp(group.Height[1], group.Height[2], t.HeightMul) * tallest * (1 - 0.5 * life) * t.Boil
+			baseY = feet + 0.15 * S + life * 0.6 * tallest
+			lean = leanMax * t.LeanMul * (baseY - feet) / math.max(tallest, 0.1)
+			radius = ringRadius + lean
+			width *= (1 - life) * smooth(0, 0.15, life)
 		else
-			local h = t.TipU * height * t.Boil * (0.5 + 0.5 * grow)
-			local base = out * (t.R0 * S) + Vector3.new(0, feet + t.Lift * S, 0)
-			t.A0.CFrame = CFrame.new(base) * UP_FRAME
-			t.A1.CFrame = CFrame.new(base + out * (0.3 * S) + Vector3.new(0, h, 0)) * UP_FRAME
-			t.Beam.CurveSize0 = h * 0.35
-			t.Beam.CurveSize1 = h * 0.2
+			-- rooted on the ring; licks up and down
+			t.Phase += step * speed
+			local lick = 0.8 + 0.2 * math.sin(t.Phase) + 0.08 * math.sin(t.Phase * 2.7 + t.Index)
+			height = lerp(group.Height[1], group.Height[2], t.HeightMul) * tallest * lick * t.Boil
+			baseY = feet + 0.03 * S
+			radius = ringRadius * (t.Kind == "Streak" and 0.9 or 0.97)
+			lean = 0
 		end
+		local tipLean = leanMax * t.LeanMul * height / math.max(tallest, 0.1)
+		width *= 1 - 0.85 * front
+		local base = out * radius + Vector3.new(0, baseY, 0)
+		local tip = out * (radius + tipLean) + Vector3.new(0, baseY + height, 0)
+		t.A0.CFrame = CFrame.new(base) * UP_FRAME
+		t.A1.CFrame = pointing(tip, (Vector3.yAxis * height + out * (tipLean * 1.3)).Unit)
 		t.Beam.Width0 = width
+		t.Beam.CurveSize0 = height * 0.4
+		t.Beam.CurveSize1 = height * 0.2
 	end
 
-	-- energy streaks swirling up around the body
-	local swirl = smooth(0.35, 0.8, i)
+	-- the glowing ground ring: flickers, and swells with power
+	local ringOn = visible and smooth(0.02, 0.25, i) or 0
+	local length = 2 * ringRadius * math.sin(math.pi / #fx.Ring) * 1.15
+	for n, p in fx.Ring do
+		local a = (n - 1) / #fx.Ring * math.pi * 2 + fx.Spin * 0.3
+		local r = ringRadius * (1 + rng:NextNumber(-0.025, 0.025))
+		fx.RingLocal[n] = CFrame.new(math.cos(a) * r, feet + 0.04, math.sin(a) * r) * CFrame.Angles(0, -(a + math.pi / 2), 0)
+		p.Size = Vector3.new(length, 0.06 * S, (0.14 + 0.12 * k) * S * rng:NextNumber(0.8, 1.25))
+		p.Transparency = 1 - ringOn * rng:NextNumber(0.55, 0.9)
+	end
+	-- ripples pulse out of it along the ground while the power is high
+	fx.RipplePhase += step * (0.9 + 0.8 * k)
+	if fx.RipplePhase >= 1 then
+		fx.RipplePhase -= math.floor(fx.RipplePhase)
+	end
+	local ripple = fx.RipplePhase
+	local rippleOn = visible and smooth(0.3, 0.7, i) or 0
+	local rippleRadius = ringRadius * (1 + 0.9 * ripple)
+	local rippleLength = 2 * rippleRadius * math.sin(math.pi / #fx.RipplePieces) * 1.15
+	for n, p in fx.RipplePieces do
+		local a = (n - 1) / #fx.RipplePieces * math.pi * 2
+		fx.RippleLocal[n] = CFrame.new(math.cos(a) * rippleRadius, feet + 0.03, math.sin(a) * rippleRadius)
+			* CFrame.Angles(0, -(a + math.pi / 2), 0)
+		p.Size = Vector3.new(rippleLength, 0.05 * S, 0.1 * S)
+		p.Transparency = 1 - rippleOn * 0.6 * (1 - ripple)
+	end
+
+	-- energy streaks swirling up around you
+	local swirl = smooth(0.3, 0.75, i)
 	for _, w in fx.Swooshes do
 		w.Angle += step * w.Spin * (0.6 + i)
 		w.Y += step * w.Rise * (0.6 + i)
@@ -680,16 +729,29 @@ RunService.RenderStepped:Connect(function(dt)
 	for _, character in characters() do
 		seen[character] = true
 		local root = character:FindFirstChild("HumanoidRootPart")
-		local want = targetIntensity(character)
 		local state = character:GetAttribute("PowerState")
 		local fx = active[character]
+		local want = targetIntensity(character, fx)
 		if not fx and (want > 0 or state == "Charging") and root then
 			fx = newFX(character, root)
 			active[character] = fx
 		end
 		if fx and root then
+			-- the transformation: the power builds for ExplodeAt seconds, then explodes out
+			if state == "Bursting" then
+				fx.BurstAt = fx.BurstAt or now
+				if not fx.Exploded and now - fx.BurstAt >= EXPLODE_AT then
+					fx.Exploded = true
+					local hit = Workspace:Raycast(root.Position, Vector3.new(0, -12, 0), groundParams)
+					playBurst(fx, root, hit and hit.Position.Y or root.Position.Y - fx.FootDrop)
+				end
+			else
+				fx.BurstAt, fx.Exploded = nil, false
+			end
+			want = targetIntensity(character, fx)
+
 			-- smooth ramps: fast up, slower down
-			fx.Intensity = ease(fx.Intensity, want, want > fx.Intensity and 5 or 2, dt)
+			fx.Intensity = ease(fx.Intensity, want, want > fx.Intensity and 5 or 1.5, dt)
 			local i = fx.Intensity
 			fx.Flare = ease(fx.Flare, 1, 2.5, dt)
 			local gold = (character:GetAttribute("Form") == "SSJ" or state == "Bursting") and 1 or 0
@@ -698,20 +760,10 @@ RunService.RenderStepped:Connect(function(dt)
 				paint(fx)
 			end
 
-			if state == "Bursting" and not fx.Burst then
-				fx.Burst = true
-				local hit = Workspace:Raycast(root.Position, Vector3.new(0, -12, 0), groundParams)
-				playBurst(fx, root, hit and hit.Position.Y or root.Position.Y - fx.FootDrop)
-			elseif state ~= "Bursting" then
-				fx.Burst = false
-			end
-
 			-- the aura follows the character, kept upright
 			local look = root.CFrame.LookVector
 			local flat = Vector3.new(look.X, 0, look.Z)
 			local auraCF = flat.Magnitude > 1e-3 and CFrame.lookAt(root.Position, root.Position + flat) or CFrame.new(root.Position)
-			table.insert(moveParts, fx.Aura)
-			table.insert(moveFrames, auraCF)
 			local camDir = nil
 			if camPos then
 				local rel = auraCF:PointToObjectSpace(camPos)
@@ -721,6 +773,16 @@ RunService.RenderStepped:Connect(function(dt)
 				end
 			end
 			updateAura(fx, i, dt, camDir)
+			table.insert(moveParts, fx.Aura)
+			table.insert(moveFrames, auraCF)
+			for n, p in fx.Ring do
+				table.insert(moveParts, p)
+				table.insert(moveFrames, auraCF * fx.RingLocal[n])
+			end
+			for n, p in fx.RipplePieces do
+				table.insert(moveParts, p)
+				table.insert(moveFrames, auraCF * fx.RippleLocal[n])
+			end
 
 			-- ground: dust and lifting rocks (only if there's ground close below)
 			local hit = Workspace:Raycast(root.Position, Vector3.new(0, -(fx.FootDrop + 5), 0), groundParams)
@@ -758,10 +820,15 @@ RunService.RenderStepped:Connect(function(dt)
 				fx.Strain = ease(fx.Strain, smooth(0.2, 0.85, charge), 3, dt)
 				fx.Release = ease(fx.Release, 0, 10, dt)
 			elseif state == "Bursting" then
-				fx.Release = ease(fx.Release, 1, 14, dt) -- snaps into the release pose and holds it
+				if fx.Exploded then
+					fx.Release = ease(fx.Release, 1, 14, dt) -- snaps into the release pose and holds it
+				else
+					fx.Strain = ease(fx.Strain, 1, 4, dt) -- hunched, straining, as the power builds
+				end
 			end
 			fx.Shudder = math.max(fx.Shudder - dt * 0.8, 0)
-			fx.Tremble = 0.035 * fx.Strain * (1 - fx.Release) + 0.03 * fx.Shudder
+			local building = (state == "Bursting" and not fx.Exploded) and 0.5 or 0
+			fx.Tremble = 0.035 * fx.Strain * (1 - fx.Release) + 0.03 * fx.Shudder + 0.02 * building
 
 			-- tidy up once fully calm
 			if want <= 0 and fx.Intensity < 0.01 and fx.Pose < 0.01 and state ~= "Charging" then

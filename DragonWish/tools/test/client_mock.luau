@@ -102,6 +102,13 @@ local function config()
 	return luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.luau"), { environment = { Color3 = roblox.Color3, Enum = roblox.Enum } })()
 end
 local PowerConfig = config()
+-- stands in for the SSJCutscene module: records that it played and for how long
+cutsceneStub = { Plays = {}, Stopped = 0 }
+function cutsceneStub.Play(character, duration, onDone)
+	table.insert(cutsceneStub.Plays, { At = T, Duration = duration })
+	table.insert(delayed, { At = T + duration, Fn = function() if onDone then onDone() end end, Args = table.pack() })
+end
+function cutsceneStub.Stop() cutsceneStub.Stopped += 1 end
 
 local function env(isServer)
 	local e = {
@@ -110,7 +117,8 @@ local function env(isServer)
 		math = math, table = table, string = string, tostring = tostring, pairs = pairs,
 		task = taskStub, os = { clock = function() return T end },
 		Instance = I,
-		require = function() return PowerConfig end,
+		require = function(m) if m == "SSJCutscene" then return cutsceneStub end return PowerConfig end,
+		script = { Parent = { WaitForChild = function(_, name) return name end } },
 	}
 	e.game = {
 		GetService = function(_, n)
@@ -220,6 +228,8 @@ for _ = 1, 600 do
 end
 check(("spamming Space turns you Super Saiyan (took %.1fs at 8 taps/s)"):format((reached or T) - 0.5), reached ~= nil and attrs.Form == "SSJ")
 check("the SSJ hair is shown and the base hair hidden", ssjHair.Transparency == 0 and baseHair.Transparency == 1)
+check(("the transformation cutscene plays (%d time, %.1f s)"):format(#cutsceneStub.Plays, cutsceneStub.Plays[1] and cutsceneStub.Plays[1].Duration or 0),
+	#cutsceneStub.Plays == 1 and math.abs(cutsceneStub.Plays[1].Duration - (PowerConfig.BurstTime - 0.05)) < 1e-6)
 run(PowerConfig.BurstTime + 0.5)
 check("after the burst you're a calm Super Saiyan and can move again",
 	attrs.PowerState == "Idle" and attrs.Form == "SSJ" and humanoid.WalkSpeed == 16 and math.abs(attrs.AuraWind - PowerConfig.SSJCalmWind) < 1e-6)

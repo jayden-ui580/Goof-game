@@ -57,6 +57,10 @@ local DEFAULTS = {
 	-- X = their right, Y = up, Z = behind them): Vector3.new(-80, 0, 0) blows it to their left.
 	-- It fades out while the power-up aura blasts the hair upward.
 	LocalWind = Vector3.zero,
+	-- the breeze is multiplied by this character attribute (0..1) when it exists; the server
+	-- fades it to 0 when a Super Saiyan calms down
+	BreezeAttribute = "Breeze",
+	BreezeResponse = 1.2, -- how quickly the breeze follows that attribute (per second)
 	LocalWindFlutter = 0, -- 0..1: how much each strand's breeze rises and falls on its own
 	LocalWindFlutterSpeed = 2, -- how fast that ripple goes
 	SheetLinks = {},
@@ -501,6 +505,7 @@ end
 function Sim:Wake(partCF: CFrame)
 	self.Character = findCharacter(self.Part)
 	self.Aura = 0
+	self.Breeze = nil
 	self:BuildColliders(self.Character)
 	for _, col in self.Colliders do
 		col.From = col.Part.CFrame
@@ -767,7 +772,7 @@ function Sim:Substep(h: number, anchorCF: CFrame, sliceAlpha: number?)
 	local swirl = s.AuraSwirl * aura * h * h
 	local breeze = nil
 	if s.LocalWind.Magnitude > 0 then
-		breeze = rot:VectorToWorldSpace(s.LocalWind) * ((1 - math.min(aura, 1) ^ 2) * h * h)
+		breeze = rot:VectorToWorldSpace(s.LocalWind) * ((1 - math.min(aura, 1) ^ 2) * (self.Breeze or 1) * h * h)
 	end
 
 	for _, chain in self.Chains do
@@ -870,6 +875,12 @@ function Sim:Update(dt: number, cameraPosition: Vector3?)
 	local character = self.Character
 	local auraTarget = character and character:GetAttribute(self.Settings.AuraAttribute) or 0
 	self.Aura += (auraTarget - self.Aura) * (1 - math.exp(-dt * self.Settings.AuraResponse))
+	local breezeTarget = character and self.Settings.BreezeAttribute and character:GetAttribute(self.Settings.BreezeAttribute)
+	if breezeTarget then
+		self.Breeze = (self.Breeze or breezeTarget) + (breezeTarget - (self.Breeze or breezeTarget)) * (1 - math.exp(-dt * self.Settings.BreezeResponse))
+	else
+		self.Breeze = nil -- no attribute: full breeze
+	end
 	for _, col in self.Colliders do
 		col.From = col.To or col.Part.CFrame
 		col.To = col.Part.CFrame

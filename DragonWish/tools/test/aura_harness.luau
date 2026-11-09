@@ -90,6 +90,7 @@ while t < 19 do
 	for _, pr in parts do pr[1].CFrame = rootCF * pr[2] end
 	mesh.CFrame = attach.CFrame
 	char:SetAttribute("AuraWind", auraAt(t))
+	char:SetAttribute("Breeze", t < 11 and 1 or 0) -- the server calms the Super Saiyan glow down
 	sim:Update(dt, nil)
 	local alpha = sim.Accum / (1 / 60)
 	local tips = {}
@@ -121,7 +122,10 @@ while t < 19 do
 			add("calm_vs_model_deg", mean(function(ci, p) return angle(p, modeled[ci]) end))
 			add("calm_flutter", speed)
 		end
-		if t > 12.5 and t < 13 then add("off_deg", devDeg) end
+		if t > 12.5 and t < 13 then
+			add("off_deg", devDeg)
+			add("settled_x", mean(function(ci, p) return p.X - modeled[ci].X end))
+		end
 		if t > 13 and t < 14.5 then add("walk_deg", devDeg) end
 		if t > 14.5 and t < 15.5 then add("stop_deg", devDeg); add("stop_wobble", speed) end
 		if t > 16 and t < 16.5 then add("still_deg", devDeg) end
@@ -140,7 +144,7 @@ while t < 19 do
 end
 local function r2(x) return math.floor(x * 100 + 0.5) / 100 end
 local line = { ("%-8s"):format(preset), ("nan %s  body pen %.3f"):format(tostring(nan), pen) }
-for _, key in { "droop_deg", "droop_y", "rest_x", "walk_deg", "stop_deg", "stop_wobble", "still_deg", "jump_deg", "full_lift_y", "full_flutter", "calm_deg", "calm_vs_model_deg", "calm_x", "calm_flutter", "off_deg" } do
+for _, key in { "droop_deg", "droop_y", "rest_x", "walk_deg", "stop_deg", "stop_wobble", "still_deg", "jump_deg", "full_lift_y", "full_flutter", "calm_deg", "calm_vs_model_deg", "calm_x", "calm_flutter", "off_deg", "settled_x" } do
 	local a = acc[key]
 	if a then
 		local useMax = key == "walk_deg" or key == "stop_deg" or key == "jump_deg"

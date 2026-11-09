@@ -11,12 +11,16 @@
 	                            PowerUpServer  (referee for powering up / Super Saiyan)
 	  StarterPlayerScripts   -> HairPhysicsClient (runs the hair + belt physics on each screen)
 	                            PowerUpClient     (R / Space controls, front camera, power bar)
-	                            PowerFX           (aura, stance, dust, rocks, transformation burst)
+	                            PowerFX           (aura, animation, dust, rocks, the explosion)
+	                            SSJCutscene       (ModuleScript: the transformation cutscene)
+	                            HUD               (Dragon Ball portrait, HP, Ki, Scouter, Radar)
 	                            HairFitTool       (press H: nudge hair/belt into place)
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Delete the old copies and import the new ones into ServerStorage > CharacterParts:
+	  Replace every script with the ones in this kit (HUD and SSJCutscene are new: both go in
+	  StarterPlayerScripts). If you haven't yet, delete the old copies of these and import the
+	  new ones into ServerStorage > CharacterParts:
 	    BaseHair_Rigged.fbx  - the bangs now have bones
 	    SSJHair_Rigged.fbx   - its root bone was renamed (the old name clashed with the base
 	                           hair's, which tied it to the base hair's skeleton: it never moved)
@@ -39,10 +43,12 @@
 	          transform you lean back, head up, arms spread, and hold it a moment.
 	          R again cancels. As a Super Saiyan, R powers back down to base.
 	          (phones: the round POWER button on the right does the same as R)
-	  Space   spam it to fill the power bar (phones: the big TAP button).
-	          The aura grows bigger and faster, hair and belt blow upward. Once the bar is
-	          full it stays full, and (after at least 2.5 s of charging) you burst into
-	          Super Saiyan; the golden hair then flows calmly.
+	  Space   spam it to fill the power bar (phones: the big TAP button at the bottom).
+	          A ring of light flares at your feet and a sheet of fire rises round you, bigger
+	          and faster as the bar fills; hair and belt blow upward. Once the bar is full it
+	          stays full, and (after at least 2.5 s of charging) you transform: the cutscene
+	          plays (your eyes, your hair, the explosion, "THIS IS—" / "SUPER SAIYAN!"), then
+	          the golden hair flows and the gold aura burns until you calm down (~20 s).
 	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
 
 	TWEAKING
@@ -51,6 +57,8 @@
 	              the Super Saiyan hair's breeze to the left (LocalWind: make the X positive to
 	              blow it right), how hard the aura blows them (AuraLift / AuraSwirl), and the
 	              belt's room around the waist (FitGap; it's sized to the rig automatically).
-	  PowerConfig: keys, how fast the bar fills/drains, minimum charge time, aura colours and
-	               size, camera distance and shake.
+	  PowerConfig: keys, how fast the bar fills/drains, minimum charge time, the cutscene
+	               (Cutscene, CutsceneText, BurstTime, ExplodeAt), calming down (SSJCalmAfter),
+	               aura colours, size and flicker, the HUD's numbers (ki, power level, radar
+	               range), camera distance and shake.
 ]]
