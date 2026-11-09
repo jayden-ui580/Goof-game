@@ -1,6 +1,8 @@
 import sys, json, bpy, numpy as np
 info = {i['name']: i for i in json.load(open(sys.argv[2]))}
-for fname, name in (('BaseHair_Rigged', 'BaseHair'), ('SSJHair_Rigged', 'SSJHair'), ('Belt_Rigged', 'Belt')):
+# usage: verify_dbz.py <folder with the .fbx files> <riginfo.json> [piece names]
+names = sys.argv[3:] or ['BaseHair', 'SSJHair', 'Belt', 'LeftFingers', 'RightFingers']
+for fname, name in ((n + '_Rigged', n) for n in names):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=sys.argv[1] + '/' + fname + '.fbx')
     a = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE'][0]

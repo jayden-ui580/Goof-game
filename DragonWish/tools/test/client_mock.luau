@@ -80,6 +80,10 @@ local taskStub = {
 	delay = function(s, fn, ...)
 		table.insert(delayed, { At = T + s, Fn = fn, Args = table.pack(...) })
 	end,
+	spawn = function(fn, ...)
+		fn(...)
+	end,
+	wait = function() end,
 }
 local actions = {}
 local cas = {
@@ -272,6 +276,21 @@ remote.OnServerEvent:Fire(player, "Charge", 1)
 remote.OnServerEvent:Fire(player, "Transform")
 check("the server refuses an instant full bar + transform", attrs.Form == "Base")
 remote.OnServerEvent:Fire(player, "Cancel")
+
+-- 6. Kaioken: K lights it, K again pushes it higher, R lets it go
+attrs.Ki = 100
+run(0.5)
+press("DWKaioken")
+run(0.3)
+check(("K lights the Kaioken (x%d) and you move faster (walk %.1f)"):format(attrs.KaiokenMult or 0, humanoid.WalkSpeed),
+	attrs.Kaioken == 1 and humanoid.WalkSpeed > 16)
+run(0.7)
+press("DWKaioken")
+run(0.3)
+check(("K again pushes it higher (x%d)"):format(attrs.KaiokenMult or 0), attrs.Kaioken == 2)
+press("DWPower")
+run(0.3)
+check("R lets it go (and doesn't start powering up)", attrs.Kaioken == 0 and attrs.PowerState == "Idle" and humanoid.WalkSpeed == 16)
 
 print("\nwhat happened:")
 for _, l in log do

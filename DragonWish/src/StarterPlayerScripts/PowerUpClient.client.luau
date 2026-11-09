@@ -3,8 +3,11 @@
 
 	Your controls, camera and screen for powering up:
 	  R      start powering up (the camera swings round to face you, you drop into a stance)
-	         R again while charging cancels; R as a Super Saiyan powers down
+	         R again while charging cancels; R as a Super Saiyan (or in Kaioken) powers down
 	  Space  spam it to fill the power bar (phones: the big TAP button)
+	  K      Kaioken: lights it, and each press after pushes it a level higher (phones: the
+	         KAIOKEN button). The server decides if you can; a red "KAIOKEN x3!" pops up when
+	         it does
 	When the bar is full you burst into Super Saiyan: the transformation cutscene plays
 	(SSJCutscene: your eyes, your hair, the explosion, the manga panels), then you get control
 	back. The prompt, bar and TAP button are drawn with ReplicatedStorage > DragonUI. The aura,
@@ -48,6 +51,7 @@ local gui = new("ScreenGui", {
 	Name = "PowerUpUI",
 	ResetOnSpawn = false,
 	IgnoreGuiInset = true,
+	DisplayOrder = 6, -- (above the HUD, so the shout and flashes cover it)
 }, player:WaitForChild("PlayerGui"))
 
 -- comic text: Bangers with an ink outline (ink-coloured text goes without one)
@@ -68,7 +72,7 @@ local function text(parent: Instance, props): TextLabel
 	return l
 end
 
--- the hint along the bottom: a key cap and what it does
+-- the hints along the bottom: key caps and what they do
 local hint = new("Frame", {
 	Name = "Hint",
 	AnchorPoint = Vector2.new(0.5, 1),
@@ -76,33 +80,49 @@ local hint = new("Frame", {
 	Size = UDim2.fromOffset(200, 30),
 	BackgroundTransparency = 1,
 }, gui)
-local hintKey = Slab.new(hint, "Key", 0, 0, 40, 30, PAPER, { ZIndex = 2 })
-local hintKeyText = text(hintKey.Holder, {
-	Name = "Text",
-	Position = UDim2.fromOffset(13, 4),
-	Size = UDim2.new(1, -26, 1, -7),
-	TextColor3 = INK,
-	ZIndex = 3,
-})
-local hintAction = Slab.new(hint, "Action", 44, 3, 150, 24, INK, { Transparency = 0.15, ZIndex = 1 })
-local hintActionText = text(hintAction.Holder, {
-	Name = "Text",
-	Position = UDim2.fromOffset(15, 2),
-	Size = UDim2.new(1, -30, 1, -4),
-	ZIndex = 2,
-})
+local function hintEntry(index: number)
+	local holder = new("Frame", { Name = "Hint" .. index, Size = UDim2.fromOffset(200, 30), BackgroundTransparency = 1 }, hint)
+	local key = Slab.new(holder, "Key", 0, 0, 120, 30, PAPER, { ZIndex = 2 })
+	local keyText = text(key.Holder, {
+		Name = "Text",
+		Position = UDim2.fromOffset(13, 4),
+		Size = UDim2.new(1, -26, 1, -7),
+		TextColor3 = INK,
+		ZIndex = 3,
+	})
+	local action = Slab.new(holder, "Action", 44, 3, 240, 24, INK, { Transparency = 0.15, ZIndex = 1 })
+	local actionText = text(action.Holder, {
+		Name = "Text",
+		Position = UDim2.fromOffset(15, 2),
+		Size = UDim2.new(1, -30, 1, -4),
+		ZIndex = 2,
+	})
+	return { Holder = holder, Key = key, KeyText = keyText, Action = action, ActionText = actionText }
+end
+local hintEntries = { hintEntry(1), hintEntry(2) }
 
-local function setHint(key: string?, action: string?)
-	hint.Visible = key ~= nil
-	if not key then
-		return
+-- list = { { key, what it does }, ... } (up to two), or nil for none
+local function setHint(list)
+	list = list or {}
+	hint.Visible = #list > 0
+	local x = 0
+	for i, entry in hintEntries do
+		local item = list[i]
+		entry.Holder.Visible = item ~= nil
+		if item then
+			local keyWidth = 26 + 13 * #item[1]
+			local actionWidth = 30 + 11 * #item[2]
+			entry.KeyText.Text = item[1]
+			entry.ActionText.Text = item[2]
+			entry.Key:SetWidth(keyWidth)
+			entry.Action:SetWidth(actionWidth)
+			entry.Action.Holder.Position = UDim2.fromOffset(keyWidth - 6, 3)
+			entry.Holder.Position = UDim2.fromOffset(x, 0)
+			entry.Holder.Size = UDim2.fromOffset(keyWidth - 6 + actionWidth, 30)
+			x += keyWidth - 6 + actionWidth + 16
+		end
 	end
-	local keyWidth = 26 + 13 * #key
-	hintKeyText.Text = key
-	hintActionText.Text = action or ""
-	hintKey:SetWidth(keyWidth)
-	hintAction.Holder.Position = UDim2.fromOffset(keyWidth - 6, 3)
-	hint.Size = UDim2.fromOffset(keyWidth + 144, 30)
+	hint.Size = UDim2.fromOffset(math.max(x - 16, 1), 30)
 end
 setHint(nil) -- (until your character arrives)
 
@@ -211,6 +231,35 @@ local bigText = DragonUI.Lettering(gui, "Title", {
 bigText.Holder.Visible = false
 local bigScale = new("UIScale", {}, bigText.Holder)
 
+-- "KAIOKEN x3!": pops up each time the Kaioken is lit or pushed higher
+local kaiokenText = DragonUI.Lettering(gui, "Kaioken", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(touch and 0.56 or 0.5, touch and 0.3 or 0.24),
+	Size = UDim2.fromOffset(touch and 380 or 560, touch and 58 or 84),
+	Rotation = -4,
+	Text = "KAIOKEN!",
+	Color = Color3.fromRGB(255, 70, 52),
+	BackColor = INK,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Stroke = 4,
+	Offset = 5,
+	ZIndex = 11,
+})
+kaiokenText.Holder.Visible = false
+local kaiokenScale = new("UIScale", {}, kaiokenText.Holder)
+-- a short line when a key can't do anything right now ("NOT ENOUGH KI!")
+local toast = DragonUI.Lettering(gui, "Toast", {
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -56),
+	Size = UDim2.fromOffset(300, 30),
+	Text = "",
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Offset = 2,
+	ZIndex = 11,
+})
+toast.Holder.Visible = false
+local toastUntil = 0
+
 -- a colour grade on this player's screen only: punchier as you charge, a warm flash on release
 local grade = Instance.new("ColorCorrectionEffect")
 grade.Name = "PowerUpGrade"
@@ -236,14 +285,31 @@ local function attr(name: string)
 end
 
 local function refreshHint()
-	local key = touch and "POWER" or PowerConfig.PowerKey.Name
-	if charging or bursting then
+	local powerKey = touch and "POWER" or PowerConfig.PowerKey.Name
+	local kaiokenKey = touch and "KAIOKEN" or PowerConfig.KaiokenKey.Name
+	local kaioken = attr("Kaioken") or 0
+	if charging or bursting or attr("Exhausted") then
 		setHint(nil)
 	elseif attr("Form") == "SSJ" then
-		setHint(key, "POWER DOWN")
+		setHint({ { powerKey, "POWER DOWN" } })
+	elseif kaioken >= #PowerConfig.KaiokenLevels then
+		setHint({ { powerKey, "LET IT GO" } })
+	elseif kaioken > 0 then
+		setHint({ { kaiokenKey, "HIGHER!" }, { powerKey, "LET IT GO" } })
 	else
-		setHint(key, "POWER UP")
+		setHint({ { powerKey, "POWER UP" }, { kaiokenKey, "KAIOKEN" } })
 	end
+end
+
+local function showToast(message: string)
+	toast:SetText(message)
+	toast.Holder.Visible = true
+	toastUntil = os.clock() + 1.4
+	task.delay(1.45, function()
+		if os.clock() >= toastUntil then
+			toast.Holder.Visible = false
+		end
+	end)
 end
 
 ----------------------------------------------------------------------------------------
@@ -382,6 +448,7 @@ local function playBurst()
 			TintColor = Color3.new(1, 1, 1),
 		}):Play()
 		if not cutscene then
+			flash.BackgroundColor3 = Color3.new(1, 1, 1)
 			flash.BackgroundTransparency = 0
 			TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
 			bigText.Holder.Visible = true
@@ -412,8 +479,10 @@ local function onPowerKey(_, state)
 	end
 	if charging then
 		stopCharging(true)
-	elseif attr("Form") == "SSJ" then
+	elseif attr("Form") == "SSJ" or (attr("Kaioken") or 0) > 0 then
 		remote:FireServer("PowerDown")
+	elseif attr("Exhausted") then
+		showToast("TOO TIRED!")
 	else
 		startCharging()
 	end
@@ -421,6 +490,77 @@ local function onPowerKey(_, state)
 end
 ContextActionService:BindAction("DWPower", onPowerKey, true, PowerConfig.PowerKey)
 ContextActionService:SetTitle("DWPower", "Power")
+
+-- K: light the Kaioken, or push it higher (the server checks and answers by setting the
+-- Kaioken attribute; the pop-up plays when it does)
+local function onKaiokenKey(_, state)
+	if state ~= Enum.UserInputState.Begin or not character then
+		return Enum.ContextActionResult.Pass
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 or charging or bursting then
+		return Enum.ContextActionResult.Sink
+	end
+	local level = attr("Kaioken") or 0
+	if attr("Form") == "SSJ" then
+		showToast("BASE FORM ONLY!")
+	elseif attr("Exhausted") then
+		showToast("TOO TIRED!")
+	elseif level >= #PowerConfig.KaiokenLevels then
+		showToast("THAT'S THE LIMIT!")
+	elseif (attr("Ki") or 0) < PowerConfig.KaiokenKiCost then
+		showToast("NOT ENOUGH KI!")
+	else
+		remote:FireServer("Kaioken")
+	end
+	return Enum.ContextActionResult.Sink
+end
+ContextActionService:BindAction("DWKaioken", onKaiokenKey, true, PowerConfig.KaiokenKey)
+ContextActionService:SetTitle("DWKaioken", "Kaioken")
+
+-- the moment it lights (or climbs): the shout on screen, a red flash, a kick of the camera
+local function kaiokenPop(level: number)
+	local mult = PowerConfig.KaiokenLevels[level] or 2
+	kaiokenText:SetText(level <= 1 and "KAIOKEN!" or ("KAIOKEN x" .. mult .. "!"))
+	kaiokenText.Holder.Visible = true
+	kaiokenScale.Scale = 0.45
+	TweenService:Create(kaiokenScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	local shownAt = os.clock()
+	kaiokenText.ShownAt = shownAt
+	task.delay(1.1, function()
+		if kaiokenText.ShownAt == shownAt then
+			TweenService:Create(kaiokenScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0.01 }):Play()
+			task.delay(0.23, function()
+				if kaiokenText.ShownAt == shownAt then
+					kaiokenText.Holder.Visible = false
+				end
+			end)
+		end
+	end)
+	flash.BackgroundColor3 = Color3.fromRGB(255, 40, 30)
+	flash.BackgroundTransparency = 0.55
+	TweenService:Create(flash, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
+	grade.TintColor = Color3.fromRGB(255, 205, 200)
+	grade.Contrast = 0.15
+	TweenService:Create(grade, TweenInfo.new(0.8), { TintColor = Color3.new(1, 1, 1), Contrast = 0 }):Play()
+	local camera = Workspace.CurrentCamera
+	if camera and not savedCamera then
+		local fov = camera.FieldOfView
+		camera.FieldOfView = fov + 4 + level * 1.5
+		TweenService:Create(camera, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = fov }):Play()
+	end
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		-- a short camera shake (the camera follows the humanoid's offset)
+		task.spawn(function()
+			for k = 1, 9 do
+				humanoid.CameraOffset = Vector3.new(math.random() - 0.5, math.random() - 0.5, 0) * (0.5 * (1 - k / 10))
+				task.wait(0.03)
+			end
+			humanoid.CameraOffset = Vector3.zero
+		end)
+	end
+end
 
 tapButton.Activated:Connect(tap)
 
@@ -496,6 +636,21 @@ local function onCharacter(newCharacter: Model)
 		refreshHint()
 	end)
 	newCharacter:GetAttributeChangedSignal("Form"):Connect(refreshHint)
+	local lastKaioken = newCharacter:GetAttribute("Kaioken") or 0
+	newCharacter:GetAttributeChangedSignal("Kaioken"):Connect(function()
+		local level = newCharacter:GetAttribute("Kaioken") or 0
+		if level > lastKaioken and character == newCharacter then
+			kaiokenPop(level)
+		end
+		lastKaioken = level
+		refreshHint()
+	end)
+	newCharacter:GetAttributeChangedSignal("Exhausted"):Connect(function()
+		if newCharacter:GetAttribute("Exhausted") and character == newCharacter then
+			showToast("YOUR BODY GAVE OUT...")
+		end
+		refreshHint()
+	end)
 	local humanoid = newCharacter:WaitForChild("Humanoid", 10)
 	if humanoid then
 		humanoid.Died:Connect(function()

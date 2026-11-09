@@ -8,14 +8,21 @@
 	      charging  the fuller the bar, the more you hunch over with your head down and your
 	                elbows thrown wide, trembling with effort
 	      transform you stay hunched as the power builds, then at the explosion you lean back,
-	                head up, arms lowered and spread, and hold it until you get control back
+	                head up, arms lowered and spread ... then your arms come in (your left
+	                fingers on the inside of your right elbow), you coil, and swipe the left arm
+	                out into a point at the camera: "YOU'RE FINISHED!" (PowerConfig.PointAt)
+	      Kaioken   each level snaps you into a flex: chest out, head back, fists driven down
+	      exhausted bent over, head hanging, breathing hard
 	  * the aura: a glowing ring on the ground at your feet with a sheet of fire rising from it
 	    all the way round you. The flames are rooted on the ring, lean outward as they rise and
 	    fade at their tips; thin streaks shoot up through them and licks of flame break off and
 	    rise. Energy swirls round you, ripples pulse out along the ground and sparks float up.
-	    It grows bigger and faster as the bar fills; blue in base form, gold as a Super Saiyan.
-	    After transforming the gold aura stays up, then fades when you calm down (the Breeze
-	    attribute).
+	    It grows bigger and faster as the bar fills; blue in base form, gold as a Super Saiyan,
+	    red in Kaioken. After transforming the gold aura stays up, then fades when you calm down
+	    (the Breeze attribute).
+	  * the Kaioken: a red aura sized by the level, a red glow over your whole body throbbing
+	    like a heartbeat (faster the higher you go), a red shockwave each time you push it, and
+	    a strained tremble at x10 and x20,
 	  * dust blasting off the ground and rocks lifting at high power,
 	  * the transformation explosion: a pillar of light, a flash, a shockwave ring and a spray.
 	The hair and belt being blown upward is HairPhysics reacting to the AuraWind attribute.
@@ -113,6 +120,162 @@ local RELEASE = { -- the explosion: leaning back, head up, arms lowered and spre
 }
 -- how much each joint trembles with effort
 local SHAKE = { Root = 0.5, Waist = 1, Neck = 1.2, LeftShoulder = 0.7, RightShoulder = 0.7, LeftElbow = 0.5, RightElbow = 0.5 }
+
+-- Kaioken: the flex you snap into each time you light it or push it higher: chest out, head
+-- back (a shout), arms driven down and back, fists clenched, knees bent
+local KAIOKEN_FLEX = {
+	Root = CFrame.new(0, -0.14, 0) * CFrame.Angles(0.06, 0, 0),
+	Waist = CFrame.Angles(0.22, 0, 0),
+	Neck = CFrame.Angles(0.38, 0, 0),
+	LeftShoulder = CFrame.Angles(-0.38, 0, -0.42),
+	RightShoulder = CFrame.Angles(-0.38, 0, 0.42),
+	LeftElbow = CFrame.Angles(0.5, 0, 0),
+	RightElbow = CFrame.Angles(0.5, 0, 0),
+	LeftWrist = CFrame.Angles(-0.2, 0, 0),
+	RightWrist = CFrame.Angles(-0.2, 0, 0),
+	LeftHip = CFrame.Angles(0.28, 0, -0.24),
+	RightHip = CFrame.Angles(0.28, 0, 0.24),
+	LeftKnee = CFrame.Angles(-0.5, 0, 0),
+	RightKnee = CFrame.Angles(-0.5, 0, 0),
+	LeftAnkle = CFrame.Angles(0.22, 0, 0.14),
+	RightAnkle = CFrame.Angles(0.22, 0, -0.14),
+}
+-- exhausted (the Kaioken pushed until your body gave out): bent over, head hanging, arms limp
+local SLUMP = {
+	Root = CFrame.new(0, -0.1, 0) * CFrame.Angles(-0.1, 0, 0),
+	Waist = CFrame.Angles(-0.3, 0, 0),
+	Neck = CFrame.Angles(-0.35, 0, 0),
+	LeftShoulder = CFrame.Angles(0.15, 0, 0.08),
+	RightShoulder = CFrame.Angles(0.15, 0, -0.08),
+	LeftElbow = CFrame.Angles(0.2, 0, 0),
+	RightElbow = CFrame.Angles(0.2, 0, 0),
+	LeftWrist = CFrame.identity,
+	RightWrist = CFrame.identity,
+	LeftHip = CFrame.Angles(0.3, 0, -0.06),
+	RightHip = CFrame.Angles(0.3, 0, 0.06),
+	LeftKnee = CFrame.Angles(-0.5, 0, 0),
+	RightKnee = CFrame.Angles(-0.5, 0, 0),
+	LeftAnkle = CFrame.Angles(0.2, 0, 0),
+	RightAnkle = CFrame.Angles(0.2, 0, 0),
+}
+
+-- The "YOU'RE FINISHED!" point at the end of the transformation. From the release pose your
+-- arms come in (TOUCH: right forearm up, left fingertips on the inside of your right elbow),
+-- you coil for a beat, then swipe the left arm out into a point at the camera (HIT). Every
+-- joint starts a moment after the one driving it and overshoots a little before settling, the
+-- body sinks into the stance and the head gives a nod. Angles in degrees: { x, y, z } (Root
+-- also moves: { x, y, z, studs right, up, back }).
+local POINT_TOUCH = {
+	Root = { 0, -10, 0, 0, -0.05, 0 },
+	Waist = { -4, -18, 0 },
+	Neck = { -6, 26, 0 },
+	RightShoulder = { 72, 0, -32 },
+	RightElbow = { 108, 0, 0 },
+	RightWrist = { 0, 0, 0 },
+	LeftShoulder = { 56.3, -18.5, 78.1 },
+	LeftElbow = { 54.8, 0, 0 },
+	LeftWrist = { -10.6, 0, 26.7 },
+	LeftHip = { 6, 0, -10 },
+	RightHip = { 6, 0, 8 },
+	LeftKnee = { -12, 0, 0 },
+	RightKnee = { -8, 0, 0 },
+	LeftAnkle = { 4, 0, 6 },
+	RightAnkle = { 2, 0, -6 },
+}
+local POINT_HIT = {
+	Root = { 0, -12, 0, 0, -0.12, 0 },
+	Waist = { -7, -16, 0 },
+	Neck = { -9, 24, 6 },
+	RightShoulder = { -28, 0, 24 }, -- the right fist pulled back to the hip
+	RightElbow = { 100, 0, 0 },
+	RightWrist = { 0, 0, 0 },
+	LeftShoulder = { 86.4, 1.6, -29.6 }, -- the left arm straight out at the camera
+	LeftElbow = { 4, 0, 0 },
+	LeftWrist = { 1.5, 0, -16.4 },
+	LeftHip = { 16, 0, -18 },
+	RightHip = { -6, 0, 16 },
+	LeftKnee = { -24, 0, 0 },
+	RightKnee = { -10, 0, 0 },
+	LeftAnkle = { 8, 0, 10 },
+	RightAnkle = { -4, 0, -8 },
+}
+local POINT_COIL = { Root = { 0, -3, 0 }, Waist = { 0, -5, 0 }, LeftShoulder = { 0, 0, 5 }, RightElbow = { 6, 0, 0 } }
+-- per joint: { delay into TOUCH, delay into the swipe, swipe length, overshoot }
+local POINT_TIMING = {
+	default = { 0, 0, 0.28, 0.6 },
+	Root = { 0, 0, 0.3, 0.8 },
+	Waist = { 0.03, 0.01, 0.26, 1.2 },
+	Neck = { 0.02, 0.04, 0.24, 1.0 },
+	LeftShoulder = { 0.06, 0.02, 0.2, 2.0 },
+	LeftElbow = { 0.09, 0.05, 0.17, 1.6 },
+	LeftWrist = { 0.11, 0.08, 0.15, 1.8 },
+	RightShoulder = { 0.05, 0, 0.22, 1.2 },
+	RightElbow = { 0.08, 0.02, 0.2, 1.2 },
+	RightWrist = { 0.1, 0.04, 0.18, 1.0 },
+}
+local POINT_IN, POINT_SWIPE = 0.4, 0.62 -- seconds after PointAt: arms in by; the swipe starts
+local POINT_LAND = POINT_SWIPE + 0.19 -- the point lands (the third manga panel slams in)
+
+local function smoother(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * x * (x * (x * 6 - 15) + 10)
+end
+
+-- 0..1 with an overshoot past 1 before settling (bigger c1 = more overshoot)
+local function backOut(x: number, c1: number): number
+	x = math.clamp(x, 0, 1)
+	local c3 = c1 + 1
+	return 1 + c3 * (x - 1) ^ 3 + c1 * (x - 1) ^ 2
+end
+
+local POINT_E = {}
+do
+	local function angles(t)
+		return Vector3.new(math.rad(t[1]), math.rad(t[2]), math.rad(t[3])), Vector3.new(t[4] or 0, t[5] or 0, t[6] or 0)
+	end
+	for name, cf in RELEASE do
+		local rx, ry, rz = cf:ToEulerAnglesXYZ()
+		local ta, tp = angles(POINT_TOUCH[name])
+		local ha, hp = angles(POINT_HIT[name])
+		local coil = POINT_COIL[name] and (angles(POINT_COIL[name])) or Vector3.zero
+		POINT_E[name] = { RA = Vector3.new(rx, ry, rz), RP = cf.Position, TA = ta, TP = tp, HA = ha, HP = hp, Coil = coil }
+	end
+end
+
+-- the point pose of one joint, t seconds after PowerConfig.PointAt
+local function pointPose(name: string, t: number): CFrame
+	local e = POINT_E[name]
+	local d = POINT_TIMING[name] or POINT_TIMING.default
+	local a = smoother((t - d[1]) / POINT_IN)
+	local b = backOut((t - POINT_SWIPE - d[2]) / d[3], d[4])
+	local coil = smoother((t - POINT_IN) / (POINT_SWIPE - POINT_IN)) * (1 - smoother((t - POINT_SWIPE) / 0.1))
+	local ang = e.RA + (e.TA - e.RA) * a + (e.HA - e.TA) * b + e.Coil * coil
+	local pos = e.RP + (e.TP - e.RP) * a + (e.HP - e.TP) * b
+	local land = t - POINT_LAND
+	if land > 0 then
+		if name == "Root" then -- the body sinks into the stance and bobs back up
+			pos += Vector3.new(0, -0.07 * math.exp(-8 * land) * math.cos(13 * land), 0)
+		elseif name == "Neck" then -- a nod
+			ang += Vector3.new(math.rad(-7) * math.exp(-9 * land) * math.sin(15 * land), 0, 0)
+		end
+		if name == "Waist" or name == "LeftShoulder" then -- breathing while holding it
+			ang += Vector3.new(math.rad(1.2) * math.sin(land * 5.5) * smoother(land / 0.6), 0, 0)
+		end
+	end
+	return CFrame.new(pos) * CFrame.Angles(ang.X, ang.Y, ang.Z)
+end
+
+-- how strongly the Kaioken flex holds, t seconds after you pushed it a level
+local function flexWeight(t: number): number
+	if t < 0 or t > 0.9 then
+		return 0
+	elseif t < 0.1 then
+		return smoother(t / 0.1)
+	elseif t < 0.42 then
+		return 1
+	end
+	return 1 - smoother((t - 0.42) / 0.45)
+end
 
 ----------------------------------------------------------------------------------------
 -- the aura
@@ -287,6 +450,14 @@ local function newFX(character: Model, root: BasePart)
 		Flare = 1,
 		Gold = 0,
 		PaintedGold = -1,
+		Red = 0, -- Kaioken red (the aura's colour)
+		PaintedRed = -1,
+		GlowW = 0, -- the red glow over the body
+		PointMix = 0, -- 1 while the "YOU'RE FINISHED!" point plays
+		PointT = 0,
+		FlexW = 0, -- the Kaioken flex
+		Slump = 0, -- exhausted
+		KaiokenSeen = 0,
 		Spin = 0, -- the whole fire slowly turns round you
 		RipplePhase = 0,
 		-- how far below the HumanoidRootPart's centre the feet are
@@ -443,6 +614,9 @@ local function destroyFX(fx)
 	if fx.Pillar then
 		fx.Pillar:Destroy()
 	end
+	if fx.Glow then
+		fx.Glow:Destroy()
+	end
 	for name, motor in fx.Motors do
 		if motor.Parent and fx.LastWritten[name] and sameFrame(motor.Transform, fx.LastWritten[name]) then
 			motor.Transform = CFrame.identity
@@ -450,11 +624,12 @@ local function destroyFX(fx)
 	end
 end
 
--- recolours everything when the aura's colour changes (base blue <-> Super Saiyan gold)
+-- recolours everything when the aura's colour changes (base blue <-> Super Saiyan gold, or
+-- Kaioken red)
 local function paint(fx)
-	local g = fx.Gold
-	local main = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, g)
-	local edge = PowerConfig.BaseAuraEdge:Lerp(PowerConfig.SSJAuraEdge, g)
+	local g, r = fx.Gold, fx.Red
+	local main = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, g):Lerp(PowerConfig.KaiokenAuraColor, r)
+	local edge = PowerConfig.BaseAuraEdge:Lerp(PowerConfig.SSJAuraEdge, g):Lerp(PowerConfig.KaiokenAuraEdge, r)
 	local core = Color3.new(1, 1, 1):Lerp(main, 0.35)
 	local painted = {}
 	for _, t in fx.Tongues do
@@ -477,7 +652,7 @@ local function paint(fx)
 	fx.Haze.Color = ColorSequence.new(main)
 	fx.Light.Color = main
 	fx.Core, fx.Main, fx.Edge = core, main, edge
-	fx.PaintedGold = g
+	fx.PaintedGold, fx.PaintedRed = g, r
 end
 
 ----------------------------------------------------------------------------------------
@@ -551,6 +726,40 @@ local function playBurst(fx, root: BasePart, groundY: number)
 	end)
 end
 
+-- each time the Kaioken is lit or pushed higher: a red shockwave along the ground and a flash
+local function playFlare(fx, root: BasePart, groundY: number)
+	fx.Sparks:Emit(40)
+	fx.Streaks:Emit(25)
+	fx.Light.Brightness = 10
+	fx.Flare = math.max(fx.Flare, 1.35)
+	fx.Shudder = math.max(fx.Shudder, 0.6)
+	local color = PowerConfig.KaiokenAuraColor
+	local ring = fxPart("KaiokenWave", Vector3.new(0.25, 2, 2))
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Material = Enum.Material.Neon
+	ring.Color = color
+	ring.Transparency = 0.2
+	ring.CFrame = CFrame.new(root.Position.X, groundY + 0.15, root.Position.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.25, 22 * S, 22 * S),
+		Transparency = 1,
+	}):Play()
+	local ball = fxPart("KaiokenFlash", Vector3.new(2, 2, 2))
+	ball.Shape = Enum.PartType.Ball
+	ball.Material = Enum.Material.Neon
+	ball.Color = color:Lerp(Color3.new(1, 1, 1), 0.4)
+	ball.Transparency = 0.25
+	ball.CFrame = root.CFrame
+	TweenService:Create(ball, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(10, 10, 10) * S,
+		Transparency = 1,
+	}):Play()
+	task.delay(0.6, function()
+		ring:Destroy()
+		ball:Destroy()
+	end)
+end
+
 ----------------------------------------------------------------------------------------
 -- every frame
 ----------------------------------------------------------------------------------------
@@ -566,6 +775,10 @@ local function targetIntensity(character: Model, fx): number
 		return c >= PowerConfig.AuraStart and math.max(c, 0.12) or 0
 	elseif state == "Bursting" then
 		return (fx and fx.Exploded) and 1.25 or 1 -- the power builds, then explodes out
+	end
+	local kaioken = character:GetAttribute("Kaioken") or 0
+	if kaioken > 0 then
+		return PowerConfig.KaiokenAura[kaioken] or 0.7
 	elseif character:GetAttribute("Form") == "SSJ" then
 		-- the golden aura stays up after transforming and fades when you calm down
 		return PowerConfig.SSJIdleAura * (character:GetAttribute("Breeze") or 1)
@@ -732,7 +945,7 @@ RunService.RenderStepped:Connect(function(dt)
 		local state = character:GetAttribute("PowerState")
 		local fx = active[character]
 		local want = targetIntensity(character, fx)
-		if not fx and (want > 0 or state == "Charging") and root then
+		if not fx and (want > 0 or state == "Charging" or character:GetAttribute("Exhausted")) and root then
 			fx = newFX(character, root)
 			active[character] = fx
 		end
@@ -756,8 +969,36 @@ RunService.RenderStepped:Connect(function(dt)
 			fx.Flare = ease(fx.Flare, 1, 2.5, dt)
 			local gold = (character:GetAttribute("Form") == "SSJ" or state == "Bursting") and 1 or 0
 			fx.Gold = ease(fx.Gold, gold, 6, dt)
-			if math.abs(fx.Gold - fx.PaintedGold) > 0.01 then
+			local kaioken = character:GetAttribute("Kaioken") or 0
+			-- red while the Kaioken burns, and while its aura dies away after; another aura
+			-- (charging, Super Saiyan) takes the colour back
+			if kaioken > 0 then
+				fx.Red = ease(fx.Red, 1, 8, dt)
+			elseif state == "Charging" or state == "Bursting" or gold > 0 then
+				fx.Red = ease(fx.Red, 0, 6, dt)
+			end
+			fx.GlowW = ease(fx.GlowW, kaioken > 0 and 1 or 0, kaioken > 0 and 8 or 3, dt)
+			if math.abs(fx.Gold - fx.PaintedGold) > 0.01 or math.abs(fx.Red - fx.PaintedRed) > 0.01 then
 				paint(fx)
+			end
+			-- the Kaioken's red glow over the whole body, throbbing like a heartbeat
+			if fx.GlowW > 0.01 then
+				if not fx.Glow then
+					local glow = Instance.new("Highlight")
+					glow.Name = "KaiokenGlow"
+					glow.DepthMode = Enum.HighlightDepthMode.Occluded
+					glow.FillColor = PowerConfig.KaiokenGlow
+					glow.OutlineColor = PowerConfig.KaiokenGlow:Lerp(Color3.new(1, 1, 1), 0.35)
+					glow.Adornee = character
+					glow.Parent = folder
+					fx.Glow = glow
+				end
+				local beat = 0.5 + 0.5 * math.sin(now * (6 + kaioken))
+				fx.Glow.FillTransparency = 1 - fx.GlowW * (0.28 + 0.1 * beat + 0.03 * kaioken)
+				fx.Glow.OutlineTransparency = 1 - fx.GlowW * (0.55 + 0.3 * beat)
+				fx.Glow.Enabled = true
+			elseif fx.Glow then
+				fx.Glow.Enabled = false
 			end
 
 			-- the aura follows the character, kept upright
@@ -792,6 +1033,16 @@ RunService.RenderStepped:Connect(function(dt)
 				table.insert(moveFrames, CFrame.new(root.Position.X, groundY + 0.2, root.Position.Z))
 			end
 			fx.Dust.Rate = (groundY and i > 0.55) and 40 * (i - 0.55) / 0.45 or 0
+
+			-- Kaioken: a shockwave and a flex each time it's lit or pushed higher
+			local kaiokenLevel = character:GetAttribute("Kaioken") or 0
+			if kaiokenLevel > fx.KaiokenSeen then
+				fx.FlexAt = now
+				playFlare(fx, root, groundY or (root.Position.Y - fx.FootDrop))
+			end
+			fx.KaiokenSeen = kaiokenLevel
+			fx.FlexW = fx.FlexAt and flexWeight(now - fx.FlexAt) or 0
+			fx.Slump = ease(fx.Slump, character:GetAttribute("Exhausted") and 1 or 0, 4, dt)
 			for _, rock in fx.Rocks do
 				local lift = (groundY and i > 0.7) and rock.Top * math.clamp((i - 0.7) / 0.3, 0, 1) or 0
 				if lift > rock.Height then
@@ -825,13 +1076,34 @@ RunService.RenderStepped:Connect(function(dt)
 				else
 					fx.Strain = ease(fx.Strain, 1, 4, dt) -- hunched, straining, as the power builds
 				end
+				-- then the "YOU'RE FINISHED!" point
+				local pointAt = PowerConfig.PointAt
+				if pointAt and now - fx.BurstAt >= pointAt then
+					fx.PointMix = 1
+					fx.PointT = now - fx.BurstAt - pointAt
+				end
+			end
+			if state ~= "Bursting" and fx.Pose < 0.01 then
+				fx.PointMix = 0 -- (held while the pose fades out after the transformation)
 			end
 			fx.Shudder = math.max(fx.Shudder - dt * 0.8, 0)
 			local building = (state == "Bursting" and not fx.Exploded) and 0.5 or 0
-			fx.Tremble = 0.035 * fx.Strain * (1 - fx.Release) + 0.03 * fx.Shudder + 0.02 * building
+			local pointing = fx.PointMix * (1 - smoother((fx.PointT - POINT_LAND) / 0.3))
+			fx.Tremble = (0.035 * fx.Strain * (1 - fx.Release) + 0.03 * fx.Shudder + 0.02 * building) * (1 - pointing)
+				+ 0.012 * math.max(0, kaiokenLevel - 3)
+				+ 0.025 * fx.FlexW
 
 			-- tidy up once fully calm
-			if want <= 0 and fx.Intensity < 0.01 and fx.Pose < 0.01 and state ~= "Charging" then
+			if
+				want <= 0
+				and fx.Intensity < 0.01
+				and fx.Pose < 0.01
+				and fx.FlexW < 0.01
+				and fx.Slump < 0.01
+				and fx.GlowW < 0.01
+				and state ~= "Charging"
+				and not character:GetAttribute("Exhausted")
+			then
 				table.insert(finished, fx)
 				active[character] = nil
 			end
@@ -875,8 +1147,9 @@ poseSignal:Connect(function()
 				table.clear(fx.LastWritten)
 			end
 		end
-		if fx.Pose > 0.001 then
-			local w = math.min(fx.Pose, 1)
+		local w = math.min(fx.Pose, 1)
+		local flexW, slumpW = fx.FlexW or 0, fx.Slump or 0
+		if w > 0.001 or flexW > 0.001 or slumpW > 0.001 then
 			local tremble = fx.Tremble or 0
 			for name, motor in fx.Motors do
 				if motor.Parent then
@@ -885,13 +1158,31 @@ poseSignal:Connect(function()
 					if fx.LastWritten[name] and sameFrame(current, fx.LastWritten[name]) then
 						current = CFrame.identity
 					end
-					local pose = READY[name]:Lerp(STRAIN[name], fx.Strain):Lerp(RELEASE[name], fx.Release)
+					-- layers on top of the walk/idle animation: the power-up (or the point), the
+					-- Kaioken flex, the exhausted slump
+					local final = current
+					if w > 0.001 then
+						local pose = READY[name]:Lerp(STRAIN[name], fx.Strain):Lerp(RELEASE[name], fx.Release)
+						if fx.PointMix > 0 then
+							pose = pose:Lerp(pointPose(name, fx.PointT), fx.PointMix)
+						end
+						final = final:Lerp(pose, w)
+					end
+					if flexW > 0.001 then
+						final = final:Lerp(KAIOKEN_FLEX[name], flexW)
+					end
+					if slumpW > 0.001 then
+						local slump = SLUMP[name]
+						if name == "Waist" or name == "Neck" then -- breathing hard
+							slump *= CFrame.Angles(0.06 * math.sin(t * 6.5), 0, 0)
+						end
+						final = final:Lerp(slump, slumpW)
+					end
 					local shake = SHAKE[name]
 					if shake and tremble > 0 then
 						local a = tremble * shake
-						pose *= CFrame.Angles(math.sin(t * 41 + #name) * a, math.sin(t * 37) * a, math.sin(t * 29 + #name) * a)
+						final *= CFrame.Angles(math.sin(t * 41 + #name) * a, math.sin(t * 37) * a, math.sin(t * 29 + #name) * a)
 					end
-					local final = current:Lerp(pose, w)
 					motor.Transform = final
 					fx.LastWritten[name] = final
 				end

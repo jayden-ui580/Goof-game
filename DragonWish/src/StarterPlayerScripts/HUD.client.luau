@@ -10,6 +10,9 @@
 	             in five slanted pips, with a Dragon Ball whose stars count the full ones
 	  under it   a Scouter readout of your POWER LEVEL: it scrambles and counts up as you power
 	             up ... and warns you when it's over 9000
+	  Kaioken    everything turns red: the card, the pips, the arc, a 拳 ("fist") badge and a
+	             "KAIOKEN x3" tag; the HP bar's outline throbs as the strain eats your health,
+	             and the Scouter multiplies your power level
 	  top right  a Dragon Radar: a sweeping green screen with a blip for every player nearby
 	             (up on the radar = the way your camera faces)
 	It slides in when you spawn and again when the transformation cutscene ends, shakes when you
@@ -472,6 +475,9 @@ local scrambleUntil = 0
 local over9000Until = 0
 local lastTarget = PowerConfig.BasePowerLevel
 local ssjMix = 0 -- 0 = base colours, 1 = Super Saiyan colours
+local kaiokenMix = 0 -- 1 = Kaioken red
+local tiredMix = 0 -- 1 = exhausted grey
+local KAIOKEN_RED = Color3.fromRGB(255, 64, 48)
 local sweepAngle = 0
 local enterAt = os.clock() -- the plate slides in from here
 local radarAway = 0 -- 1 = the radar has slid off screen (while you power up)
@@ -482,7 +488,10 @@ local character: Model? = nil
 local function powerTarget(c: Model): number
 	local base = PowerConfig.BasePowerLevel
 	local state = c:GetAttribute("PowerState")
-	if c:GetAttribute("Form") == "SSJ" then
+	local kaioken = c:GetAttribute("Kaioken") or 0
+	if kaioken > 0 then
+		return base * (c:GetAttribute("KaiokenMult") or PowerConfig.KaiokenLevels[kaioken] or 1)
+	elseif c:GetAttribute("Form") == "SSJ" then
 		return base * PowerConfig.SSJMultiplier
 	elseif state == "Charging" or state == "Bursting" then
 		return base * (1 + PowerConfig.ChargePowerBoost * (c:GetAttribute("Charge") or 0))
@@ -530,18 +539,32 @@ RunService.RenderStepped:Connect(function(dt)
 	local away = math.max(1 - enter, radarAway)
 	radar.Position = UDim2.new(1, -RADAR_MARGIN + away * (200 * scale + 40), 0, 6)
 
-	-- colours follow your form
+	-- colours follow your form (gold as a Super Saiyan, red in Kaioken, grey when exhausted)
 	local ssj = character:GetAttribute("Form") == "SSJ"
+	local kaioken = character:GetAttribute("Kaioken") or 0
+	local tired = character:GetAttribute("Exhausted") == true
 	ssjMix += ((ssj and 1 or 0) - ssjMix) * (1 - math.exp(-dt * 6))
-	local kiColor = DragonUI.KI:Lerp(DragonUI.KI_SSJ, ssjMix)
-	card:SetColor(GI:Lerp(GOLD, ssjMix))
-	cardShade:SetColor(DragonUI.GI_DARK:Lerp(Color3.fromRGB(214, 128, 16), ssjMix))
+	kaiokenMix += ((kaioken > 0 and 1 or 0) - kaiokenMix) * (1 - math.exp(-dt * 8))
+	tiredMix += ((tired and 1 or 0) - tiredMix) * (1 - math.exp(-dt * 6))
+	local grey = Color3.fromRGB(138, 130, 122)
+	local kiColor = DragonUI.KI:Lerp(DragonUI.KI_SSJ, ssjMix):Lerp(KAIOKEN_RED, kaiokenMix)
+	card:SetColor(GI:Lerp(GOLD, ssjMix):Lerp(Color3.fromRGB(222, 38, 34), kaiokenMix):Lerp(grey, tiredMix * 0.75))
+	cardShade:SetColor(
+		DragonUI.GI_DARK:Lerp(Color3.fromRGB(214, 128, 16), ssjMix):Lerp(Color3.fromRGB(128, 8, 18), kaiokenMix):Lerp(grey:Lerp(INK, 0.4), tiredMix * 0.75)
+	)
 	arcStroke.Color = kiColor
-	formTag:SetColor(PAPER:Lerp(GOLD, ssjMix))
-	formText.Text = ssj and "SUPER SAIYAN" or "BASE FORM"
-	badgeKanji.Text = ssj and "超" or "気"
+	formTag:SetColor(PAPER:Lerp(GOLD, ssjMix):Lerp(DragonUI.DAMAGE, kaiokenMix):Lerp(grey, tiredMix))
+	if tired then
+		formText.Text = "EXHAUSTED"
+	elseif kaioken > 0 then
+		formText.Text = "KAIOKEN x" .. tostring(character:GetAttribute("KaiokenMult") or PowerConfig.KaiokenLevels[kaioken])
+	else
+		formText.Text = ssj and "SUPER SAIYAN" or "BASE FORM"
+	end
+	formText.TextColor3 = INK:Lerp(PAPER, kaiokenMix)
+	badgeKanji.Text = kaioken > 0 and "拳" or (ssj and "超" or "気")
 	badgeStroke.Color = INK
-	nameText:SetColors(nil, GI:Lerp(DragonUI.DAMAGE, ssjMix))
+	nameText:SetColors(nil, GI:Lerp(DragonUI.DAMAGE, math.max(ssjMix, kaiokenMix)))
 	if portraitForm ~= character:GetAttribute("Form") and character:FindFirstChild("Head") then
 		-- re-take the portrait a moment after your form changes, once the new hair shows
 		portraitForm = character:GetAttribute("Form")
@@ -555,7 +578,7 @@ RunService.RenderStepped:Connect(function(dt)
 
 	-- HP: the bar drops at once; the red chunk behind it catches up a moment later
 	local health = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
-	if health < shownHealth - 0.001 then
+	if health < shownHealth - 0.02 then -- a hit (not the Kaioken's steady drain)
 		trailWait = 0.5
 		hitAt = now
 	end
@@ -572,7 +595,9 @@ RunService.RenderStepped:Connect(function(dt)
 	else
 		hpFill:SetColor(DragonUI.HP)
 	end
-	hpEdge:SetColor(PAPER:Lerp(DragonUI.DAMAGE, shake))
+	-- the outline flashes on a hit, and throbs with the Kaioken's strain (faster when higher)
+	local throb = kaiokenMix * (0.35 + 0.35 * math.sin(now * (6 + kaioken)))
+	hpEdge:SetColor(PAPER:Lerp(DragonUI.DAMAGE, math.max(shake, throb)))
 	portrait.ImageColor3 = Color3.new(1, 1, 1):Lerp(Color3.fromRGB(255, 90, 90), shake)
 	hpValue.Text = tostring(math.ceil(humanoid.Health))
 	-- a glint runs along the bar every few seconds

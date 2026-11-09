@@ -1,16 +1,17 @@
 --[[
 	CharacterSetup  (Script — lives in ServerScriptService)
 
-	Turns every player into the "Base" rig (ReplicatedStorage > Base) with the base hair and
-	the belt on:
+	Turns every player into the "Base" rig (ReplicatedStorage > Base) with the base hair, the
+	belt and fingers on:
 	  1. When the server starts it copies Base, puts the rigged base hair, the (hidden) Super
-	     Saiyan hair and the belt on it, and makes that copy the StarterCharacter — Roblox's
-	     built-in way of giving every player a custom character.
+	     Saiyan hair, the belt and the fingers on it, and makes that copy the StarterCharacter —
+	     Roblox's built-in way of giving every player a custom character.
 	  2. Players' own avatars are not loaded onto it, and anything that still sneaks on
 	     (clothing, accessories, body colours from their avatar) is stripped off when they spawn.
 
-	The rigged pieces are found in ServerStorage > CharacterParts (import the three .fbx files
-	there). Settings: ReplicatedStorage > HairConfig and PowerConfig.
+	The rigged pieces are found in ServerStorage > CharacterParts (import the five .fbx files
+	there; without the two finger files you get plain hands). Settings: ReplicatedStorage >
+	HairConfig and PowerConfig.
 ]]
 
 local CollectionService = game:GetService("CollectionService")
@@ -24,7 +25,7 @@ local HairConfig = require(ReplicatedStorage:WaitForChild("HairConfig"))
 local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
 
-local PIECES = { "BaseHair", "SSJHair", "Belt" }
+local PIECES = { "BaseHair", "SSJHair", "Belt", "LeftFingers", "RightFingers" }
 local OWNED = "DWOwned" -- marks things that belong to the Base rig (never stripped)
 
 local function log(message: string)
@@ -223,6 +224,16 @@ local function attachPiece(rig: Model, name: string): boolean
 	end
 	if cfg.Color then
 		mesh.Color = cfg.Color
+		mesh:SetAttribute("KeepColour", true) -- (fingers otherwise follow the hand's colour)
+	elseif cfg.Kind == "Fingers" then
+		-- the colour of the hand they're on (the rig's BodyColors wins, as it recolours the arms)
+		local colours = rig:FindFirstChildOfClass("BodyColors")
+		if colours then
+			mesh.Color = layout.Attach == "LeftHand" and colours.LeftArmColor3 or colours.RightArmColor3
+		else
+			mesh.Color = attachPart.Color
+		end
+		mesh.Material = attachPart.Material
 	end
 	if cfg.Material then
 		mesh.Material = cfg.Material
@@ -284,11 +295,15 @@ local function attachPiece(rig: Model, name: string): boolean
 	weld.Part1 = mesh
 	weld.C0 = attachToMesh
 	weld.Parent = mesh
-	mesh:SetAttribute("HairPreset", name)
 	mesh:SetAttribute("FitScale", math.floor(fit.Scale * 1000 + 0.5) / 1000) -- how big it ended up (1 = as modeled)
 	mesh:SetAttribute("VisibleIn", cfg.VisibleIn or "Both")
 	mesh.Transparency = (cfg.VisibleIn == "SSJ") and 1 or 0
-	CollectionService:AddTag(mesh, HairPhysics.TAG)
+	if cfg.Kind == "Fingers" then
+		mesh:SetAttribute("FingerHand", layout.Attach) -- HandFX poses these; no physics
+	else
+		mesh:SetAttribute("HairPreset", name)
+		CollectionService:AddTag(mesh, HairPhysics.TAG)
+	end
 	holder.Parent = rig
 	log(("put the %s on the %s (%d bones lined up)"):format(name, layout.Attach, #design))
 	return true
@@ -342,6 +357,9 @@ template:SetAttribute("Charge", 0)
 template:SetAttribute("AuraWind", 0)
 template:SetAttribute("Breeze", 0)
 template:SetAttribute("Ki", PowerConfig.KiStart)
+template:SetAttribute("Kaioken", 0)
+template:SetAttribute("KaiokenMult", 1)
+template:SetAttribute("Exhausted", false)
 template.Name = "StarterCharacter"
 
 local old = StarterPlayer:FindFirstChild("StarterCharacter")

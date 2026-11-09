@@ -2017,5 +2017,359 @@
     1.048
    ]
   }
+ },
+ {
+  "name": "LeftFingers",
+  "attach": "LeftHand",
+  "root": "LHandRoot",
+  "bones": {
+   "LHandRoot": [
+    0.0,
+    -0.1937,
+    0.0
+   ],
+   "LThumb1": [
+    0.2895,
+    -0.185,
+    -0.3421
+   ],
+   "LThumb2": [
+    0.2946,
+    -0.4513,
+    -0.3421
+   ],
+   "LThumbTip": [
+    0.2945,
+    -0.865,
+    -0.3421
+   ],
+   "LIndex1": [
+    -0.3126,
+    -0.185,
+    -0.3424
+   ],
+   "LIndex2": [
+    -0.3178,
+    -0.4545,
+    -0.3424
+   ],
+   "LIndexTip": [
+    -0.3178,
+    -0.8853,
+    -0.3424
+   ],
+   "LMiddle1": [
+    -0.3126,
+    -0.185,
+    -0.1166
+   ],
+   "LMiddle2": [
+    -0.3177,
+    -0.4651,
+    -0.1166
+   ],
+   "LMiddleTip": [
+    -0.3178,
+    -1.0121,
+    -0.1166
+   ],
+   "LRing1": [
+    -0.3126,
+    -0.185,
+    0.1155
+   ],
+   "LRing2": [
+    -0.3177,
+    -0.4632,
+    0.1155
+   ],
+   "LRingTip": [
+    -0.3178,
+    -0.9614,
+    0.1155
+   ],
+   "LPinky1": [
+    -0.3126,
+    -0.185,
+    0.3398
+   ],
+   "LPinky2": [
+    -0.3177,
+    -0.4511,
+    0.3398
+   ],
+   "LPinkyTip": [
+    -0.3178,
+    -0.865,
+    0.3398
+   ]
+  },
+  "chains": [
+   {
+    "name": "LThumb",
+    "bones": [
+     "LThumb1",
+     "LThumb2",
+     "LThumbTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   },
+   {
+    "name": "LIndex",
+    "bones": [
+     "LIndex1",
+     "LIndex2",
+     "LIndexTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   },
+   {
+    "name": "LMiddle",
+    "bones": [
+     "LMiddle1",
+     "LMiddle2",
+     "LMiddleTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   },
+   {
+    "name": "LRing",
+    "bones": [
+     "LRing1",
+     "LRing2",
+     "LRingTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   },
+   {
+    "name": "LPinky",
+    "bones": [
+     "LPinky1",
+     "LPinky2",
+     "LPinkyTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   }
+  ],
+  "size": [
+   0.7898,
+   0.9293,
+   0.8851
+  ],
+  "weights_per_bone": {
+   "LHandRoot": 0,
+   "LThumb1": 54,
+   "LThumb2": 158,
+   "LThumbTip": 0,
+   "LIndex1": 53,
+   "LIndex2": 167,
+   "LIndexTip": 0,
+   "LMiddle1": 54,
+   "LMiddle2": 185,
+   "LMiddleTip": 0,
+   "LRing1": 54,
+   "LRing2": 160,
+   "LRingTip": 0,
+   "LPinky1": 55,
+   "LPinky2": 149,
+   "LPinkyTip": 0
+  }
+ },
+ {
+  "name": "RightFingers",
+  "attach": "RightHand",
+  "root": "RHandRoot",
+  "bones": {
+   "RHandRoot": [
+    0.0,
+    -0.1937,
+    0.0
+   ],
+   "RThumb1": [
+    -0.2893,
+    -0.185,
+    -0.3421
+   ],
+   "RThumb2": [
+    -0.2944,
+    -0.451,
+    -0.3421
+   ],
+   "RThumbTip": [
+    -0.2944,
+    -0.865,
+    -0.3421
+   ],
+   "RIndex1": [
+    0.3126,
+    -0.185,
+    -0.3424
+   ],
+   "RIndex2": [
+    0.3176,
+    -0.4545,
+    -0.3424
+   ],
+   "RIndexTip": [
+    0.3176,
+    -0.8853,
+    -0.3424
+   ],
+   "RMiddle1": [
+    0.3126,
+    -0.1835,
+    -0.1189
+   ],
+   "RMiddle2": [
+    0.3176,
+    -0.4651,
+    -0.1189
+   ],
+   "RMiddleTip": [
+    0.3177,
+    -1.0121,
+    -0.1189
+   ],
+   "RRing1": [
+    0.3125,
+    -0.185,
+    0.1078
+   ],
+   "RRing2": [
+    0.3175,
+    -0.4635,
+    0.1078
+   ],
+   "RRingTip": [
+    0.3177,
+    -0.9614,
+    0.1078
+   ],
+   "RPinky1": [
+    0.3126,
+    -0.185,
+    0.3402
+   ],
+   "RPinky2": [
+    0.3176,
+    -0.451,
+    0.3402
+   ],
+   "RPinkyTip": [
+    0.3177,
+    -0.865,
+    0.3402
+   ]
+  },
+  "chains": [
+   {
+    "name": "RThumb",
+    "bones": [
+     "RThumb1",
+     "RThumb2",
+     "RThumbTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   },
+   {
+    "name": "RIndex",
+    "bones": [
+     "RIndex1",
+     "RIndex2",
+     "RIndexTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   },
+   {
+    "name": "RMiddle",
+    "bones": [
+     "RMiddle1",
+     "RMiddle2",
+     "RMiddleTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   },
+   {
+    "name": "RRing",
+    "bones": [
+     "RRing1",
+     "RRing2",
+     "RRingTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   },
+   {
+    "name": "RPinky",
+    "bones": [
+     "RPinky1",
+     "RPinky2",
+     "RPinkyTip"
+    ],
+    "radii": [
+     0.1,
+     0.1,
+     0.1
+    ]
+   }
+  ],
+  "size": [
+   0.7896,
+   0.9293,
+   0.8854
+  ],
+  "weights_per_bone": {
+   "RHandRoot": 0,
+   "RThumb1": 53,
+   "RThumb2": 150,
+   "RThumbTip": 0,
+   "RIndex1": 54,
+   "RIndex2": 187,
+   "RIndexTip": 0,
+   "RMiddle1": 59,
+   "RMiddle2": 200,
+   "RMiddleTip": 0,
+   "RRing1": 54,
+   "RRing2": 167,
+   "RRingTip": 0,
+   "RPinky1": 53,
+   "RPinky2": 154,
+   "RPinkyTip": 0
+  }
  }
 ]

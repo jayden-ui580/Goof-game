@@ -17,31 +17,36 @@
 	                            HairConfig   (hair/belt settings: colours, stiffness, aura reaction)
 	                            PowerConfig  (power-up settings: keys, charge speed, aura colours)
 	                            DragonUI     (the look of the screens: slabs, lettering, colours)
-	  ServerScriptService    -> CharacterSetup (every player becomes the Base rig with hair + belt)
-	                            PowerUpServer  (referee for powering up / Super Saiyan)
+	  ServerScriptService    -> CharacterSetup (every player becomes the Base rig with hair, belt
+	                                            and fingers)
+	                            PowerUpServer  (referee for powering up / Super Saiyan / Kaioken)
 	  StarterPlayerScripts   -> HairPhysicsClient (runs the hair + belt physics on each screen)
-	                            PowerUpClient     (R / Space controls, front camera, power bar)
+	                            PowerUpClient     (R / Space / K controls, front camera, power bar)
 	                            PowerFX           (aura, animation, dust, rocks, the explosion)
 	                            SSJCutscene       (ModuleScript: the transformation cutscene)
 	                            HUD               (portrait card, HP, Ki, Scouter, Dragon Radar)
+	                            HandFX            (the fingers: relaxed, fidgets, fists, the point)
 	                            HairFitTool       (press H: nudge hair/belt into place)
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Replace every script with the ones in this kit. DragonUI is new (a ModuleScript: it goes
-	  in ReplicatedStorage); HUD and SSJCutscene were new last time (both in
-	  StarterPlayerScripts). If you haven't yet, delete the old copies of these and import the
-	  new ones into ServerStorage > CharacterParts:
+	  Replace every script with the ones in this kit. HandFX is new (a LocalScript: it goes in
+	  StarterPlayerScripts). Import the two new finger files, LeftFingers_Rigged.fbx and
+	  RightFingers_Rigged.fbx, into ServerStorage > CharacterParts like the hair (without them
+	  you get plain hands). DragonUI (ReplicatedStorage) was new last time.
+	  If you haven't yet, delete the old copies of these and import the new ones into
+	  ServerStorage > CharacterParts:
 	    BaseHair_Rigged.fbx  - the bangs now have bones
 	    SSJHair_Rigged.fbx   - its root bone was renamed (the old name clashed with the base
 	                           hair's, which tied it to the base hair's skeleton: it never moved)
 
 	SETUP (once)
 	  1. Your R15 rig must be in ReplicatedStorage and called "Base".
-	  2. Import the three rigged pieces with File > Import 3D:
-	       BaseHair_Rigged.fbx, SSJHair_Rigged.fbx, Belt_Rigged.fbx
+	  2. Import the five rigged pieces with File > Import 3D:
+	       BaseHair_Rigged.fbx, SSJHair_Rigged.fbx, Belt_Rigged.fbx,
+	       LeftFingers_Rigged.fbx, RightFingers_Rigged.fbx
 	     (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones").
-	     Drag all three imported models into ServerStorage > CharacterParts.
+	     Drag all five imported models into ServerStorage > CharacterParts.
 	  3. Move the contents of each folder in this kit into the service with the same name
 	     (StarterPlayerScripts is inside StarterPlayer). Then delete this kit folder.
 	  4. In StarterPlayer's properties, untick LoadCharacterAppearance (the script tries to do
@@ -59,8 +64,13 @@
 	          and faster as the bar fills; hair and belt blow upward. Once the bar is full it
 	          stays full, and (after at least 2.5 s of charging) you transform: the cutscene
 	          plays (your eyes, your hair, the explosion, then the screen turns into a manga
-	          page while "THIS IS—" slides down and "SUPER SAIYAN!" slides up), then the
-	          golden hair flows and the gold aura burns until you calm down (~20 s).
+	          page while "THIS IS—" slides down and "SUPER SAIYAN!" slides up; then you swipe
+	          into a point at the camera: "YOU'RE FINISHED!"), then the golden hair flows and
+	          the gold aura burns until you calm down (~20 s).
+	  K       Kaioken (base form): a red aura and glow, more power and speed. K again pushes
+	          it higher (x2, x3, x4, x10, x20), each level burning a ki pip, but it eats your
+	          health every second; push too far and your body gives out (exhausted for a few
+	          seconds). R lets it go. (phones: the KAIOKEN button)
 	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
 
 	TWEAKING
@@ -73,8 +83,12 @@
 	               (Cutscene, CutsceneText, BurstTime, ExplodeAt), calming down (SSJCalmAfter),
 	               aura colours, size and flicker, the HUD's numbers (ki, power level, radar
 	               range), camera distance and shake.
+	  PowerConfig also: when the "YOU'RE FINISHED!" point starts (PointAt) and everything about
+	               the Kaioken (KaiokenLevels, KaiokenStrain, KaiokenSpeed, KaiokenKiCost ...).
 	  DragonUI: the screens' colours (INK, PAPER, GI, HP, KI ...) and how far every slab
 	            leans (SLANT).
+	  HandFX (top of the script): finger poses (POSES) and idle fidgets (FIDGETS).
+	  HairConfig: give LeftFingers / RightFingers a Color to stop them matching your hands.
 	  HUD (top of the script): the portrait camera (PORTRAIT_FOV, PORTRAIT_EYE, PORTRAIT_LOOK).
 ]]
 ]]></ProtectedString>
@@ -1128,9 +1142,10 @@ return HairPhysics
           <ProtectedString name="Source"><![CDATA[--[[
 	HairConfig  (ModuleScript — lives in ReplicatedStorage)
 
-	Settings for everything on the character that moves with physics: the base hair, the
-	Super Saiyan hair and the belt's ribbons. Read by CharacterSetup (which puts them on) and by
-	HairPhysics on every player's computer (which moves them).
+	Settings for the pieces put on the character: the base hair, the Super Saiyan hair and the
+	belt's ribbons (moved by physics), and the fingers (posed by HandFX). Read by CharacterSetup
+	(which puts them on) and by HairPhysics on every player's computer (which moves the hair and
+	ribbons).
 
 	Quick guide to the physics numbers (per piece, under Physics):
 	  Stiffness     One number per bone, root first: how strongly each bone springs back to its
@@ -1257,6 +1272,26 @@ HairConfig.Hairs = {
 			BodyColliders = { "LowerTorso", "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg" },
 			SimulationDistance = 150,
 		},
+	},
+
+	-- The fingers (LeftFingers_Rigged.fbx / RightFingers_Rigged.fbx). They aren't swung by
+	-- physics: HandFX poses them (relaxed curl, idle fidgets, fists, the point). They take the
+	-- colour and material of the hand they're on unless you give them a Color here.
+	LeftFingers = {
+		SignatureBone = "LIndex1",
+		Kind = "Fingers",
+		Offset = CFrame.new(0, 0, 0),
+		Scale = 1,
+		ScaleToHead = false,
+		VisibleIn = "Both",
+	},
+	RightFingers = {
+		SignatureBone = "RIndex1",
+		Kind = "Fingers",
+		Offset = CFrame.new(0, 0, 0),
+		Scale = 1,
+		ScaleToHead = false,
+		VisibleIn = "Both",
 	},
 }
 
@@ -1539,6 +1574,66 @@ HairConfig.Layouts = {
 			RibbonR_End = Vector3.new(0.4635, -1.2052, -0.6707),
 		},
 	},
+	LeftFingers = {
+		Attach = "LeftHand", -- the body part it is fixed to
+		Size = Vector3.new(0.7898, 0.9293, 0.8851),
+		HeadCenter = Vector3.zero, -- the rig point that sits on the centre of that body part
+		Chains = {
+			{ Name = "LThumb", Bones = { "LThumb1", "LThumb2" }, Tip = "LThumbTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "LIndex", Bones = { "LIndex1", "LIndex2" }, Tip = "LIndexTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "LMiddle", Bones = { "LMiddle1", "LMiddle2" }, Tip = "LMiddleTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "LRing", Bones = { "LRing1", "LRing2" }, Tip = "LRingTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "LPinky", Bones = { "LPinky1", "LPinky2" }, Tip = "LPinkyTip", Radii = { 0.1, 0.1, 0.1 } },
+		},
+		Bones = {
+			LHandRoot = Vector3.new(0, -0.1937, 0),
+			LThumb1 = Vector3.new(0.2895, -0.185, -0.3421),
+			LThumb2 = Vector3.new(0.2946, -0.4513, -0.3421),
+			LThumbTip = Vector3.new(0.2945, -0.865, -0.3421),
+			LIndex1 = Vector3.new(-0.3126, -0.185, -0.3424),
+			LIndex2 = Vector3.new(-0.3178, -0.4545, -0.3424),
+			LIndexTip = Vector3.new(-0.3178, -0.8853, -0.3424),
+			LMiddle1 = Vector3.new(-0.3126, -0.185, -0.1166),
+			LMiddle2 = Vector3.new(-0.3177, -0.4651, -0.1166),
+			LMiddleTip = Vector3.new(-0.3178, -1.0121, -0.1166),
+			LRing1 = Vector3.new(-0.3126, -0.185, 0.1155),
+			LRing2 = Vector3.new(-0.3177, -0.4632, 0.1155),
+			LRingTip = Vector3.new(-0.3178, -0.9614, 0.1155),
+			LPinky1 = Vector3.new(-0.3126, -0.185, 0.3398),
+			LPinky2 = Vector3.new(-0.3177, -0.4511, 0.3398),
+			LPinkyTip = Vector3.new(-0.3178, -0.865, 0.3398),
+		},
+	},
+	RightFingers = {
+		Attach = "RightHand", -- the body part it is fixed to
+		Size = Vector3.new(0.7896, 0.9293, 0.8854),
+		HeadCenter = Vector3.zero, -- the rig point that sits on the centre of that body part
+		Chains = {
+			{ Name = "RThumb", Bones = { "RThumb1", "RThumb2" }, Tip = "RThumbTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "RIndex", Bones = { "RIndex1", "RIndex2" }, Tip = "RIndexTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "RMiddle", Bones = { "RMiddle1", "RMiddle2" }, Tip = "RMiddleTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "RRing", Bones = { "RRing1", "RRing2" }, Tip = "RRingTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "RPinky", Bones = { "RPinky1", "RPinky2" }, Tip = "RPinkyTip", Radii = { 0.1, 0.1, 0.1 } },
+		},
+		Bones = {
+			RHandRoot = Vector3.new(0, -0.1937, 0),
+			RThumb1 = Vector3.new(-0.2893, -0.185, -0.3421),
+			RThumb2 = Vector3.new(-0.2944, -0.451, -0.3421),
+			RThumbTip = Vector3.new(-0.2944, -0.865, -0.3421),
+			RIndex1 = Vector3.new(0.3126, -0.185, -0.3424),
+			RIndex2 = Vector3.new(0.3176, -0.4545, -0.3424),
+			RIndexTip = Vector3.new(0.3176, -0.8853, -0.3424),
+			RMiddle1 = Vector3.new(0.3126, -0.1835, -0.1189),
+			RMiddle2 = Vector3.new(0.3176, -0.4651, -0.1189),
+			RMiddleTip = Vector3.new(0.3177, -1.0121, -0.1189),
+			RRing1 = Vector3.new(0.3125, -0.185, 0.1078),
+			RRing2 = Vector3.new(0.3175, -0.4635, 0.1078),
+			RRingTip = Vector3.new(0.3177, -0.9614, 0.1078),
+			RPinky1 = Vector3.new(0.3126, -0.185, 0.3402),
+			RPinky2 = Vector3.new(0.3176, -0.451, 0.3402),
+			RPinkyTip = Vector3.new(0.3177, -0.865, 0.3402),
+		},
+	},
 }
 
 return HairConfig
@@ -1551,11 +1646,14 @@ return HairConfig
           <ProtectedString name="Source"><![CDATA[--[[
 	PowerConfig  (ModuleScript — lives in ReplicatedStorage)
 
-	Settings for powering up and turning Super Saiyan.
+	Settings for powering up: turning Super Saiyan, and the Kaioken.
 	How it plays: press R -> the camera swings round in front of you and you drop into a ready
 	stance -> spam Space (or tap the TAP button on a phone) -> the aura appears, then grows
 	bigger and faster, your hair and belt get blown upward -> fill the bar and you burst into
-	Super Saiyan; the golden hair then flows calmly. Press R again as a Super Saiyan to power down.
+	Super Saiyan (and point at the camera: "YOU'RE FINISHED!"); the golden hair then flows
+	calmly. Press R again as a Super Saiyan to power down.
+	Kaioken (base form only): press K to light it, again to push it higher. More power, faster
+	legs, a red aura ... and it eats your health every second. R lets it go.
 ]]
 
 local PowerConfig = {}
@@ -1575,10 +1673,13 @@ PowerConfig.HairStart = 0.25 -- bar level where the hair and belt start lifting
 PowerConfig.LockMovement = true -- you can't walk or jump while powering up
 
 -- the transformation
-PowerConfig.BurstTime = 5.4 -- seconds the transformation takes (the cutscene plays during it);
+PowerConfig.BurstTime = 6.9 -- seconds the transformation takes (the cutscene plays during it);
 -- you get control back after it
 PowerConfig.ExplodeAt = 2.2 -- seconds into the transformation when the power explodes out (pillar
 -- of light, shockwave, you throw your arms out)
+PowerConfig.PointAt = 4.3 -- seconds into the transformation when you start the "YOU'RE FINISHED!"
+-- point: left hand on the inside of your right elbow, then a swipe into a point at the camera.
+-- It lands 0.8 s later; keep BurstTime at least 1.8 s after this so it holds a moment
 PowerConfig.SSJCalmWind = 0.12 -- a gentle upward lift on the hair while the Super Saiyan aura is up
 -- (0..1); the sideways breeze is the SSJ hair's LocalWind in HairConfig
 PowerConfig.SSJIdleAura = 0.75 -- how strong the golden aura stays after transforming (0 = none)
@@ -1587,7 +1688,24 @@ PowerConfig.SSJCalmTime = 4 -- seconds the calming down takes
 
 -- the transformation cutscene (only the player transforming sees it)
 PowerConfig.Cutscene = true
-PowerConfig.CutsceneText = { "THIS IS—", "SUPER SAIYAN!" }
+PowerConfig.CutsceneText = { "THIS IS—", "SUPER SAIYAN!", "YOU'RE FINISHED!" } -- the three manga panels
+
+-- Kaioken (King Kai's technique; base form only). Each press of K lights it or pushes it a
+-- level higher: every level burns one ki pip (KaiokenKiCost), multiplies your power level and
+-- walk speed, and strains your body: you lose health every second. If your health falls to
+-- KaiokenFloor your body gives out: the Kaioken stops and you're exhausted (slow, no powering
+-- up) for KaiokenExhaustTime seconds. R lets it go. (Roblox heals you 1 health a second on its
+-- own, so the lowest level barely hurts.)
+PowerConfig.KaiokenKey = Enum.KeyCode.K
+PowerConfig.KaiokenLevels = { 2, 3, 4, 10, 20 } -- the multiplier at each level: x2, x3, x4, x10, x20
+PowerConfig.KaiokenStrain = { 1.5, 2.5, 4, 8, 16 } -- health lost per second at each level
+PowerConfig.KaiokenSpeed = { 1.15, 1.2, 1.25, 1.4, 1.6 } -- walk speed multiplier at each level
+PowerConfig.KaiokenAura = { 0.55, 0.65, 0.75, 0.95, 1.15 } -- how big the red aura burns at each level
+PowerConfig.KaiokenKiCost = 20 -- ki each level costs (one of the five pips on the HUD)
+PowerConfig.KaiokenCooldown = 0.6 -- seconds between level-ups
+PowerConfig.KaiokenFloor = 10 -- health at which your body gives out
+PowerConfig.KaiokenExhaustTime = 4 -- seconds you're exhausted afterwards
+PowerConfig.ExhaustedSpeed = 0.55 -- walk speed multiplier while exhausted
 
 -- HUD
 PowerConfig.KiMax = 100
@@ -1603,6 +1721,9 @@ PowerConfig.BaseAuraColor = Color3.fromRGB(110, 205, 255) -- main colour of the 
 PowerConfig.BaseAuraEdge = Color3.fromRGB(30, 115, 255) -- colour at the flame tips
 PowerConfig.SSJAuraColor = Color3.fromRGB(255, 210, 70)
 PowerConfig.SSJAuraEdge = Color3.fromRGB(255, 125, 25)
+PowerConfig.KaiokenAuraColor = Color3.fromRGB(255, 72, 52)
+PowerConfig.KaiokenAuraEdge = Color3.fromRGB(205, 0, 28)
+PowerConfig.KaiokenGlow = Color3.fromRGB(255, 40, 40) -- the red glow over your whole body
 PowerConfig.AuraSize = 1 -- scales the whole aura
 PowerConfig.AuraFlames = 1 -- how many flame tongues (1 = normal; lower it if lots of players lag)
 PowerConfig.AuraFrameRate = 24 -- how many times a second the aura's flames change shape. Low
@@ -2003,16 +2124,17 @@ return DragonUI
           <ProtectedString name="Source"><![CDATA[--[[
 	CharacterSetup  (Script — lives in ServerScriptService)
 
-	Turns every player into the "Base" rig (ReplicatedStorage > Base) with the base hair and
-	the belt on:
+	Turns every player into the "Base" rig (ReplicatedStorage > Base) with the base hair, the
+	belt and fingers on:
 	  1. When the server starts it copies Base, puts the rigged base hair, the (hidden) Super
-	     Saiyan hair and the belt on it, and makes that copy the StarterCharacter — Roblox's
-	     built-in way of giving every player a custom character.
+	     Saiyan hair, the belt and the fingers on it, and makes that copy the StarterCharacter —
+	     Roblox's built-in way of giving every player a custom character.
 	  2. Players' own avatars are not loaded onto it, and anything that still sneaks on
 	     (clothing, accessories, body colours from their avatar) is stripped off when they spawn.
 
-	The rigged pieces are found in ServerStorage > CharacterParts (import the three .fbx files
-	there). Settings: ReplicatedStorage > HairConfig and PowerConfig.
+	The rigged pieces are found in ServerStorage > CharacterParts (import the five .fbx files
+	there; without the two finger files you get plain hands). Settings: ReplicatedStorage >
+	HairConfig and PowerConfig.
 ]]
 
 local CollectionService = game:GetService("CollectionService")
@@ -2026,7 +2148,7 @@ local HairConfig = require(ReplicatedStorage:WaitForChild("HairConfig"))
 local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
 
-local PIECES = { "BaseHair", "SSJHair", "Belt" }
+local PIECES = { "BaseHair", "SSJHair", "Belt", "LeftFingers", "RightFingers" }
 local OWNED = "DWOwned" -- marks things that belong to the Base rig (never stripped)
 
 local function log(message: string)
@@ -2225,6 +2347,16 @@ local function attachPiece(rig: Model, name: string): boolean
 	end
 	if cfg.Color then
 		mesh.Color = cfg.Color
+		mesh:SetAttribute("KeepColour", true) -- (fingers otherwise follow the hand's colour)
+	elseif cfg.Kind == "Fingers" then
+		-- the colour of the hand they're on (the rig's BodyColors wins, as it recolours the arms)
+		local colours = rig:FindFirstChildOfClass("BodyColors")
+		if colours then
+			mesh.Color = layout.Attach == "LeftHand" and colours.LeftArmColor3 or colours.RightArmColor3
+		else
+			mesh.Color = attachPart.Color
+		end
+		mesh.Material = attachPart.Material
 	end
 	if cfg.Material then
 		mesh.Material = cfg.Material
@@ -2286,11 +2418,15 @@ local function attachPiece(rig: Model, name: string): boolean
 	weld.Part1 = mesh
 	weld.C0 = attachToMesh
 	weld.Parent = mesh
-	mesh:SetAttribute("HairPreset", name)
 	mesh:SetAttribute("FitScale", math.floor(fit.Scale * 1000 + 0.5) / 1000) -- how big it ended up (1 = as modeled)
 	mesh:SetAttribute("VisibleIn", cfg.VisibleIn or "Both")
 	mesh.Transparency = (cfg.VisibleIn == "SSJ") and 1 or 0
-	CollectionService:AddTag(mesh, HairPhysics.TAG)
+	if cfg.Kind == "Fingers" then
+		mesh:SetAttribute("FingerHand", layout.Attach) -- HandFX poses these; no physics
+	else
+		mesh:SetAttribute("HairPreset", name)
+		CollectionService:AddTag(mesh, HairPhysics.TAG)
+	end
 	holder.Parent = rig
 	log(("put the %s on the %s (%d bones lined up)"):format(name, layout.Attach, #design))
 	return true
@@ -2344,6 +2480,9 @@ template:SetAttribute("Charge", 0)
 template:SetAttribute("AuraWind", 0)
 template:SetAttribute("Breeze", 0)
 template:SetAttribute("Ki", PowerConfig.KiStart)
+template:SetAttribute("Kaioken", 0)
+template:SetAttribute("KaiokenMult", 1)
+template:SetAttribute("Exhausted", false)
 template.Name = "StarterCharacter"
 
 local old = StarterPlayer:FindFirstChild("StarterCharacter")
@@ -2420,9 +2559,9 @@ end
 	PowerUpServer  (Script — lives in ServerScriptService)
 
 	The referee for powering up. Players' computers tell it "I started charging", "my bar is at
-	X", "I'm full — transform", "cancel" and "power down"; it checks those make sense and sets
-	attributes on the character that every player's screen reads to draw the aura, pose, hair
-	and HUD:
+	X", "I'm full — transform", "cancel", "power down" and "Kaioken"; it checks those make sense
+	and sets attributes on the character that every player's screen reads to draw the aura,
+	pose, hair, fingers and HUD:
 	  Form        "Base" or "SSJ"
 	  PowerState  "Idle", "Charging" or "Bursting" (the transformation, cutscene included)
 	  Charge      0..1, how full the power bar is
@@ -2430,8 +2569,12 @@ end
 	  Breeze      0..1, the Super Saiyan glow: the SSJ hair's breeze and the golden aura. 1 when
 	              you transform, fading to 0 when you calm down (PowerConfig.SSJCalmAfter)
 	  Ki          0..KiMax, shown on the HUD: refills slowly, and charging fills it up
-	It also swaps the visible hair (base <-> Super Saiyan) and stops you walking while charging
-	and transforming.
+	  Kaioken     0 = off, 1..5 = the level (x2, x3, x4, x10, x20; PowerConfig.KaiokenLevels)
+	  KaiokenMult the multiplier of that level (1 when off)
+	  Exhausted   true for a few seconds after the Kaioken was pushed until your body gave out
+	It also swaps the visible hair (base <-> Super Saiyan), stops you walking while charging
+	and transforming, speeds you up in Kaioken, drains your health while it burns, and slows
+	you while you're exhausted.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
 
@@ -2500,12 +2643,62 @@ local function lockMovement(character: Model, lock: boolean)
 	end
 end
 
--- the hair lift that stays on when you're not charging: only while the Super Saiyan glow is up
+-- the hair lift that stays on when you're not charging: while the Super Saiyan glow is up, or
+-- the Kaioken burns
 local function idleWind(character: Model): number
+	local kaioken = character:GetAttribute("Kaioken") or 0
+	if kaioken > 0 then
+		return 0.3 + 0.1 * kaioken
+	end
 	if character:GetAttribute("Form") ~= "SSJ" then
 		return 0
 	end
 	return PowerConfig.SSJCalmWind * (character:GetAttribute("Breeze") or 0)
+end
+
+----------------------------------------------------------------------------------------
+-- Kaioken
+----------------------------------------------------------------------------------------
+-- walk speed follows the Kaioken level and exhaustion (your normal speed is remembered)
+local function applySpeed(character: Model)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	local st = state(character)
+	local level = character:GetAttribute("Kaioken") or 0
+	local tired = character:GetAttribute("Exhausted")
+	if level > 0 or tired then
+		st.NormalSpeed = st.NormalSpeed or humanoid.WalkSpeed
+		local mult = tired and PowerConfig.ExhaustedSpeed or PowerConfig.KaiokenSpeed[level] or 1
+		humanoid.WalkSpeed = st.NormalSpeed * mult
+	elseif st.NormalSpeed then
+		humanoid.WalkSpeed = st.NormalSpeed
+		st.NormalSpeed = nil
+	end
+end
+
+local function setKaioken(character: Model, level: number)
+	character:SetAttribute("Kaioken", level)
+	character:SetAttribute("KaiokenMult", PowerConfig.KaiokenLevels[level] or 1)
+	character:SetAttribute("AuraWind", idleWind(character))
+	applySpeed(character)
+end
+
+-- pushed too far: the Kaioken stops and you're exhausted for a few seconds
+local function exhaust(character: Model)
+	local st = state(character)
+	st.Token = (st.Token or 0) + 1
+	local token = st.Token
+	setKaioken(character, 0)
+	character:SetAttribute("Exhausted", true)
+	applySpeed(character)
+	task.delay(PowerConfig.KaiokenExhaustTime, function()
+		if character.Parent and st.Token == token then
+			character:SetAttribute("Exhausted", false)
+			applySpeed(character)
+		end
+	end)
 end
 
 local function stopCharging(character: Model)
@@ -2566,8 +2759,9 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 	local now = os.clock()
 	local st = state(character)
 
+	local kaioken = character:GetAttribute("Kaioken") or 0
 	if action == "Start" then
-		if powerState == "Idle" and form == "Base" then
+		if powerState == "Idle" and form == "Base" and kaioken == 0 and not character:GetAttribute("Exhausted") then
 			st.Started, st.LastUpdate = now, now
 			character:SetAttribute("PowerState", "Charging")
 			character:SetAttribute("Charge", 0)
@@ -2595,17 +2789,35 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 			stopCharging(character)
 		end
 	elseif action == "PowerDown" then
-		if powerState == "Idle" and form == "SSJ" then
+		if powerState == "Idle" and kaioken > 0 then
+			setKaioken(character, 0) -- let the Kaioken go
+		elseif powerState == "Idle" and form == "SSJ" then
 			st.Token = (st.Token or 0) + 1 -- cancels a pending calm-down
 			applyForm(character, "Base")
 			character:SetAttribute("AuraWind", 0)
 			character:SetAttribute("Breeze", 0)
 		end
+	elseif action == "Kaioken" then
+		-- light it, or push it one level higher: base form, standing (not charging), not
+		-- exhausted, not too soon after the last level, and with a ki pip to burn
+		local ki = character:GetAttribute("Ki") or 0
+		if
+			powerState == "Idle"
+			and form == "Base"
+			and not character:GetAttribute("Exhausted")
+			and kaioken < #PowerConfig.KaiokenLevels
+			and ki >= PowerConfig.KaiokenKiCost
+			and now - (st.KaiokenAt or -math.huge) >= PowerConfig.KaiokenCooldown
+		then
+			st.KaiokenAt = now
+			character:SetAttribute("Ki", ki - PowerConfig.KaiokenKiCost)
+			setKaioken(character, kaioken + 1)
+		end
 	end
 end)
 
--- a charging player who stopped talking (closed the game, lagged out) is cancelled; and ki
--- slowly refills
+-- a charging player who stopped talking (closed the game, lagged out) is cancelled; the
+-- Kaioken eats health; and ki slowly refills
 local kiClock = 0
 RunService.Heartbeat:Connect(function(dt)
 	local now = os.clock()
@@ -2614,6 +2826,18 @@ RunService.Heartbeat:Connect(function(dt)
 			info[character] = nil
 		elseif character:GetAttribute("PowerState") == "Charging" and now - (st.LastUpdate or now) > STALE_SECONDS then
 			stopCharging(character)
+		else
+			local level = character:GetAttribute("Kaioken") or 0
+			local humanoid = level > 0 and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and humanoid.Health > 0 then
+				local strain = PowerConfig.KaiokenStrain[level] or 0
+				local floor = PowerConfig.KaiokenFloor
+				local health = math.max(humanoid.Health - strain * dt, math.min(floor, humanoid.Health))
+				humanoid.Health = health
+				if health <= floor + 1e-3 then
+					exhaust(character) -- your body gives out
+				end
+			end
 		end
 	end
 	kiClock += dt
@@ -2621,7 +2845,9 @@ RunService.Heartbeat:Connect(function(dt)
 		for _, player in Players:GetPlayers() do
 			local character = player.Character
 			local ki = character and character:GetAttribute("Ki")
-			if ki and ki < PowerConfig.KiMax and character:GetAttribute("PowerState") ~= "Charging" then
+			if ki and ki < PowerConfig.KiMax and character:GetAttribute("PowerState") ~= "Charging"
+				and (character:GetAttribute("Kaioken") or 0) == 0
+			then
 				character:SetAttribute("Ki", math.min(PowerConfig.KiMax, ki + PowerConfig.KiRegen * kiClock))
 			end
 		end
@@ -2668,8 +2894,11 @@ HairPhysics.StartClient()
 
 	Your controls, camera and screen for powering up:
 	  R      start powering up (the camera swings round to face you, you drop into a stance)
-	         R again while charging cancels; R as a Super Saiyan powers down
+	         R again while charging cancels; R as a Super Saiyan (or in Kaioken) powers down
 	  Space  spam it to fill the power bar (phones: the big TAP button)
+	  K      Kaioken: lights it, and each press after pushes it a level higher (phones: the
+	         KAIOKEN button). The server decides if you can; a red "KAIOKEN x3!" pops up when
+	         it does
 	When the bar is full you burst into Super Saiyan: the transformation cutscene plays
 	(SSJCutscene: your eyes, your hair, the explosion, the manga panels), then you get control
 	back. The prompt, bar and TAP button are drawn with ReplicatedStorage > DragonUI. The aura,
@@ -2713,6 +2942,7 @@ local gui = new("ScreenGui", {
 	Name = "PowerUpUI",
 	ResetOnSpawn = false,
 	IgnoreGuiInset = true,
+	DisplayOrder = 6, -- (above the HUD, so the shout and flashes cover it)
 }, player:WaitForChild("PlayerGui"))
 
 -- comic text: Bangers with an ink outline (ink-coloured text goes without one)
@@ -2733,7 +2963,7 @@ local function text(parent: Instance, props): TextLabel
 	return l
 end
 
--- the hint along the bottom: a key cap and what it does
+-- the hints along the bottom: key caps and what they do
 local hint = new("Frame", {
 	Name = "Hint",
 	AnchorPoint = Vector2.new(0.5, 1),
@@ -2741,33 +2971,49 @@ local hint = new("Frame", {
 	Size = UDim2.fromOffset(200, 30),
 	BackgroundTransparency = 1,
 }, gui)
-local hintKey = Slab.new(hint, "Key", 0, 0, 40, 30, PAPER, { ZIndex = 2 })
-local hintKeyText = text(hintKey.Holder, {
-	Name = "Text",
-	Position = UDim2.fromOffset(13, 4),
-	Size = UDim2.new(1, -26, 1, -7),
-	TextColor3 = INK,
-	ZIndex = 3,
-})
-local hintAction = Slab.new(hint, "Action", 44, 3, 150, 24, INK, { Transparency = 0.15, ZIndex = 1 })
-local hintActionText = text(hintAction.Holder, {
-	Name = "Text",
-	Position = UDim2.fromOffset(15, 2),
-	Size = UDim2.new(1, -30, 1, -4),
-	ZIndex = 2,
-})
+local function hintEntry(index: number)
+	local holder = new("Frame", { Name = "Hint" .. index, Size = UDim2.fromOffset(200, 30), BackgroundTransparency = 1 }, hint)
+	local key = Slab.new(holder, "Key", 0, 0, 120, 30, PAPER, { ZIndex = 2 })
+	local keyText = text(key.Holder, {
+		Name = "Text",
+		Position = UDim2.fromOffset(13, 4),
+		Size = UDim2.new(1, -26, 1, -7),
+		TextColor3 = INK,
+		ZIndex = 3,
+	})
+	local action = Slab.new(holder, "Action", 44, 3, 240, 24, INK, { Transparency = 0.15, ZIndex = 1 })
+	local actionText = text(action.Holder, {
+		Name = "Text",
+		Position = UDim2.fromOffset(15, 2),
+		Size = UDim2.new(1, -30, 1, -4),
+		ZIndex = 2,
+	})
+	return { Holder = holder, Key = key, KeyText = keyText, Action = action, ActionText = actionText }
+end
+local hintEntries = { hintEntry(1), hintEntry(2) }
 
-local function setHint(key: string?, action: string?)
-	hint.Visible = key ~= nil
-	if not key then
-		return
+-- list = { { key, what it does }, ... } (up to two), or nil for none
+local function setHint(list)
+	list = list or {}
+	hint.Visible = #list > 0
+	local x = 0
+	for i, entry in hintEntries do
+		local item = list[i]
+		entry.Holder.Visible = item ~= nil
+		if item then
+			local keyWidth = 26 + 13 * #item[1]
+			local actionWidth = 30 + 11 * #item[2]
+			entry.KeyText.Text = item[1]
+			entry.ActionText.Text = item[2]
+			entry.Key:SetWidth(keyWidth)
+			entry.Action:SetWidth(actionWidth)
+			entry.Action.Holder.Position = UDim2.fromOffset(keyWidth - 6, 3)
+			entry.Holder.Position = UDim2.fromOffset(x, 0)
+			entry.Holder.Size = UDim2.fromOffset(keyWidth - 6 + actionWidth, 30)
+			x += keyWidth - 6 + actionWidth + 16
+		end
 	end
-	local keyWidth = 26 + 13 * #key
-	hintKeyText.Text = key
-	hintActionText.Text = action or ""
-	hintKey:SetWidth(keyWidth)
-	hintAction.Holder.Position = UDim2.fromOffset(keyWidth - 6, 3)
-	hint.Size = UDim2.fromOffset(keyWidth + 144, 30)
+	hint.Size = UDim2.fromOffset(math.max(x - 16, 1), 30)
 end
 setHint(nil) -- (until your character arrives)
 
@@ -2876,6 +3122,35 @@ local bigText = DragonUI.Lettering(gui, "Title", {
 bigText.Holder.Visible = false
 local bigScale = new("UIScale", {}, bigText.Holder)
 
+-- "KAIOKEN x3!": pops up each time the Kaioken is lit or pushed higher
+local kaiokenText = DragonUI.Lettering(gui, "Kaioken", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(touch and 0.56 or 0.5, touch and 0.3 or 0.24),
+	Size = UDim2.fromOffset(touch and 380 or 560, touch and 58 or 84),
+	Rotation = -4,
+	Text = "KAIOKEN!",
+	Color = Color3.fromRGB(255, 70, 52),
+	BackColor = INK,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Stroke = 4,
+	Offset = 5,
+	ZIndex = 11,
+})
+kaiokenText.Holder.Visible = false
+local kaiokenScale = new("UIScale", {}, kaiokenText.Holder)
+-- a short line when a key can't do anything right now ("NOT ENOUGH KI!")
+local toast = DragonUI.Lettering(gui, "Toast", {
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -56),
+	Size = UDim2.fromOffset(300, 30),
+	Text = "",
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Offset = 2,
+	ZIndex = 11,
+})
+toast.Holder.Visible = false
+local toastUntil = 0
+
 -- a colour grade on this player's screen only: punchier as you charge, a warm flash on release
 local grade = Instance.new("ColorCorrectionEffect")
 grade.Name = "PowerUpGrade"
@@ -2901,14 +3176,31 @@ local function attr(name: string)
 end
 
 local function refreshHint()
-	local key = touch and "POWER" or PowerConfig.PowerKey.Name
-	if charging or bursting then
+	local powerKey = touch and "POWER" or PowerConfig.PowerKey.Name
+	local kaiokenKey = touch and "KAIOKEN" or PowerConfig.KaiokenKey.Name
+	local kaioken = attr("Kaioken") or 0
+	if charging or bursting or attr("Exhausted") then
 		setHint(nil)
 	elseif attr("Form") == "SSJ" then
-		setHint(key, "POWER DOWN")
+		setHint({ { powerKey, "POWER DOWN" } })
+	elseif kaioken >= #PowerConfig.KaiokenLevels then
+		setHint({ { powerKey, "LET IT GO" } })
+	elseif kaioken > 0 then
+		setHint({ { kaiokenKey, "HIGHER!" }, { powerKey, "LET IT GO" } })
 	else
-		setHint(key, "POWER UP")
+		setHint({ { powerKey, "POWER UP" }, { kaiokenKey, "KAIOKEN" } })
 	end
+end
+
+local function showToast(message: string)
+	toast:SetText(message)
+	toast.Holder.Visible = true
+	toastUntil = os.clock() + 1.4
+	task.delay(1.45, function()
+		if os.clock() >= toastUntil then
+			toast.Holder.Visible = false
+		end
+	end)
 end
 
 ----------------------------------------------------------------------------------------
@@ -3047,6 +3339,7 @@ local function playBurst()
 			TintColor = Color3.new(1, 1, 1),
 		}):Play()
 		if not cutscene then
+			flash.BackgroundColor3 = Color3.new(1, 1, 1)
 			flash.BackgroundTransparency = 0
 			TweenService:Create(flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
 			bigText.Holder.Visible = true
@@ -3077,8 +3370,10 @@ local function onPowerKey(_, state)
 	end
 	if charging then
 		stopCharging(true)
-	elseif attr("Form") == "SSJ" then
+	elseif attr("Form") == "SSJ" or (attr("Kaioken") or 0) > 0 then
 		remote:FireServer("PowerDown")
+	elseif attr("Exhausted") then
+		showToast("TOO TIRED!")
 	else
 		startCharging()
 	end
@@ -3086,6 +3381,77 @@ local function onPowerKey(_, state)
 end
 ContextActionService:BindAction("DWPower", onPowerKey, true, PowerConfig.PowerKey)
 ContextActionService:SetTitle("DWPower", "Power")
+
+-- K: light the Kaioken, or push it higher (the server checks and answers by setting the
+-- Kaioken attribute; the pop-up plays when it does)
+local function onKaiokenKey(_, state)
+	if state ~= Enum.UserInputState.Begin or not character then
+		return Enum.ContextActionResult.Pass
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 or charging or bursting then
+		return Enum.ContextActionResult.Sink
+	end
+	local level = attr("Kaioken") or 0
+	if attr("Form") == "SSJ" then
+		showToast("BASE FORM ONLY!")
+	elseif attr("Exhausted") then
+		showToast("TOO TIRED!")
+	elseif level >= #PowerConfig.KaiokenLevels then
+		showToast("THAT'S THE LIMIT!")
+	elseif (attr("Ki") or 0) < PowerConfig.KaiokenKiCost then
+		showToast("NOT ENOUGH KI!")
+	else
+		remote:FireServer("Kaioken")
+	end
+	return Enum.ContextActionResult.Sink
+end
+ContextActionService:BindAction("DWKaioken", onKaiokenKey, true, PowerConfig.KaiokenKey)
+ContextActionService:SetTitle("DWKaioken", "Kaioken")
+
+-- the moment it lights (or climbs): the shout on screen, a red flash, a kick of the camera
+local function kaiokenPop(level: number)
+	local mult = PowerConfig.KaiokenLevels[level] or 2
+	kaiokenText:SetText(level <= 1 and "KAIOKEN!" or ("KAIOKEN x" .. mult .. "!"))
+	kaiokenText.Holder.Visible = true
+	kaiokenScale.Scale = 0.45
+	TweenService:Create(kaiokenScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	local shownAt = os.clock()
+	kaiokenText.ShownAt = shownAt
+	task.delay(1.1, function()
+		if kaiokenText.ShownAt == shownAt then
+			TweenService:Create(kaiokenScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0.01 }):Play()
+			task.delay(0.23, function()
+				if kaiokenText.ShownAt == shownAt then
+					kaiokenText.Holder.Visible = false
+				end
+			end)
+		end
+	end)
+	flash.BackgroundColor3 = Color3.fromRGB(255, 40, 30)
+	flash.BackgroundTransparency = 0.55
+	TweenService:Create(flash, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
+	grade.TintColor = Color3.fromRGB(255, 205, 200)
+	grade.Contrast = 0.15
+	TweenService:Create(grade, TweenInfo.new(0.8), { TintColor = Color3.new(1, 1, 1), Contrast = 0 }):Play()
+	local camera = Workspace.CurrentCamera
+	if camera and not savedCamera then
+		local fov = camera.FieldOfView
+		camera.FieldOfView = fov + 4 + level * 1.5
+		TweenService:Create(camera, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = fov }):Play()
+	end
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		-- a short camera shake (the camera follows the humanoid's offset)
+		task.spawn(function()
+			for k = 1, 9 do
+				humanoid.CameraOffset = Vector3.new(math.random() - 0.5, math.random() - 0.5, 0) * (0.5 * (1 - k / 10))
+				task.wait(0.03)
+			end
+			humanoid.CameraOffset = Vector3.zero
+		end)
+	end
+end
 
 tapButton.Activated:Connect(tap)
 
@@ -3161,6 +3527,21 @@ local function onCharacter(newCharacter: Model)
 		refreshHint()
 	end)
 	newCharacter:GetAttributeChangedSignal("Form"):Connect(refreshHint)
+	local lastKaioken = newCharacter:GetAttribute("Kaioken") or 0
+	newCharacter:GetAttributeChangedSignal("Kaioken"):Connect(function()
+		local level = newCharacter:GetAttribute("Kaioken") or 0
+		if level > lastKaioken and character == newCharacter then
+			kaiokenPop(level)
+		end
+		lastKaioken = level
+		refreshHint()
+	end)
+	newCharacter:GetAttributeChangedSignal("Exhausted"):Connect(function()
+		if newCharacter:GetAttribute("Exhausted") and character == newCharacter then
+			showToast("YOUR BODY GAVE OUT...")
+		end
+		refreshHint()
+	end)
 	local humanoid = newCharacter:WaitForChild("Humanoid", 10)
 	if humanoid then
 		humanoid.Died:Connect(function()
@@ -3194,14 +3575,21 @@ end
 	      charging  the fuller the bar, the more you hunch over with your head down and your
 	                elbows thrown wide, trembling with effort
 	      transform you stay hunched as the power builds, then at the explosion you lean back,
-	                head up, arms lowered and spread, and hold it until you get control back
+	                head up, arms lowered and spread ... then your arms come in (your left
+	                fingers on the inside of your right elbow), you coil, and swipe the left arm
+	                out into a point at the camera: "YOU'RE FINISHED!" (PowerConfig.PointAt)
+	      Kaioken   each level snaps you into a flex: chest out, head back, fists driven down
+	      exhausted bent over, head hanging, breathing hard
 	  * the aura: a glowing ring on the ground at your feet with a sheet of fire rising from it
 	    all the way round you. The flames are rooted on the ring, lean outward as they rise and
 	    fade at their tips; thin streaks shoot up through them and licks of flame break off and
 	    rise. Energy swirls round you, ripples pulse out along the ground and sparks float up.
-	    It grows bigger and faster as the bar fills; blue in base form, gold as a Super Saiyan.
-	    After transforming the gold aura stays up, then fades when you calm down (the Breeze
-	    attribute).
+	    It grows bigger and faster as the bar fills; blue in base form, gold as a Super Saiyan,
+	    red in Kaioken. After transforming the gold aura stays up, then fades when you calm down
+	    (the Breeze attribute).
+	  * the Kaioken: a red aura sized by the level, a red glow over your whole body throbbing
+	    like a heartbeat (faster the higher you go), a red shockwave each time you push it, and
+	    a strained tremble at x10 and x20,
 	  * dust blasting off the ground and rocks lifting at high power,
 	  * the transformation explosion: a pillar of light, a flash, a shockwave ring and a spray.
 	The hair and belt being blown upward is HairPhysics reacting to the AuraWind attribute.
@@ -3299,6 +3687,162 @@ local RELEASE = { -- the explosion: leaning back, head up, arms lowered and spre
 }
 -- how much each joint trembles with effort
 local SHAKE = { Root = 0.5, Waist = 1, Neck = 1.2, LeftShoulder = 0.7, RightShoulder = 0.7, LeftElbow = 0.5, RightElbow = 0.5 }
+
+-- Kaioken: the flex you snap into each time you light it or push it higher: chest out, head
+-- back (a shout), arms driven down and back, fists clenched, knees bent
+local KAIOKEN_FLEX = {
+	Root = CFrame.new(0, -0.14, 0) * CFrame.Angles(0.06, 0, 0),
+	Waist = CFrame.Angles(0.22, 0, 0),
+	Neck = CFrame.Angles(0.38, 0, 0),
+	LeftShoulder = CFrame.Angles(-0.38, 0, -0.42),
+	RightShoulder = CFrame.Angles(-0.38, 0, 0.42),
+	LeftElbow = CFrame.Angles(0.5, 0, 0),
+	RightElbow = CFrame.Angles(0.5, 0, 0),
+	LeftWrist = CFrame.Angles(-0.2, 0, 0),
+	RightWrist = CFrame.Angles(-0.2, 0, 0),
+	LeftHip = CFrame.Angles(0.28, 0, -0.24),
+	RightHip = CFrame.Angles(0.28, 0, 0.24),
+	LeftKnee = CFrame.Angles(-0.5, 0, 0),
+	RightKnee = CFrame.Angles(-0.5, 0, 0),
+	LeftAnkle = CFrame.Angles(0.22, 0, 0.14),
+	RightAnkle = CFrame.Angles(0.22, 0, -0.14),
+}
+-- exhausted (the Kaioken pushed until your body gave out): bent over, head hanging, arms limp
+local SLUMP = {
+	Root = CFrame.new(0, -0.1, 0) * CFrame.Angles(-0.1, 0, 0),
+	Waist = CFrame.Angles(-0.3, 0, 0),
+	Neck = CFrame.Angles(-0.35, 0, 0),
+	LeftShoulder = CFrame.Angles(0.15, 0, 0.08),
+	RightShoulder = CFrame.Angles(0.15, 0, -0.08),
+	LeftElbow = CFrame.Angles(0.2, 0, 0),
+	RightElbow = CFrame.Angles(0.2, 0, 0),
+	LeftWrist = CFrame.identity,
+	RightWrist = CFrame.identity,
+	LeftHip = CFrame.Angles(0.3, 0, -0.06),
+	RightHip = CFrame.Angles(0.3, 0, 0.06),
+	LeftKnee = CFrame.Angles(-0.5, 0, 0),
+	RightKnee = CFrame.Angles(-0.5, 0, 0),
+	LeftAnkle = CFrame.Angles(0.2, 0, 0),
+	RightAnkle = CFrame.Angles(0.2, 0, 0),
+}
+
+-- The "YOU'RE FINISHED!" point at the end of the transformation. From the release pose your
+-- arms come in (TOUCH: right forearm up, left fingertips on the inside of your right elbow),
+-- you coil for a beat, then swipe the left arm out into a point at the camera (HIT). Every
+-- joint starts a moment after the one driving it and overshoots a little before settling, the
+-- body sinks into the stance and the head gives a nod. Angles in degrees: { x, y, z } (Root
+-- also moves: { x, y, z, studs right, up, back }).
+local POINT_TOUCH = {
+	Root = { 0, -10, 0, 0, -0.05, 0 },
+	Waist = { -4, -18, 0 },
+	Neck = { -6, 26, 0 },
+	RightShoulder = { 72, 0, -32 },
+	RightElbow = { 108, 0, 0 },
+	RightWrist = { 0, 0, 0 },
+	LeftShoulder = { 56.3, -18.5, 78.1 },
+	LeftElbow = { 54.8, 0, 0 },
+	LeftWrist = { -10.6, 0, 26.7 },
+	LeftHip = { 6, 0, -10 },
+	RightHip = { 6, 0, 8 },
+	LeftKnee = { -12, 0, 0 },
+	RightKnee = { -8, 0, 0 },
+	LeftAnkle = { 4, 0, 6 },
+	RightAnkle = { 2, 0, -6 },
+}
+local POINT_HIT = {
+	Root = { 0, -12, 0, 0, -0.12, 0 },
+	Waist = { -7, -16, 0 },
+	Neck = { -9, 24, 6 },
+	RightShoulder = { -28, 0, 24 }, -- the right fist pulled back to the hip
+	RightElbow = { 100, 0, 0 },
+	RightWrist = { 0, 0, 0 },
+	LeftShoulder = { 86.4, 1.6, -29.6 }, -- the left arm straight out at the camera
+	LeftElbow = { 4, 0, 0 },
+	LeftWrist = { 1.5, 0, -16.4 },
+	LeftHip = { 16, 0, -18 },
+	RightHip = { -6, 0, 16 },
+	LeftKnee = { -24, 0, 0 },
+	RightKnee = { -10, 0, 0 },
+	LeftAnkle = { 8, 0, 10 },
+	RightAnkle = { -4, 0, -8 },
+}
+local POINT_COIL = { Root = { 0, -3, 0 }, Waist = { 0, -5, 0 }, LeftShoulder = { 0, 0, 5 }, RightElbow = { 6, 0, 0 } }
+-- per joint: { delay into TOUCH, delay into the swipe, swipe length, overshoot }
+local POINT_TIMING = {
+	default = { 0, 0, 0.28, 0.6 },
+	Root = { 0, 0, 0.3, 0.8 },
+	Waist = { 0.03, 0.01, 0.26, 1.2 },
+	Neck = { 0.02, 0.04, 0.24, 1.0 },
+	LeftShoulder = { 0.06, 0.02, 0.2, 2.0 },
+	LeftElbow = { 0.09, 0.05, 0.17, 1.6 },
+	LeftWrist = { 0.11, 0.08, 0.15, 1.8 },
+	RightShoulder = { 0.05, 0, 0.22, 1.2 },
+	RightElbow = { 0.08, 0.02, 0.2, 1.2 },
+	RightWrist = { 0.1, 0.04, 0.18, 1.0 },
+}
+local POINT_IN, POINT_SWIPE = 0.4, 0.62 -- seconds after PointAt: arms in by; the swipe starts
+local POINT_LAND = POINT_SWIPE + 0.19 -- the point lands (the third manga panel slams in)
+
+local function smoother(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * x * (x * (x * 6 - 15) + 10)
+end
+
+-- 0..1 with an overshoot past 1 before settling (bigger c1 = more overshoot)
+local function backOut(x: number, c1: number): number
+	x = math.clamp(x, 0, 1)
+	local c3 = c1 + 1
+	return 1 + c3 * (x - 1) ^ 3 + c1 * (x - 1) ^ 2
+end
+
+local POINT_E = {}
+do
+	local function angles(t)
+		return Vector3.new(math.rad(t[1]), math.rad(t[2]), math.rad(t[3])), Vector3.new(t[4] or 0, t[5] or 0, t[6] or 0)
+	end
+	for name, cf in RELEASE do
+		local rx, ry, rz = cf:ToEulerAnglesXYZ()
+		local ta, tp = angles(POINT_TOUCH[name])
+		local ha, hp = angles(POINT_HIT[name])
+		local coil = POINT_COIL[name] and (angles(POINT_COIL[name])) or Vector3.zero
+		POINT_E[name] = { RA = Vector3.new(rx, ry, rz), RP = cf.Position, TA = ta, TP = tp, HA = ha, HP = hp, Coil = coil }
+	end
+end
+
+-- the point pose of one joint, t seconds after PowerConfig.PointAt
+local function pointPose(name: string, t: number): CFrame
+	local e = POINT_E[name]
+	local d = POINT_TIMING[name] or POINT_TIMING.default
+	local a = smoother((t - d[1]) / POINT_IN)
+	local b = backOut((t - POINT_SWIPE - d[2]) / d[3], d[4])
+	local coil = smoother((t - POINT_IN) / (POINT_SWIPE - POINT_IN)) * (1 - smoother((t - POINT_SWIPE) / 0.1))
+	local ang = e.RA + (e.TA - e.RA) * a + (e.HA - e.TA) * b + e.Coil * coil
+	local pos = e.RP + (e.TP - e.RP) * a + (e.HP - e.TP) * b
+	local land = t - POINT_LAND
+	if land > 0 then
+		if name == "Root" then -- the body sinks into the stance and bobs back up
+			pos += Vector3.new(0, -0.07 * math.exp(-8 * land) * math.cos(13 * land), 0)
+		elseif name == "Neck" then -- a nod
+			ang += Vector3.new(math.rad(-7) * math.exp(-9 * land) * math.sin(15 * land), 0, 0)
+		end
+		if name == "Waist" or name == "LeftShoulder" then -- breathing while holding it
+			ang += Vector3.new(math.rad(1.2) * math.sin(land * 5.5) * smoother(land / 0.6), 0, 0)
+		end
+	end
+	return CFrame.new(pos) * CFrame.Angles(ang.X, ang.Y, ang.Z)
+end
+
+-- how strongly the Kaioken flex holds, t seconds after you pushed it a level
+local function flexWeight(t: number): number
+	if t < 0 or t > 0.9 then
+		return 0
+	elseif t < 0.1 then
+		return smoother(t / 0.1)
+	elseif t < 0.42 then
+		return 1
+	end
+	return 1 - smoother((t - 0.42) / 0.45)
+end
 
 ----------------------------------------------------------------------------------------
 -- the aura
@@ -3473,6 +4017,14 @@ local function newFX(character: Model, root: BasePart)
 		Flare = 1,
 		Gold = 0,
 		PaintedGold = -1,
+		Red = 0, -- Kaioken red (the aura's colour)
+		PaintedRed = -1,
+		GlowW = 0, -- the red glow over the body
+		PointMix = 0, -- 1 while the "YOU'RE FINISHED!" point plays
+		PointT = 0,
+		FlexW = 0, -- the Kaioken flex
+		Slump = 0, -- exhausted
+		KaiokenSeen = 0,
 		Spin = 0, -- the whole fire slowly turns round you
 		RipplePhase = 0,
 		-- how far below the HumanoidRootPart's centre the feet are
@@ -3629,6 +4181,9 @@ local function destroyFX(fx)
 	if fx.Pillar then
 		fx.Pillar:Destroy()
 	end
+	if fx.Glow then
+		fx.Glow:Destroy()
+	end
 	for name, motor in fx.Motors do
 		if motor.Parent and fx.LastWritten[name] and sameFrame(motor.Transform, fx.LastWritten[name]) then
 			motor.Transform = CFrame.identity
@@ -3636,11 +4191,12 @@ local function destroyFX(fx)
 	end
 end
 
--- recolours everything when the aura's colour changes (base blue <-> Super Saiyan gold)
+-- recolours everything when the aura's colour changes (base blue <-> Super Saiyan gold, or
+-- Kaioken red)
 local function paint(fx)
-	local g = fx.Gold
-	local main = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, g)
-	local edge = PowerConfig.BaseAuraEdge:Lerp(PowerConfig.SSJAuraEdge, g)
+	local g, r = fx.Gold, fx.Red
+	local main = PowerConfig.BaseAuraColor:Lerp(PowerConfig.SSJAuraColor, g):Lerp(PowerConfig.KaiokenAuraColor, r)
+	local edge = PowerConfig.BaseAuraEdge:Lerp(PowerConfig.SSJAuraEdge, g):Lerp(PowerConfig.KaiokenAuraEdge, r)
 	local core = Color3.new(1, 1, 1):Lerp(main, 0.35)
 	local painted = {}
 	for _, t in fx.Tongues do
@@ -3663,7 +4219,7 @@ local function paint(fx)
 	fx.Haze.Color = ColorSequence.new(main)
 	fx.Light.Color = main
 	fx.Core, fx.Main, fx.Edge = core, main, edge
-	fx.PaintedGold = g
+	fx.PaintedGold, fx.PaintedRed = g, r
 end
 
 ----------------------------------------------------------------------------------------
@@ -3737,6 +4293,40 @@ local function playBurst(fx, root: BasePart, groundY: number)
 	end)
 end
 
+-- each time the Kaioken is lit or pushed higher: a red shockwave along the ground and a flash
+local function playFlare(fx, root: BasePart, groundY: number)
+	fx.Sparks:Emit(40)
+	fx.Streaks:Emit(25)
+	fx.Light.Brightness = 10
+	fx.Flare = math.max(fx.Flare, 1.35)
+	fx.Shudder = math.max(fx.Shudder, 0.6)
+	local color = PowerConfig.KaiokenAuraColor
+	local ring = fxPart("KaiokenWave", Vector3.new(0.25, 2, 2))
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Material = Enum.Material.Neon
+	ring.Color = color
+	ring.Transparency = 0.2
+	ring.CFrame = CFrame.new(root.Position.X, groundY + 0.15, root.Position.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.25, 22 * S, 22 * S),
+		Transparency = 1,
+	}):Play()
+	local ball = fxPart("KaiokenFlash", Vector3.new(2, 2, 2))
+	ball.Shape = Enum.PartType.Ball
+	ball.Material = Enum.Material.Neon
+	ball.Color = color:Lerp(Color3.new(1, 1, 1), 0.4)
+	ball.Transparency = 0.25
+	ball.CFrame = root.CFrame
+	TweenService:Create(ball, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(10, 10, 10) * S,
+		Transparency = 1,
+	}):Play()
+	task.delay(0.6, function()
+		ring:Destroy()
+		ball:Destroy()
+	end)
+end
+
 ----------------------------------------------------------------------------------------
 -- every frame
 ----------------------------------------------------------------------------------------
@@ -3752,6 +4342,10 @@ local function targetIntensity(character: Model, fx): number
 		return c >= PowerConfig.AuraStart and math.max(c, 0.12) or 0
 	elseif state == "Bursting" then
 		return (fx and fx.Exploded) and 1.25 or 1 -- the power builds, then explodes out
+	end
+	local kaioken = character:GetAttribute("Kaioken") or 0
+	if kaioken > 0 then
+		return PowerConfig.KaiokenAura[kaioken] or 0.7
 	elseif character:GetAttribute("Form") == "SSJ" then
 		-- the golden aura stays up after transforming and fades when you calm down
 		return PowerConfig.SSJIdleAura * (character:GetAttribute("Breeze") or 1)
@@ -3918,7 +4512,7 @@ RunService.RenderStepped:Connect(function(dt)
 		local state = character:GetAttribute("PowerState")
 		local fx = active[character]
 		local want = targetIntensity(character, fx)
-		if not fx and (want > 0 or state == "Charging") and root then
+		if not fx and (want > 0 or state == "Charging" or character:GetAttribute("Exhausted")) and root then
 			fx = newFX(character, root)
 			active[character] = fx
 		end
@@ -3942,8 +4536,36 @@ RunService.RenderStepped:Connect(function(dt)
 			fx.Flare = ease(fx.Flare, 1, 2.5, dt)
 			local gold = (character:GetAttribute("Form") == "SSJ" or state == "Bursting") and 1 or 0
 			fx.Gold = ease(fx.Gold, gold, 6, dt)
-			if math.abs(fx.Gold - fx.PaintedGold) > 0.01 then
+			local kaioken = character:GetAttribute("Kaioken") or 0
+			-- red while the Kaioken burns, and while its aura dies away after; another aura
+			-- (charging, Super Saiyan) takes the colour back
+			if kaioken > 0 then
+				fx.Red = ease(fx.Red, 1, 8, dt)
+			elseif state == "Charging" or state == "Bursting" or gold > 0 then
+				fx.Red = ease(fx.Red, 0, 6, dt)
+			end
+			fx.GlowW = ease(fx.GlowW, kaioken > 0 and 1 or 0, kaioken > 0 and 8 or 3, dt)
+			if math.abs(fx.Gold - fx.PaintedGold) > 0.01 or math.abs(fx.Red - fx.PaintedRed) > 0.01 then
 				paint(fx)
+			end
+			-- the Kaioken's red glow over the whole body, throbbing like a heartbeat
+			if fx.GlowW > 0.01 then
+				if not fx.Glow then
+					local glow = Instance.new("Highlight")
+					glow.Name = "KaiokenGlow"
+					glow.DepthMode = Enum.HighlightDepthMode.Occluded
+					glow.FillColor = PowerConfig.KaiokenGlow
+					glow.OutlineColor = PowerConfig.KaiokenGlow:Lerp(Color3.new(1, 1, 1), 0.35)
+					glow.Adornee = character
+					glow.Parent = folder
+					fx.Glow = glow
+				end
+				local beat = 0.5 + 0.5 * math.sin(now * (6 + kaioken))
+				fx.Glow.FillTransparency = 1 - fx.GlowW * (0.28 + 0.1 * beat + 0.03 * kaioken)
+				fx.Glow.OutlineTransparency = 1 - fx.GlowW * (0.55 + 0.3 * beat)
+				fx.Glow.Enabled = true
+			elseif fx.Glow then
+				fx.Glow.Enabled = false
 			end
 
 			-- the aura follows the character, kept upright
@@ -3978,6 +4600,16 @@ RunService.RenderStepped:Connect(function(dt)
 				table.insert(moveFrames, CFrame.new(root.Position.X, groundY + 0.2, root.Position.Z))
 			end
 			fx.Dust.Rate = (groundY and i > 0.55) and 40 * (i - 0.55) / 0.45 or 0
+
+			-- Kaioken: a shockwave and a flex each time it's lit or pushed higher
+			local kaiokenLevel = character:GetAttribute("Kaioken") or 0
+			if kaiokenLevel > fx.KaiokenSeen then
+				fx.FlexAt = now
+				playFlare(fx, root, groundY or (root.Position.Y - fx.FootDrop))
+			end
+			fx.KaiokenSeen = kaiokenLevel
+			fx.FlexW = fx.FlexAt and flexWeight(now - fx.FlexAt) or 0
+			fx.Slump = ease(fx.Slump, character:GetAttribute("Exhausted") and 1 or 0, 4, dt)
 			for _, rock in fx.Rocks do
 				local lift = (groundY and i > 0.7) and rock.Top * math.clamp((i - 0.7) / 0.3, 0, 1) or 0
 				if lift > rock.Height then
@@ -4011,13 +4643,34 @@ RunService.RenderStepped:Connect(function(dt)
 				else
 					fx.Strain = ease(fx.Strain, 1, 4, dt) -- hunched, straining, as the power builds
 				end
+				-- then the "YOU'RE FINISHED!" point
+				local pointAt = PowerConfig.PointAt
+				if pointAt and now - fx.BurstAt >= pointAt then
+					fx.PointMix = 1
+					fx.PointT = now - fx.BurstAt - pointAt
+				end
+			end
+			if state ~= "Bursting" and fx.Pose < 0.01 then
+				fx.PointMix = 0 -- (held while the pose fades out after the transformation)
 			end
 			fx.Shudder = math.max(fx.Shudder - dt * 0.8, 0)
 			local building = (state == "Bursting" and not fx.Exploded) and 0.5 or 0
-			fx.Tremble = 0.035 * fx.Strain * (1 - fx.Release) + 0.03 * fx.Shudder + 0.02 * building
+			local pointing = fx.PointMix * (1 - smoother((fx.PointT - POINT_LAND) / 0.3))
+			fx.Tremble = (0.035 * fx.Strain * (1 - fx.Release) + 0.03 * fx.Shudder + 0.02 * building) * (1 - pointing)
+				+ 0.012 * math.max(0, kaiokenLevel - 3)
+				+ 0.025 * fx.FlexW
 
 			-- tidy up once fully calm
-			if want <= 0 and fx.Intensity < 0.01 and fx.Pose < 0.01 and state ~= "Charging" then
+			if
+				want <= 0
+				and fx.Intensity < 0.01
+				and fx.Pose < 0.01
+				and fx.FlexW < 0.01
+				and fx.Slump < 0.01
+				and fx.GlowW < 0.01
+				and state ~= "Charging"
+				and not character:GetAttribute("Exhausted")
+			then
 				table.insert(finished, fx)
 				active[character] = nil
 			end
@@ -4061,8 +4714,9 @@ poseSignal:Connect(function()
 				table.clear(fx.LastWritten)
 			end
 		end
-		if fx.Pose > 0.001 then
-			local w = math.min(fx.Pose, 1)
+		local w = math.min(fx.Pose, 1)
+		local flexW, slumpW = fx.FlexW or 0, fx.Slump or 0
+		if w > 0.001 or flexW > 0.001 or slumpW > 0.001 then
 			local tremble = fx.Tremble or 0
 			for name, motor in fx.Motors do
 				if motor.Parent then
@@ -4071,13 +4725,31 @@ poseSignal:Connect(function()
 					if fx.LastWritten[name] and sameFrame(current, fx.LastWritten[name]) then
 						current = CFrame.identity
 					end
-					local pose = READY[name]:Lerp(STRAIN[name], fx.Strain):Lerp(RELEASE[name], fx.Release)
+					-- layers on top of the walk/idle animation: the power-up (or the point), the
+					-- Kaioken flex, the exhausted slump
+					local final = current
+					if w > 0.001 then
+						local pose = READY[name]:Lerp(STRAIN[name], fx.Strain):Lerp(RELEASE[name], fx.Release)
+						if fx.PointMix > 0 then
+							pose = pose:Lerp(pointPose(name, fx.PointT), fx.PointMix)
+						end
+						final = final:Lerp(pose, w)
+					end
+					if flexW > 0.001 then
+						final = final:Lerp(KAIOKEN_FLEX[name], flexW)
+					end
+					if slumpW > 0.001 then
+						local slump = SLUMP[name]
+						if name == "Waist" or name == "Neck" then -- breathing hard
+							slump *= CFrame.Angles(0.06 * math.sin(t * 6.5), 0, 0)
+						end
+						final = final:Lerp(slump, slumpW)
+					end
 					local shake = SHAKE[name]
 					if shake and tremble > 0 then
 						local a = tremble * shake
-						pose *= CFrame.Angles(math.sin(t * 41 + #name) * a, math.sin(t * 37) * a, math.sin(t * 29 + #name) * a)
+						final *= CFrame.Angles(math.sin(t * 41 + #name) * a, math.sin(t * 37) * a, math.sin(t * 29 + #name) * a)
 					end
-					local final = current:Lerp(pose, w)
 					motor.Transform = final
 					fx.LastWritten[name] = final
 				end
@@ -4105,7 +4777,12 @@ end)
 	  2.6 s   the screen turns into a manga page: black and white, inked outlines, screentone
 	          dots round the edges ... and a tall manga panel slides DOWN into frame: "THIS IS—"
 	  3.25 s  a second panel slides UP into frame: "SUPER SAIYAN!"   (PowerConfig.CutsceneText)
-	  end     the panels slide away, the colour floods back, the bars go and you get control
+	  4.3 s   (PowerConfig.PointAt) the panels slide away; cut to the front: your arms come in,
+	          left fingers on the inside of your right elbow, then you swipe into a point at the
+	          camera as it pushes in on you ... and a third panel slams in: "YOU'RE FINISHED!"
+	  end     the panel goes, the colour floods back, the bars go and you get control
+	The arm, hand and finger movements are PowerFX's and HandFX's; this script moves the camera
+	and draws the screen.
 ]]
 
 local Lighting = game:GetService("Lighting")
@@ -4359,8 +5036,12 @@ end
 
 local panel1 = mangaPanel("PanelThisIs", UDim2.fromScale(0.19, 0.66), 0.5, "speed")
 local panel2 = mangaPanel("PanelSuperSaiyan", UDim2.fromScale(0.25, 0.7), 0.58, "burst")
+local panel3 = mangaPanel("PanelFinished", UDim2.fromScale(0.38, 0.3), 1.7, "burst")
 local PANEL1_AT, PANEL1_FROM = UDim2.fromScale(0.21, 0.5), UDim2.fromScale(0.21, -0.6) -- slides down
 local PANEL2_AT, PANEL2_FROM = UDim2.fromScale(0.77, 0.5), UDim2.fromScale(0.77, 1.6) -- slides up
+local PANEL3_AT, PANEL3_OUT = UDim2.fromScale(0.29, 0.65), UDim2.fromScale(0.29, 1.6) -- slams in
+local POINT_AT = PowerConfig.PointAt
+local POINT_LAND = 0.81 -- seconds after PointAt: the point lands (PowerFX's swipe)
 
 -- "SUPER SAIYAN!" -> "SUPER\nSAIYAN!": one word per line fills a tall panel
 local function stacked(text: string): string
@@ -4382,6 +5063,18 @@ end
 
 local function slideOut(panel, to: UDim2)
 	tween(panel.Holder, 0.38, { Position = to }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+end
+
+-- the third panel doesn't slide: it slams down onto the page, like a stamp
+local function slamIn(panel, at: UDim2, text: string)
+	panel.Text.Text = stacked(text)
+	panel.Holder.Visible = true
+	panel.Holder.Position = at
+	panel.Scale.Scale = 1.8
+	tween(panel.Scale, 0.14, { Scale = 0.94 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	task.delay(0.14, function()
+		tween(panel.Scale, 0.22, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	end)
 end
 
 ----------------------------------------------------------------------------------------
@@ -4542,6 +5235,16 @@ local function pullShot(root: BasePart, u: number): (CFrame, number)
 	return CFrame.lookAt(eye, look), lerp(80, 62, e)
 end
 
+-- the point: in front of you, a little to your left; it pushes in as your arm swipes out at the
+-- lens (u = seconds since the point began)
+local function pointShot(root: BasePart, u: number): (CFrame, number)
+	local r = root.CFrame
+	local e = easeInOut(math.clamp((u - 0.57) / 0.3, 0, 1))
+	local eye = r * Vector3.new(lerp(-1.8, -1.1, e), lerp(0.9, 0.5, e), lerp(-8.4, -5.2, e))
+	local look = r * Vector3.new(lerp(-0.4, -0.55, e), 1.1, lerp(-0.6, -1, e))
+	return CFrame.lookAt(eye, look), lerp(46, 54, e)
+end
+
 ----------------------------------------------------------------------------------------
 -- playing it
 ----------------------------------------------------------------------------------------
@@ -4580,6 +5283,9 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 	flash.BackgroundTransparency = 1
 	panel1.Holder.Visible = false
 	panel2.Holder.Visible = false
+	panel3.Holder.Visible = false
+	-- the point needs room: PointAt, the swipe and a beat to hold it before the end
+	local pointAt = (POINT_AT and duration >= POINT_AT + POINT_LAND + 0.6) and POINT_AT or nil
 	topBar.Size = UDim2.fromScale(1, 0)
 	bottomBar.Size = UDim2.fromScale(1, 0)
 	tween(topBar, 0.3, { Size = UDim2.fromScale(1, BAR) })
@@ -4635,9 +5341,26 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 			slideIn(panel2, PANEL2_FROM, PANEL2_AT, texts[2] or "")
 			shake = math.max(shake, 0.25)
 		end)
+		if pointAt then
+			once("panels away", pointAt - 0.2, t, function()
+				slideOut(panel1, PANEL1_FROM)
+				slideOut(panel2, PANEL2_FROM)
+				setLines(1)
+			end)
+			once("finished", pointAt + POINT_LAND, t, function()
+				slamIn(panel3, PANEL3_AT, texts[3] or "YOU'RE FINISHED!")
+				flash.BackgroundTransparency = 0.55
+				tween(flash, 0.3, { BackgroundTransparency = 1 })
+				setLines(0.15)
+				shake = math.max(shake, 0.35)
+			end)
+		end
 		once("leave", duration - 0.5, t, function()
 			slideOut(panel1, PANEL1_FROM) -- back up
 			slideOut(panel2, PANEL2_FROM) -- back down
+			if panel3.Holder.Visible then
+				slideOut(panel3, PANEL3_OUT)
+			end
 			mangaOff(0.45) -- the colour comes back as the panels go
 			tween(topBar, 0.4, { Size = UDim2.fromScale(1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 			tween(bottomBar, 0.4, { Size = UDim2.fromScale(1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -4651,8 +5374,10 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 		elseif t < EXPLODE then
 			cf, fov = hairShot(head, (t - EYES_END) / (EXPLODE - EYES_END))
 			shake = 0.02
+		elseif pointAt and t >= pointAt then
+			cf, fov = pointShot(root, t - pointAt)
 		else
-			cf, fov = pullShot(root, (t - EXPLODE) / math.max(duration - EXPLODE, 0.1))
+			cf, fov = pullShot(root, (t - EXPLODE) / math.max((pointAt or duration) - EXPLODE, 0.1))
 		end
 		local jolt = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-1, 1), rng:NextNumber(-1, 1)) * shake
 		camera.CameraType = Enum.CameraType.Scriptable
@@ -4689,6 +5414,9 @@ return Cutscene
 	             in five slanted pips, with a Dragon Ball whose stars count the full ones
 	  under it   a Scouter readout of your POWER LEVEL: it scrambles and counts up as you power
 	             up ... and warns you when it's over 9000
+	  Kaioken    everything turns red: the card, the pips, the arc, a 拳 ("fist") badge and a
+	             "KAIOKEN x3" tag; the HP bar's outline throbs as the strain eats your health,
+	             and the Scouter multiplies your power level
 	  top right  a Dragon Radar: a sweeping green screen with a blip for every player nearby
 	             (up on the radar = the way your camera faces)
 	It slides in when you spawn and again when the transformation cutscene ends, shakes when you
@@ -5151,6 +5879,9 @@ local scrambleUntil = 0
 local over9000Until = 0
 local lastTarget = PowerConfig.BasePowerLevel
 local ssjMix = 0 -- 0 = base colours, 1 = Super Saiyan colours
+local kaiokenMix = 0 -- 1 = Kaioken red
+local tiredMix = 0 -- 1 = exhausted grey
+local KAIOKEN_RED = Color3.fromRGB(255, 64, 48)
 local sweepAngle = 0
 local enterAt = os.clock() -- the plate slides in from here
 local radarAway = 0 -- 1 = the radar has slid off screen (while you power up)
@@ -5161,7 +5892,10 @@ local character: Model? = nil
 local function powerTarget(c: Model): number
 	local base = PowerConfig.BasePowerLevel
 	local state = c:GetAttribute("PowerState")
-	if c:GetAttribute("Form") == "SSJ" then
+	local kaioken = c:GetAttribute("Kaioken") or 0
+	if kaioken > 0 then
+		return base * (c:GetAttribute("KaiokenMult") or PowerConfig.KaiokenLevels[kaioken] or 1)
+	elseif c:GetAttribute("Form") == "SSJ" then
 		return base * PowerConfig.SSJMultiplier
 	elseif state == "Charging" or state == "Bursting" then
 		return base * (1 + PowerConfig.ChargePowerBoost * (c:GetAttribute("Charge") or 0))
@@ -5209,18 +5943,32 @@ RunService.RenderStepped:Connect(function(dt)
 	local away = math.max(1 - enter, radarAway)
 	radar.Position = UDim2.new(1, -RADAR_MARGIN + away * (200 * scale + 40), 0, 6)
 
-	-- colours follow your form
+	-- colours follow your form (gold as a Super Saiyan, red in Kaioken, grey when exhausted)
 	local ssj = character:GetAttribute("Form") == "SSJ"
+	local kaioken = character:GetAttribute("Kaioken") or 0
+	local tired = character:GetAttribute("Exhausted") == true
 	ssjMix += ((ssj and 1 or 0) - ssjMix) * (1 - math.exp(-dt * 6))
-	local kiColor = DragonUI.KI:Lerp(DragonUI.KI_SSJ, ssjMix)
-	card:SetColor(GI:Lerp(GOLD, ssjMix))
-	cardShade:SetColor(DragonUI.GI_DARK:Lerp(Color3.fromRGB(214, 128, 16), ssjMix))
+	kaiokenMix += ((kaioken > 0 and 1 or 0) - kaiokenMix) * (1 - math.exp(-dt * 8))
+	tiredMix += ((tired and 1 or 0) - tiredMix) * (1 - math.exp(-dt * 6))
+	local grey = Color3.fromRGB(138, 130, 122)
+	local kiColor = DragonUI.KI:Lerp(DragonUI.KI_SSJ, ssjMix):Lerp(KAIOKEN_RED, kaiokenMix)
+	card:SetColor(GI:Lerp(GOLD, ssjMix):Lerp(Color3.fromRGB(222, 38, 34), kaiokenMix):Lerp(grey, tiredMix * 0.75))
+	cardShade:SetColor(
+		DragonUI.GI_DARK:Lerp(Color3.fromRGB(214, 128, 16), ssjMix):Lerp(Color3.fromRGB(128, 8, 18), kaiokenMix):Lerp(grey:Lerp(INK, 0.4), tiredMix * 0.75)
+	)
 	arcStroke.Color = kiColor
-	formTag:SetColor(PAPER:Lerp(GOLD, ssjMix))
-	formText.Text = ssj and "SUPER SAIYAN" or "BASE FORM"
-	badgeKanji.Text = ssj and "超" or "気"
+	formTag:SetColor(PAPER:Lerp(GOLD, ssjMix):Lerp(DragonUI.DAMAGE, kaiokenMix):Lerp(grey, tiredMix))
+	if tired then
+		formText.Text = "EXHAUSTED"
+	elseif kaioken > 0 then
+		formText.Text = "KAIOKEN x" .. tostring(character:GetAttribute("KaiokenMult") or PowerConfig.KaiokenLevels[kaioken])
+	else
+		formText.Text = ssj and "SUPER SAIYAN" or "BASE FORM"
+	end
+	formText.TextColor3 = INK:Lerp(PAPER, kaiokenMix)
+	badgeKanji.Text = kaioken > 0 and "拳" or (ssj and "超" or "気")
 	badgeStroke.Color = INK
-	nameText:SetColors(nil, GI:Lerp(DragonUI.DAMAGE, ssjMix))
+	nameText:SetColors(nil, GI:Lerp(DragonUI.DAMAGE, math.max(ssjMix, kaiokenMix)))
 	if portraitForm ~= character:GetAttribute("Form") and character:FindFirstChild("Head") then
 		-- re-take the portrait a moment after your form changes, once the new hair shows
 		portraitForm = character:GetAttribute("Form")
@@ -5234,7 +5982,7 @@ RunService.RenderStepped:Connect(function(dt)
 
 	-- HP: the bar drops at once; the red chunk behind it catches up a moment later
 	local health = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
-	if health < shownHealth - 0.001 then
+	if health < shownHealth - 0.02 then -- a hit (not the Kaioken's steady drain)
 		trailWait = 0.5
 		hitAt = now
 	end
@@ -5251,7 +5999,9 @@ RunService.RenderStepped:Connect(function(dt)
 	else
 		hpFill:SetColor(DragonUI.HP)
 	end
-	hpEdge:SetColor(PAPER:Lerp(DragonUI.DAMAGE, shake))
+	-- the outline flashes on a hit, and throbs with the Kaioken's strain (faster when higher)
+	local throb = kaiokenMix * (0.35 + 0.35 * math.sin(now * (6 + kaioken)))
+	hpEdge:SetColor(PAPER:Lerp(DragonUI.DAMAGE, math.max(shake, throb)))
 	portrait.ImageColor3 = Color3.new(1, 1, 1):Lerp(Color3.fromRGB(255, 90, 90), shake)
 	hpValue.Text = tostring(math.ceil(humanoid.Health))
 	-- a glint runs along the bar every few seconds
@@ -5359,6 +6109,426 @@ end
         </Properties>
       </Item>
       <Item class="LocalScript" referent="16">
+        <Properties>
+          <string name="Name">HandFX</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	HandFX  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Moves everyone's fingers on this player's screen (the finger pieces CharacterSetup puts on
+	the hands from LeftFingers_Rigged.fbx and RightFingers_Rigged.fbx):
+	  standing     relaxed: each finger a little curled (the pinky most, the index least), the
+	               thumb hanging forward. Every few seconds one hand fidgets, bored: a quick
+	               open-close-open-close, drumming along the fingers, rubbing the thumb on the
+	               index finger, a big stretch, or squeezing a fist and shaking it loose
+	  moving       relaxed, the fingers trailing behind the hand as the arms swing
+	  powering up  fists, squeezing harder and trembling as the bar fills
+	  transforming fists ... then the left hand rests flat on the inside of the right elbow and
+	               swipes out into a point for "YOU'RE FINISHED!" (PowerFX moves the arm)
+	  Super Saiyan fists while the golden aura burns, loosening as you calm down
+	  Kaioken      fists, straining harder the higher you push it
+	  exhausted    limp
+	Every finger joint moves on a spring, so fingers overshoot a touch and settle instead of
+	snapping, and each finger starts a moment after its neighbour.
+	Poses and fidgets: the POSES and FIDGETS tables below (degrees).
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+
+local FINGERS = { "Thumb", "Index", "Middle", "Ring", "Pinky" }
+local VIEW_DISTANCE = 120 -- fingers further than this from the camera aren't animated
+local rng = Random.new()
+
+----------------------------------------------------------------------------------------
+-- poses: for each finger { knuckle bend, middle-joint bend, spread } in degrees.
+-- Bend: + curls toward the palm. Spread: + swings the finger toward the front.
+----------------------------------------------------------------------------------------
+local POSES = {
+	Relaxed = { Thumb = { 6, 6, 16 }, Index = { 12, 16, 0 }, Middle = { 15, 20, 0 }, Ring = { 18, 24, 0 }, Pinky = { 22, 28, 0 } },
+	Loose = { Thumb = { 3, 4, 12 }, Index = { 8, 10, 0 }, Middle = { 10, 13, 0 }, Ring = { 12, 15, 0 }, Pinky = { 14, 18, 0 } },
+	Open = { Thumb = { -4, 0, 10 }, Index = { -6, -2, 2 }, Middle = { -6, -2, 0 }, Ring = { -6, -2, -1 }, Pinky = { -6, -2, -2 } },
+	Stretch = { Thumb = { -10, -4, 24 }, Index = { -16, -8, 9 }, Middle = { -16, -8, 3 }, Ring = { -16, -8, -3 }, Pinky = { -16, -8, -9 } },
+	Fist = { Thumb = { 80, 30, 30 }, Index = { 50, 120, 0 }, Middle = { 52, 122, 0 }, Ring = { 54, 122, 0 }, Pinky = { 56, 120, 0 } },
+	Tight = { Thumb = { 86, 36, 32 }, Index = { 56, 126, 0 }, Middle = { 58, 128, 0 }, Ring = { 60, 128, 0 }, Pinky = { 62, 126, 0 } },
+	Claw = { Thumb = { 20, 30, 14 }, Index = { 25, 70, 0 }, Middle = { 28, 72, 0 }, Ring = { 30, 74, 0 }, Pinky = { 32, 72, 0 } },
+	Point = { Thumb = { 78, 28, 28 }, Index = { -3, 0, 0 }, Middle = { 52, 122, 0 }, Ring = { 54, 122, 0 }, Pinky = { 56, 120, 0 } },
+	Flat = { Thumb = { 4, 4, 12 }, Index = { 8, 10, 0 }, Middle = { 9, 12, 0 }, Ring = { 10, 13, 0 }, Pinky = { 12, 15, 0 } },
+	Rub = { Thumb = { 38, 34, 26 }, Index = { 24, 40, 0 }, Middle = { 17, 22, 0 }, Ring = { 19, 25, 0 }, Pinky = { 23, 29, 0 } },
+	Rub2 = { Thumb = { 30, 44, 18 }, Index = { 28, 46, 0 }, Middle = { 17, 22, 0 }, Ring = { 19, 25, 0 }, Pinky = { 23, 29, 0 } },
+}
+
+-- Idle fidgets: key poses over time (seconds). Order + Stagger: each finger runs a little behind
+-- the one before it, from the pinky (or the index) along the hand. Shake: a strained tremble.
+local FIDGETS = {
+	Flex = { -- quick open, close, open, close
+		Weight = 3, Order = "pinky", Stagger = 0.022,
+		Keys = { { 0, "Relaxed" }, { 0.1, "Open" }, { 0.26, "Fist" }, { 0.38, "Open" }, { 0.54, "Fist" }, { 0.68, "Open" }, { 1.0, "Relaxed" } },
+	},
+	Drum = { -- drumming along the fingers, pinky to index, twice
+		Weight = 2, Order = "pinky", Stagger = 0.075, KeepThumb = true,
+		Keys = { { 0, "Relaxed" }, { 0.08, "Claw" }, { 0.2, "Relaxed" }, { 0.5, "Relaxed" }, { 0.58, "Claw" }, { 0.7, "Relaxed" } },
+	},
+	Rub = { -- rubbing the thumb against the side of the index finger
+		Weight = 2, Order = "index", Stagger = 0,
+		Keys = { { 0, "Relaxed" }, { 0.15, "Rub" }, { 0.3, "Rub2" }, { 0.45, "Rub" }, { 0.6, "Rub2" }, { 0.75, "Rub" }, { 1.05, "Relaxed" } },
+	},
+	Stretch = { -- fingers spread wide and straight, held, then let go
+		Weight = 1.5, Order = "index", Stagger = 0.03, Shake = 0.6,
+		Keys = { { 0, "Relaxed" }, { 0.22, "Stretch" }, { 0.75, "Stretch" }, { 1.1, "Relaxed" } },
+	},
+	Squeeze = { -- squeeze a tight fist, then shake it loose
+		Weight = 1.5, Order = "pinky", Stagger = 0.03, Shake = 1,
+		Keys = { { 0, "Relaxed" }, { 0.18, "Tight" }, { 0.6, "Tight" }, { 0.72, "Open" }, { 0.8, "Claw" }, { 0.9, "Open" }, { 1.2, "Relaxed" } },
+	},
+}
+-- as a Super Saiyan the bored fidgets are tense ones
+local SSJ_FIDGETS = {
+	Clench = {
+		Weight = 2, Order = "pinky", Stagger = 0.02, Shake = 1.2,
+		Keys = { { 0, "Fist" }, { 0.15, "Tight" }, { 0.75, "Tight" }, { 1.0, "Fist" } },
+	},
+	Crack = {
+		Weight = 1, Order = "index", Stagger = 0.05,
+		Keys = { { 0, "Fist" }, { 0.16, "Claw" }, { 0.36, "Claw" }, { 0.5, "Tight" }, { 0.8, "Fist" } },
+	},
+}
+local ORDER = {
+	pinky = { Pinky = 0, Ring = 1, Middle = 2, Index = 3, Thumb = 4 },
+	index = { Index = 0, Middle = 1, Ring = 2, Pinky = 3, Thumb = 0.5 },
+}
+
+-- springs: how fast each joint follows its target, and how much it overshoots
+local OMEGA = { Thumb = 22, Index = 30, Middle = 29, Ring = 28, Pinky = 27 }
+local DAMPING = 0.55 -- 1 = no overshoot, lower = more bounce
+local LAG = 3 -- how much the fingers trail behind when the hand speeds up or slows down
+
+----------------------------------------------------------------------------------------
+-- helpers
+----------------------------------------------------------------------------------------
+local function smooth(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+local function mix(a, b, t: number)
+	local out = {}
+	for _, f in FINGERS do
+		local pa, pb = a[f], b[f]
+		out[f] = { pa[1] + (pb[1] - pa[1]) * t, pa[2] + (pb[2] - pa[2]) * t, pa[3] + (pb[3] - pa[3]) * t }
+	end
+	return out
+end
+
+-- one finger's angles from a fidget's key poses at time t
+local function sampleKeys(keys, finger: string, t: number)
+	if t <= keys[1][1] then
+		return POSES[keys[1][2]][finger]
+	end
+	for i = 1, #keys - 1 do
+		local k0, k1 = keys[i], keys[i + 1]
+		if t < k1[1] then
+			local x = smooth((t - k0[1]) / (k1[1] - k0[1]))
+			local a, b = POSES[k0[2]][finger], POSES[k1[2]][finger]
+			return { a[1] + (b[1] - a[1]) * x, a[2] + (b[2] - a[2]) * x, a[3] + (b[3] - a[3]) * x }
+		end
+	end
+	return POSES[keys[#keys][2]][finger]
+end
+
+local function fidgetLength(fidget): number
+	local last = fidget.Keys[#fidget.Keys][1]
+	return last + (fidget.Stagger or 0) * 4
+end
+
+local function pick(set)
+	local total = 0
+	for _, f in set do
+		total += f.Weight
+	end
+	local r = rng:NextNumber(0, total)
+	local last
+	for _, f in set do
+		last = f
+		r -= f.Weight
+		if r <= 0 then
+			return f
+		end
+	end
+	return last
+end
+
+-- a bone's resting CFrame inside the MeshPart it lives in
+local function restInMesh(bone: Bone, mesh: BasePart): CFrame?
+	local cf = CFrame.identity
+	local node: Instance? = bone
+	while node and node ~= mesh do
+		if not node:IsA("Bone") then
+			return nil
+		end
+		cf = (node :: Bone).CFrame * cf
+		node = node.Parent
+	end
+	return node == mesh and cf or nil
+end
+
+----------------------------------------------------------------------------------------
+-- one hand: its bones, and the hand's sideways / front-back axes seen from each bone
+----------------------------------------------------------------------------------------
+local function setupHand(character: Model, side: string)
+	local holder = character:FindFirstChild("DW_" .. side .. "Fingers")
+	local mesh = holder and holder:FindFirstChild(side .. "Fingers")
+	local hand = character:FindFirstChild(side .. "Hand")
+	if not (mesh and mesh:IsA("BasePart") and hand and hand:IsA("BasePart")) then
+		return nil
+	end
+	local prefix = side:sub(1, 1)
+	-- the hand's axes inside the mesh (welded, so this never changes)
+	local handToMesh = hand.CFrame:ToObjectSpace(mesh.CFrame).Rotation
+	local xMesh = handToMesh:VectorToObjectSpace(Vector3.xAxis)
+	local zMesh = handToMesh:VectorToObjectSpace(Vector3.zAxis)
+	local fingers = {}
+	for _, f in FINGERS do
+		local b1 = mesh:FindFirstChild(prefix .. f .. "1", true)
+		local b2 = mesh:FindFirstChild(prefix .. f .. "2", true)
+		if not (b1 and b1:IsA("Bone") and b2 and b2:IsA("Bone")) then
+			return nil
+		end
+		local r1, r2 = restInMesh(b1, mesh), restInMesh(b2, mesh)
+		if not (r1 and r2) then
+			return nil
+		end
+		-- which way the fingertip moves (along the hand's X) when the finger curls: the four
+		-- fingers sit on the outer edge and curl inward, the thumb on the inner edge curls outward
+		local outward = side == "Right" and 1 or -1
+		local dir = (f == "Thumb") and outward or -outward
+		fingers[f] = {
+			B1 = b1,
+			B2 = b2,
+			X1 = r1.Rotation:VectorToObjectSpace(xMesh),
+			Z1 = r1.Rotation:VectorToObjectSpace(zMesh),
+			Z2 = r2.Rotation:VectorToObjectSpace(zMesh),
+			Dir = dir,
+			Angle = { 0, 0, 0 }, -- knuckle, middle, spread (radians)
+			Speed = { 0, 0, 0 },
+		}
+	end
+	return {
+		Side = side,
+		Mesh = mesh,
+		Hand = hand,
+		Fingers = fingers,
+		Fidget = nil,
+		FidgetAt = 0,
+		NextFidget = os.clock() + rng:NextNumber(1.5, 5),
+		LastPos = nil,
+		LastVel = Vector3.zero,
+	}
+end
+
+local rigs = {} -- [character] = { Left = hand, Right = hand, BurstAt, ... }
+
+local function rigFor(character: Model)
+	local rig = rigs[character]
+	if rig and (rig.Left or rig.Right) and (not rig.Left or rig.Left.Mesh.Parent) and (not rig.Right or rig.Right.Mesh.Parent) then
+		return rig
+	end
+	if rig and os.clock() < (rig.RetryAt or 0) then
+		return rig
+	end
+	rig = rig or {}
+	rig.Left = setupHand(character, "Left")
+	rig.Right = setupHand(character, "Right")
+	rig.RetryAt = os.clock() + 2 -- (no fingers yet: look again in a bit)
+	rigs[character] = rig
+	return rig
+end
+
+----------------------------------------------------------------------------------------
+-- what each hand should be doing right now
+----------------------------------------------------------------------------------------
+local function startFidget(hand, set, now: number)
+	hand.Fidget = pick(set)
+	hand.FidgetAt = now
+	hand.NextFidget = now + fidgetLength(hand.Fidget) + rng:NextNumber(2.5, 7)
+end
+
+-- target angles (degrees) for one hand, plus how much it trembles
+local function target(character: Model, rig, hand, now: number, standing: boolean)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.Health <= 0 then
+		return POSES.Loose, 0
+	end
+	local state = character:GetAttribute("PowerState")
+	local kaioken = character:GetAttribute("Kaioken") or 0
+	if state == "Charging" then
+		local charge = character:GetAttribute("Charge") or 0
+		return mix(POSES.Fist, POSES.Tight, charge), 0.6 + 1.4 * charge
+	elseif state == "Bursting" then
+		local t = now - (rig.BurstAt or now)
+		local pointAt = PowerConfig.PointAt
+		if hand.Side == "Left" and pointAt and t >= pointAt then
+			-- the "YOU'RE FINISHED!" point, in step with PowerFX's arm
+			local p = t - pointAt
+			if p < 0.62 then
+				return mix(POSES.Fist, POSES.Flat, smooth(p / 0.24)), 0
+			elseif p < 0.7 then
+				return mix(POSES.Flat, POSES.Open, smooth((p - 0.62) / 0.08)), 0
+			end
+			return mix(POSES.Open, POSES.Point, smooth((p - 0.7) / 0.1)), 0
+		end
+		return POSES.Tight, t < (PowerConfig.ExplodeAt or 0) and 1.5 or 0.4
+	elseif kaioken > 0 then
+		return POSES.Tight, 0.4 + 0.35 * kaioken
+	elseif character:GetAttribute("Exhausted") then
+		return POSES.Loose, 0
+	end
+	local ssj = character:GetAttribute("Form") == "SSJ"
+	local base = POSES.Relaxed
+	if ssj then
+		-- fists while the golden aura burns, loosening as you calm down
+		local breeze = character:GetAttribute("Breeze") or 0
+		base = mix(mix(POSES.Relaxed, POSES.Claw, 0.35), POSES.Fist, breeze)
+	end
+	if not standing then
+		hand.Fidget = nil
+		return base, 0
+	end
+	-- bored: now and then a fidget
+	if not hand.Fidget and now >= hand.NextFidget then
+		startFidget(hand, ssj and SSJ_FIDGETS or FIDGETS, now)
+		-- sometimes the other hand joins in a moment later
+		local other = hand.Side == "Left" and rig.Right or rig.Left
+		if other and not other.Fidget and rng:NextNumber() < 0.3 then
+			other.Fidget = hand.Fidget
+			other.FidgetAt = now + 0.12
+			other.NextFidget = hand.NextFidget + 0.3
+		end
+	end
+	local fidget = hand.Fidget
+	if fidget then
+		local t = now - hand.FidgetAt
+		if t > fidgetLength(fidget) then
+			hand.Fidget = nil
+		elseif t >= 0 then
+			local out = {}
+			local order = ORDER[fidget.Order] or ORDER.pinky
+			for _, f in FINGERS do
+				if f == "Thumb" and fidget.KeepThumb then
+					out[f] = base[f]
+				else
+					out[f] = sampleKeys(fidget.Keys, f, t - order[f] * (fidget.Stagger or 0))
+				end
+			end
+			local shake = 0
+			if fidget.Shake then
+				local len = fidget.Keys[#fidget.Keys][1]
+				shake = fidget.Shake * smooth(t / (len * 0.25)) * (1 - smooth((t - len * 0.6) / (len * 0.25)))
+			end
+			return out, shake
+		end
+	end
+	return base, 0
+end
+
+----------------------------------------------------------------------------------------
+-- every frame, after the character's animations have played
+----------------------------------------------------------------------------------------
+local function stepHand(character: Model, rig, hand, now: number, dt: number, standing: boolean)
+	-- how the hand is speeding up or slowing down, in its own axes (the fingers trail behind)
+	local bottom = hand.Hand.CFrame * Vector3.new(0, -0.2, 0)
+	local accel = Vector3.zero
+	if hand.LastPos and dt > 0 then
+		local vel = (bottom - hand.LastPos) / dt
+		if vel.Magnitude > 60 then -- teleported or respawned: no kick
+			vel = Vector3.zero
+			hand.LastVel = Vector3.zero
+		end
+		accel = hand.Hand.CFrame:VectorToObjectSpace((vel - hand.LastVel) / dt)
+		if accel.Magnitude > 300 then
+			accel = accel.Unit * 300
+		end
+		hand.LastVel = vel
+	end
+	hand.LastPos = bottom
+
+	local goal, shake = target(character, rig, hand, now, standing)
+	local steps = math.max(1, math.ceil(dt / (1 / 120)))
+	local h = dt / steps
+	for i, f in FINGERS do
+		local finger = hand.Fingers[f]
+		local g = goal[f]
+		local w = OMEGA[f]
+		local k, c = w * w, 2 * DAMPING * w
+		local tremble = shake > 0 and math.rad(3) * shake * math.sin(now * 53 + i * 1.7) or 0
+		local targets = { math.rad(g[1]) + tremble, math.rad(g[2]) + tremble * 0.7, math.rad(g[3]) }
+		-- trailing: sideways speeding-up bends the finger back, front-back speeding-up fans it
+		local push = { -finger.Dir * LAG * accel.X, -finger.Dir * LAG * 0.6 * accel.X, LAG * 0.5 * accel.Z }
+		for _ = 1, steps do
+			for j = 1, 3 do
+				local a = k * (targets[j] - finger.Angle[j]) - c * finger.Speed[j] + push[j]
+				finger.Speed[j] += a * h
+				finger.Angle[j] += finger.Speed[j] * h
+			end
+		end
+		finger.B1.Transform = CFrame.fromAxisAngle(finger.X1, finger.Angle[3]) * CFrame.fromAxisAngle(finger.Z1, finger.Dir * finger.Angle[1])
+		finger.B2.Transform = CFrame.fromAxisAngle(finger.Z2, finger.Dir * finger.Angle[2])
+	end
+end
+
+local okPre, preRender = pcall(function()
+	return RunService.PreRender
+end)
+local renderSignal = (okPre and preRender) or RunService.RenderStepped
+local lastColour = 0
+
+renderSignal:Connect(function(dt)
+	dt = math.min(dt, 1 / 20)
+	local now = os.clock()
+	local camera = Workspace.CurrentCamera
+	local camPos = camera and camera.CFrame.Position
+	local seen = {}
+	local recolour = now - lastColour > 1.5
+	if recolour then
+		lastColour = now
+	end
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root and (not camPos or (root.Position - camPos).Magnitude < VIEW_DISTANCE) then
+			seen[character] = true
+			local rig = rigFor(character)
+			-- when the transformation started (for the point)
+			if character:GetAttribute("PowerState") == "Bursting" then
+				rig.BurstAt = rig.BurstAt or now
+			else
+				rig.BurstAt = nil
+			end
+			local flat = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z)
+			local standing = flat.Magnitude < 1.5
+			for _, hand in { rig.Left, rig.Right } do
+				if hand and hand.Mesh.Parent then
+					stepHand(character, rig, hand, now, dt, standing)
+					if recolour and hand.Mesh:GetAttribute("KeepColour") ~= true then
+						hand.Mesh.Color = hand.Hand.Color -- (skin colour changes follow the hand)
+					end
+				end
+			end
+		end
+	end
+	for character in rigs do
+		if not seen[character] and not character.Parent then
+			rigs[character] = nil
+		end
+	end
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="17">
         <Properties>
           <string name="Name">HairFitTool</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -5647,11 +6817,11 @@ ContextActionService:SetPosition("HairFitTool", UDim2.new(1, -70, 0, 10))
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="17">
+    <Item class="Folder" referent="18">
       <Properties>
         <string name="Name">ServerStorage</string>
       </Properties>
-      <Item class="Folder" referent="18">
+      <Item class="Folder" referent="19">
         <Properties>
           <string name="Name">CharacterParts</string>
         </Properties>

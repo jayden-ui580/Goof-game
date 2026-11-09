@@ -1,0 +1,199 @@
+DRAGON WISH: ONLINE - COMBAT DESIGN NOTES
+(saved from our combat discussion, for later discussion and eventual implementation)
+=====================================================================================
+
+THE IDEA IN ONE BREATH
+  The core is block, M1 and dodge. Depth comes from reads (guessing what the other
+  person will do), and extra tools ("amplifiers") are optional answers to problems you
+  run into as you get better. "Natural Coordination" (live choreography): every hit,
+  block and dodge picks a matching animation pair from a big library, so a live fight
+  looks like a hand-animated DBZ fight. Same three buttons, endless looks.
+
+  It has a famous precedent: Batman: Arkham's "FreeFlow" combat (three inputs, a huge
+  contextual animation library, the attacker nudged so every hit connects).
+
+
+1. THE CORE IS ALREADY A LOOP
+-----------------------------
+  After your M1 hits their block, you're stuck in end lag. The defender picks punish or
+  side dash; you pick dodge-cancel or stay put (and block as soon as you can).
+    - Punish beats staying put .............. (layer 1)
+    - Dodge-cancel beats punish ............. (layer 2)
+    - Side dash beats dodge-cancel .......... (layer 3)
+    - Staying put beats side dash ........... (layer 4: the dash is slow enough that your
+                                               end lag is over when they swing, so you
+                                               block it)
+  Layer 4 closes the loop. Without it, side dash is always right and players find that
+  in a week.
+  TUNING RULE: a side dash plus a hit must take longer than your end lag.
+
+  Lag note: on Roblox two players see each other about 0.1-0.3 s in the past. This
+  system runs on reads, not reactions, which is exactly what survives lag. Keep the
+  windows generous.
+
+
+2. THE HOLE: WHY WOULD ANYONE ATTACK?
+-------------------------------------
+  If hitting a block is risky and blocking is free, good players wait. Two people
+  waiting is the opposite of a DBZ fight. The attacker needs a reward for pressure that
+  a beginner gets without learning anything.
+
+  Pick: BLOCKING DRAINS KI. Every blocked hit takes a bit; at zero your guard breaks.
+  Mashing (what beginners do anyway) slowly beats a turtle; grabs become the expert's
+  faster answer, not the only one.
+
+  The 5 Ki pips on the HUD become the fight's one resource:
+    - blocking hits ............. drains slowly; empty = guard break
+    - dodge / dodge-cancel / vanish ... 1 pip
+    - counter ................... 2 pips
+    - burst ..................... 3 pips
+    - refill .................... slowly on its own, or fast by CHARGING (the R
+                                  power-up), which leaves you wide open. "He's
+                                  charging, rush him!" Knocking someone away matters
+                                  because distance buys time to charge.
+  Free read: out of Ki = can't dodge-cancel = punish without fear. So when you lock on,
+  the opponent's plate slides in on the right (mirrored), showing their HP and Ki.
+
+
+3. RULES FOR AMPLIFIERS (every new mechanic must pass these)
+-------------------------------------------------------------
+  1. It answers a real problem players hit in playtests (not an imagined one).
+  2. A core move beats it (someone who never learned it isn't helpless; just slower).
+  3. It costs something, and missing it hurts. No free insurance.
+  4. It has its own tell, so the opponent can learn to see it coming.
+  5. It fits on 4 buttons: M1, Block, Dodge, Ki. Advanced stuff = two of those pressed
+     together, or a direction. (Phones!)
+  6. It's taught, not locked. Unlock cosmetics, never tools.
+
+  Starting set:
+    PROBLEM                         AMPLIFIER          INPUT                 WHAT BEATS IT
+    They just hold block            Grab               M1 + Block            Hit first (M1 is quicker than the
+                                                                             grab's wind-up), dash back, or tech
+                                                                             (press M1 as you're grabbed)
+    Trades get heated, I get caught Counter            Block + Dodge         Delay your hit so it misses, then
+                                                                             punish; or grab (counters only catch
+                                                                             strikes)
+    Once caught, I eat the combo    Burst              Block + Dodge while   Stop your combo early, block the
+                                                       being hit             burst, punish it
+    My combos lead nowhere          Finisher direction Direction on the last Block it: finishers have big end
+                                                       M1: forward = knock   lag on block
+                                                       away, up = launch,
+                                                       down = spike
+    I knock them away, they get     Vanish chase       Dodge toward a        They recover early, you vanish into
+    free time                                          flying opponent       nothing
+  Counter and burst share one input: the "panic button" (counter when nobody's hitting
+  you, burst while you're being hit).
+  The "what beats it" column is mostly core moves: that keeps the game easy to start
+  forever.
+
+  KAIOKEN (added since) fits this list as an amplifier: more power for health. Answer to
+  "they out-trade me"; beaten by playing keep-away until the strain eats them.
+
+
+4. NATURAL COORDINATION (LIVE CHOREOGRAPHY): HOW TO MAKE IT WORK
+-----------------------------------------------------------------
+  - Moves are the skeleton, animations are skins. Every variant of an M1 has the same
+    timing, range, damage and knockback. Variants never decide a fight.
+  - Variety within a type, consistency between types. All M1s share one rhythm and one
+    wind-up tell (flash + sound); grabs get a different tell (Sekiro flashes a red
+    kanji; a red kanji flash fits our HUD). Players can read 4 tells, not 40 animations.
+  - The attack picks first, the reaction answers. The attack's variant is chosen when
+    the swing starts (nobody knows the outcome yet); the attacker's game tells the
+    server which one so every screen agrees. The block / hit / dodge reaction is chosen
+    once the outcome is known, to fit that attack.
+  - Context picks the family: range (knees and elbows close, punches mid, lunging kicks
+    far), air or ground, from behind, opener or finisher, nearby wall or water, form
+    (Super Saiyan = flashier). Then choose the variant whose start pose flows from the
+    last one's end pose, never the same one twice in a row.
+  - Tags make content multiply: attacks are tagged where they land (high/mid/low,
+    left/right, light/heavy); reactions are tagged with what they can receive. A new
+    attack pairs with every reaction that fits. Mirror every animation for the other
+    side. 3 attacks a week then pair with dozens of reactions (3 hand-made pairs a week
+    would burn you out in a month).
+  - Nudge to connect (Arkham's trick): slide and turn the attacker a little during the
+    wind-up so the hit lands on the guard. Locked pairs (grabs, counters) snap into
+    place during the impact flash.
+  - Anime tricks are lag tricks: wind-ups give the other screen time to catch up;
+    hit-stop (a split-second freeze on impact) covers the wait for the server and makes
+    hits heavy; vanish teleports hide position corrections.
+  - Only take the camera when you've also taken control (locked counters, knock-away
+    flights), never during free play.
+  - More than two people: reactions only depend on the incoming hit, so they chain from
+    different attackers. Locked pairs: a third player's hit breaks the lock and frees
+    both.
+  - Spend animation time where the camera lingers: finishers, counters, grabs, wall
+    slams. M1s are a blur.
+  - Bonus 1: the variants ARE the progression. Unlockable, purely cosmetic fighting
+    styles; the weekly drop is something players chase, nobody gets an unfair edge.
+  - Bonus 2: replays. A fight is a record of which animation played when and where, so
+    the game can replay it from cinematic angles: a fight animation made live, ready to
+    clip and post.
+
+
+5. AIR AND KNOCKBACK (ISLAND -> WATER WITHOUT LOSING ANYONE)
+------------------------------------------------------------
+  - Lock-on camera (the most important piece). Movement is relative to the opponent:
+    forward = toward them, left/right circles them. Dashing toward someone in the sky
+    takes you into the sky: no up/down controls. Makes 3D readable and flight workable
+    on a phone.
+  - No free-flight controls in fights (at first). Height changes through clear moments:
+    launch (up), spike (down), knock-away (across the map). Flight = travel outside
+    fights.
+  - The chase mini-game: knocked away, they can vanish-chase (Dodge toward you, 1 pip);
+    you can recover early (Dodge). Recover too early and they catch you; vanish after
+    you've recovered and they appear next to nothing and get punished.
+  - The map reacts through more variants: wall splats, craters, smashing through rocks,
+    skipping across the water and splashing in. Zero new controls.
+  - Guardrails: only finishers knock away; hard combo limit (4 M1s + finisher; air
+    combos end in a finisher); always a way out (recover, burst); the camera follows the
+    flight; an arrow points to an off-screen opponent; a soft map edge.
+
+
+6. KEEP COMBOS SHORT
+--------------------
+  The DBZ look comes from trades, both fighters doing something. Long combos look like a
+  beatdown and make new players quit battlegrounds games. Short combos + real defense =
+  more turns = more paired animations = more choreography.
+
+
+7. WHAT A FIGHT COULD LOOK LIKE
+-------------------------------
+  Two players lock on at the shore. A mashes M1: a jab snaps off B's forearm guard, then
+  a spinning hook B side-blocks. A stops. B swings to punish, but A burns a pip and
+  vanishes. B guessed it and side-dashes, catching A with a side kick. Finisher, forward:
+  A skips across the water like a stone. B vanish-chases, but A recovers just in time,
+  flips upright over the water, and with one pip left starts charging; the aura flares
+  and the water ripples. B rushes in. A hits the panic button: the counter catches B's
+  fist and turns it into an uppercut. Launch. Now the fight's in the sky.
+  Every beat is a decision by one player, and none of it needed more than 4 buttons.
+
+
+8. BUILD ORDER
+--------------
+  1. Core: M1 chain, block, dodge(-cancel), side dash + a handful of variants. Prove the
+     dream with two players first.
+  2. Ki economy (guard drain, pip costs, charging) + opponent's plate on lock-on.
+  3. Lock-on, finishers (knock away / launch / spike), chase and recover.
+  4. First amplifiers: grab and the panic button.
+  5. The map reacting: walls, water, rocks.
+  6. Ki blasts, beams, transforming mid-fight.
+  Then each week: new variants, and a new amplifier only when playtests show a problem.
+
+
+9. OPEN QUESTIONS
+-----------------
+  - 1v1 duels or free-for-all servers? (camera, locked pairs, combo length)
+  - How big are ki blasts and beams? (a beam clash is the ultimate paired moment)
+  - Transforming mid-fight: the cutscene is ~7 s of standing still. Make it double as a
+    burst (the shockwave knocks the opponent away) with a shorter in-fight version?
+  - How long should a fight last? (30 s vs 3 min changes HP, Ki, knockback distance)
+
+
+THE PRINCIPLE UNDERNEATH
+------------------------
+  Depth = how many real decisions you make per exchange. Complexity = how many rules you
+  must learn. The core is high depth, low complexity: every option beats one thing and
+  loses to another. Add a mechanic only if it creates decisions for BOTH players (the
+  grab gives the defender a new choice: tech, dash back or mash). If every new tool can
+  be beaten by an old one, the game never gets harder to start: beginners can always
+  play, experts just have better answers.

@@ -39,6 +39,7 @@ script("LocalScript", "PowerUpClient", "StarterPlayerScripts/PowerUpClient.clien
 script("LocalScript", "PowerFX", "StarterPlayerScripts/PowerFX.client.luau", sps)
 script("ModuleScript", "SSJCutscene", "StarterPlayerScripts/SSJCutscene.luau", sps)
 script("LocalScript", "HUD", "StarterPlayerScripts/HUD.client.luau", sps)
+script("LocalScript", "HandFX", "StarterPlayerScripts/HandFX.client.luau", sps)
 script("LocalScript", "HairFitTool", "StarterPlayerScripts/HairFitTool.client.luau", sps)
 local ss = folder("ServerStorage", kit)
 folder("CharacterParts", ss)

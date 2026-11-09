@@ -2,7 +2,7 @@
 import sys, os, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np, bpy
-import hairs, dbz
+import hairs, dbz, fingers
 DATA, OUT = sys.argv[1], sys.argv[2]
 
 _finish = hairs.Rig.finish
@@ -68,6 +68,8 @@ PIECES = {
     'BaseHair': lambda: build(dbz.build_base_hair(DATA + '/BaseHair.obj'), 'BaseHair_Rigged', 'Head'),
     'SSJHair': lambda: build(dbz.build_ssj_hair(DATA + '/SSJHair.obj'), 'SSJHair_Rigged', 'Head'),
     'Belt': lambda: build(dbz.build_belt(DATA + '/Belt.obj'), 'Belt_Rigged', 'LowerTorso'),
+    'LeftFingers': lambda: build(fingers.build_fingers('L', DATA + '/TakeTheFingers.obj', DATA + '/R15_body.obj'), 'LeftFingers_Rigged', 'LeftHand'),
+    'RightFingers': lambda: build(fingers.build_fingers('R', DATA + '/TakeTheFingers.obj', DATA + '/R15_body.obj'), 'RightFingers_Rigged', 'RightHand'),
 }
 only = sys.argv[3:]
 if only:
@@ -78,8 +80,9 @@ if only:
         if prev and 'ring' in prev:
             h['ring'] = prev['ring']  # measured separately by belt_ring.py
     info = [fresh.get(o['name'], o) for o in old]
+    info += [h for name, h in fresh.items() if not any(o['name'] == name for o in old)]
 else:
-    info = [PIECES[name]() for name in ('BaseHair', 'SSJHair', 'Belt')]
+    info = [PIECES[name]() for name in ('BaseHair', 'SSJHair', 'Belt', 'LeftFingers', 'RightFingers')]
 json.dump(info, open(OUT + '/riginfo.json', 'w'), indent=1)
 print('built', [(i['name'], len(i['bones'])) for i in info])
 print('bones with < 1 weighted vertex:', [n for i in info for n, c in i['weights_per_bone'].items() if c < 1])

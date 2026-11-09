@@ -165,9 +165,26 @@ for _ = 1, 100 do frame(1 / 60) end
 r = report("exploded")
 check("explosion at ExplodeAt: leaning back, head up, arms lowered and out", r.waist > 0.2 and r.neck > 0.3 and r.arm < -0.5 and r.elbow < 0.4)
 print("explosion tweens started (pillar + shockwave + flash):", tweens - before, " particles burst out:", emitted)
-for _ = 1, 120 do frame(1 / 60) end
+for _ = 1, 50 do frame(1 / 60) end
 r = report("still holding")
 check("holds the release pose while transforming", r.waist > 0.2 and r.neck > 0.3)
+-- "YOU'RE FINISHED!": the arms come in, then the left arm swipes out into a point
+local burstStart = fakeClock - (60 + 100 + 50) / 60
+local cfg = env.require()
+local function angles(n) return motors[n].Transform:ToEulerAnglesXYZ() end
+while fakeClock < burstStart + cfg.PointAt + 0.5 do frame(1 / 60) end
+r = report("point: touch")
+local rsx = select(1, angles("RightShoulder"))
+local _, _, lsz = angles("LeftShoulder")
+check(("arms in: right forearm up (shoulder %.0f deg), left arm across to the right elbow (%.0f deg)"):format(math.deg(rsx), math.deg(lsz)),
+	math.abs(math.deg(rsx) - 72) < 8 and math.abs(math.deg(lsz) - 78) < 8)
+while fakeClock < burstStart + cfg.PointAt + 1.4 do frame(1 / 60) end
+r = report("point: holding it")
+local lsx = select(1, angles("LeftShoulder"))
+local lex = select(1, angles("LeftElbow"))
+rsx = select(1, angles("RightShoulder"))
+check(("the point: left arm straight out (%.0f deg, elbow %.0f), right fist pulled back (%.0f)"):format(math.deg(lsx), math.deg(lex), math.deg(rsx)),
+	math.abs(math.deg(lsx) - 86) < 6 and math.abs(math.deg(lex)) < 8 and math.deg(rsx) < -20)
 char:SetAttribute("PowerState", "Idle"); char:SetAttribute("Charge", 0)
 for _ = 1, 240 do frame(1 / 60) end
 r = report("super saiyan")
@@ -180,4 +197,37 @@ char:SetAttribute("Form", "Base")
 for _ = 1, 400 do frame(1 / 60) end
 r = report("powered down")
 check("everything cleaned up", r.flames == 0 and find("Aura") == nil and r.ring == 0)
+
+-- Kaioken x4: a red aura, a red glow over the body, a shockwave and a flex
+char:SetAttribute("Kaioken", 3); char:SetAttribute("KaiokenMult", 4)
+for _ = 1, 15 do frame(1 / 60) end
+local wave, glow = find("KaiokenWave"), find("KaiokenGlow")
+r = report("kaioken: flex")
+check("a red shockwave as it lights", wave ~= nil)
+check(("the flex: chest out, head back (waist %+.2f)"):format(r.waist), r.waist > 0.15 and r.neck > 0.25)
+for _ = 1, 90 do frame(1 / 60) end
+r = report("kaioken x4")
+glow = find("KaiokenGlow")
+local red = r.flames > 0
+check("a red glow over the whole body", glow ~= nil and glow:IsA("Highlight") and glow.Enabled and glow.Adornee == char and glow.FillTransparency < 0.85)
+local aura = find("Aura")
+local reddish = false
+for _, b in aura and aura:GetChildren() or {} do
+	if b:IsA("Beam") then
+		local c = b.Color.Keypoints[1].Value
+		reddish = c.R > 0.8 and c.G < 0.5
+		break
+	end
+end
+check("a red aura", red and reddish)
+check("the flex lets go again", math.abs(r.waist) < 0.05)
+char:SetAttribute("Kaioken", 0); char:SetAttribute("KaiokenMult", 1)
+char:SetAttribute("Exhausted", true)
+for _ = 1, 90 do frame(1 / 60) end
+r = report("exhausted")
+check(("exhausted: bent over, head hanging (waist %+.2f)"):format(r.waist), r.waist < -0.2 and r.neck < -0.2)
+char:SetAttribute("Exhausted", false)
+for _ = 1, 400 do frame(1 / 60) end
+r = report("rested")
+check("rested: back up, glow and aura gone", math.abs(r.waist) < 0.02 and r.flames == 0 and find("KaiokenGlow") == nil)
 if failed then error("some checks failed") end

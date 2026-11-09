@@ -3,7 +3,7 @@
 -- tools/preview/render_ui.py draws the way Roblox lays it out.
 -- usage (from the DragonWish folder):
 --   lune run tools/preview/ui_dump.luau <scenario> <width> <height> <out.json>
---   scenarios: idle | charging | ssj | hit | cutscene:<seconds into the transformation>
+--   scenarios: idle | charging | ssj | hit | kaioken | exhausted | cutscene:<seconds into the transformation>
 local luau = require("@lune/luau")
 local fs = require("@lune/fs")
 local roblox = require("@lune/roblox")
@@ -277,6 +277,16 @@ elseif scenario == "ssj" then
 elseif scenario == "hit" then
 	hum.Health = 22
 	frames(0.12)
+elseif scenario == "kaioken" then -- Kaioken x4, a moment after pushing it
+	character:SetAttribute("Ki", 40)
+	hum.Health = 82
+	character:SetAttribute("Kaioken", 3)
+	character:SetAttribute("KaiokenMult", 4)
+	frames(0.35)
+elseif scenario == "exhausted" then
+	hum.Health = 10
+	character:SetAttribute("Exhausted", true)
+	frames(1.5)
 elseif scenario:sub(1, 8) == "cutscene" then
 	local at = tonumber(scenario:sub(10)) or 3
 	press("DWPower")

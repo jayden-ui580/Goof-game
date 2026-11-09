@@ -10,7 +10,12 @@
 	  2.6 s   the screen turns into a manga page: black and white, inked outlines, screentone
 	          dots round the edges ... and a tall manga panel slides DOWN into frame: "THIS IS—"
 	  3.25 s  a second panel slides UP into frame: "SUPER SAIYAN!"   (PowerConfig.CutsceneText)
-	  end     the panels slide away, the colour floods back, the bars go and you get control
+	  4.3 s   (PowerConfig.PointAt) the panels slide away; cut to the front: your arms come in,
+	          left fingers on the inside of your right elbow, then you swipe into a point at the
+	          camera as it pushes in on you ... and a third panel slams in: "YOU'RE FINISHED!"
+	  end     the panel goes, the colour floods back, the bars go and you get control
+	The arm, hand and finger movements are PowerFX's and HandFX's; this script moves the camera
+	and draws the screen.
 ]]
 
 local Lighting = game:GetService("Lighting")
@@ -264,8 +269,12 @@ end
 
 local panel1 = mangaPanel("PanelThisIs", UDim2.fromScale(0.19, 0.66), 0.5, "speed")
 local panel2 = mangaPanel("PanelSuperSaiyan", UDim2.fromScale(0.25, 0.7), 0.58, "burst")
+local panel3 = mangaPanel("PanelFinished", UDim2.fromScale(0.38, 0.3), 1.7, "burst")
 local PANEL1_AT, PANEL1_FROM = UDim2.fromScale(0.21, 0.5), UDim2.fromScale(0.21, -0.6) -- slides down
 local PANEL2_AT, PANEL2_FROM = UDim2.fromScale(0.77, 0.5), UDim2.fromScale(0.77, 1.6) -- slides up
+local PANEL3_AT, PANEL3_OUT = UDim2.fromScale(0.29, 0.65), UDim2.fromScale(0.29, 1.6) -- slams in
+local POINT_AT = PowerConfig.PointAt
+local POINT_LAND = 0.81 -- seconds after PointAt: the point lands (PowerFX's swipe)
 
 -- "SUPER SAIYAN!" -> "SUPER\nSAIYAN!": one word per line fills a tall panel
 local function stacked(text: string): string
@@ -287,6 +296,18 @@ end
 
 local function slideOut(panel, to: UDim2)
 	tween(panel.Holder, 0.38, { Position = to }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+end
+
+-- the third panel doesn't slide: it slams down onto the page, like a stamp
+local function slamIn(panel, at: UDim2, text: string)
+	panel.Text.Text = stacked(text)
+	panel.Holder.Visible = true
+	panel.Holder.Position = at
+	panel.Scale.Scale = 1.8
+	tween(panel.Scale, 0.14, { Scale = 0.94 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	task.delay(0.14, function()
+		tween(panel.Scale, 0.22, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	end)
 end
 
 ----------------------------------------------------------------------------------------
@@ -447,6 +468,16 @@ local function pullShot(root: BasePart, u: number): (CFrame, number)
 	return CFrame.lookAt(eye, look), lerp(80, 62, e)
 end
 
+-- the point: in front of you, a little to your left; it pushes in as your arm swipes out at the
+-- lens (u = seconds since the point began)
+local function pointShot(root: BasePart, u: number): (CFrame, number)
+	local r = root.CFrame
+	local e = easeInOut(math.clamp((u - 0.57) / 0.3, 0, 1))
+	local eye = r * Vector3.new(lerp(-1.8, -1.1, e), lerp(0.9, 0.5, e), lerp(-8.4, -5.2, e))
+	local look = r * Vector3.new(lerp(-0.4, -0.55, e), 1.1, lerp(-0.6, -1, e))
+	return CFrame.lookAt(eye, look), lerp(46, 54, e)
+end
+
 ----------------------------------------------------------------------------------------
 -- playing it
 ----------------------------------------------------------------------------------------
@@ -485,6 +516,9 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 	flash.BackgroundTransparency = 1
 	panel1.Holder.Visible = false
 	panel2.Holder.Visible = false
+	panel3.Holder.Visible = false
+	-- the point needs room: PointAt, the swipe and a beat to hold it before the end
+	local pointAt = (POINT_AT and duration >= POINT_AT + POINT_LAND + 0.6) and POINT_AT or nil
 	topBar.Size = UDim2.fromScale(1, 0)
 	bottomBar.Size = UDim2.fromScale(1, 0)
 	tween(topBar, 0.3, { Size = UDim2.fromScale(1, BAR) })
@@ -540,9 +574,26 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 			slideIn(panel2, PANEL2_FROM, PANEL2_AT, texts[2] or "")
 			shake = math.max(shake, 0.25)
 		end)
+		if pointAt then
+			once("panels away", pointAt - 0.2, t, function()
+				slideOut(panel1, PANEL1_FROM)
+				slideOut(panel2, PANEL2_FROM)
+				setLines(1)
+			end)
+			once("finished", pointAt + POINT_LAND, t, function()
+				slamIn(panel3, PANEL3_AT, texts[3] or "YOU'RE FINISHED!")
+				flash.BackgroundTransparency = 0.55
+				tween(flash, 0.3, { BackgroundTransparency = 1 })
+				setLines(0.15)
+				shake = math.max(shake, 0.35)
+			end)
+		end
 		once("leave", duration - 0.5, t, function()
 			slideOut(panel1, PANEL1_FROM) -- back up
 			slideOut(panel2, PANEL2_FROM) -- back down
+			if panel3.Holder.Visible then
+				slideOut(panel3, PANEL3_OUT)
+			end
 			mangaOff(0.45) -- the colour comes back as the panels go
 			tween(topBar, 0.4, { Size = UDim2.fromScale(1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 			tween(bottomBar, 0.4, { Size = UDim2.fromScale(1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -556,8 +607,10 @@ function Cutscene.Play(character: Model, duration: number, onDone: (() -> ())?)
 		elseif t < EXPLODE then
 			cf, fov = hairShot(head, (t - EYES_END) / (EXPLODE - EYES_END))
 			shake = 0.02
+		elseif pointAt and t >= pointAt then
+			cf, fov = pointShot(root, t - pointAt)
 		else
-			cf, fov = pullShot(root, (t - EXPLODE) / math.max(duration - EXPLODE, 0.1))
+			cf, fov = pullShot(root, (t - EXPLODE) / math.max((pointAt or duration) - EXPLODE, 0.1))
 		end
 		local jolt = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-1, 1), rng:NextNumber(-1, 1)) * shake
 		camera.CameraType = Enum.CameraType.Scriptable

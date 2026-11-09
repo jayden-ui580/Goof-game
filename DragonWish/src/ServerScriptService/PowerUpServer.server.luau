@@ -2,9 +2,9 @@
 	PowerUpServer  (Script — lives in ServerScriptService)
 
 	The referee for powering up. Players' computers tell it "I started charging", "my bar is at
-	X", "I'm full — transform", "cancel" and "power down"; it checks those make sense and sets
-	attributes on the character that every player's screen reads to draw the aura, pose, hair
-	and HUD:
+	X", "I'm full — transform", "cancel", "power down" and "Kaioken"; it checks those make sense
+	and sets attributes on the character that every player's screen reads to draw the aura,
+	pose, hair, fingers and HUD:
 	  Form        "Base" or "SSJ"
 	  PowerState  "Idle", "Charging" or "Bursting" (the transformation, cutscene included)
 	  Charge      0..1, how full the power bar is
@@ -12,8 +12,12 @@
 	  Breeze      0..1, the Super Saiyan glow: the SSJ hair's breeze and the golden aura. 1 when
 	              you transform, fading to 0 when you calm down (PowerConfig.SSJCalmAfter)
 	  Ki          0..KiMax, shown on the HUD: refills slowly, and charging fills it up
-	It also swaps the visible hair (base <-> Super Saiyan) and stops you walking while charging
-	and transforming.
+	  Kaioken     0 = off, 1..5 = the level (x2, x3, x4, x10, x20; PowerConfig.KaiokenLevels)
+	  KaiokenMult the multiplier of that level (1 when off)
+	  Exhausted   true for a few seconds after the Kaioken was pushed until your body gave out
+	It also swaps the visible hair (base <-> Super Saiyan), stops you walking while charging
+	and transforming, speeds you up in Kaioken, drains your health while it burns, and slows
+	you while you're exhausted.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
 
@@ -82,12 +86,62 @@ local function lockMovement(character: Model, lock: boolean)
 	end
 end
 
--- the hair lift that stays on when you're not charging: only while the Super Saiyan glow is up
+-- the hair lift that stays on when you're not charging: while the Super Saiyan glow is up, or
+-- the Kaioken burns
 local function idleWind(character: Model): number
+	local kaioken = character:GetAttribute("Kaioken") or 0
+	if kaioken > 0 then
+		return 0.3 + 0.1 * kaioken
+	end
 	if character:GetAttribute("Form") ~= "SSJ" then
 		return 0
 	end
 	return PowerConfig.SSJCalmWind * (character:GetAttribute("Breeze") or 0)
+end
+
+----------------------------------------------------------------------------------------
+-- Kaioken
+----------------------------------------------------------------------------------------
+-- walk speed follows the Kaioken level and exhaustion (your normal speed is remembered)
+local function applySpeed(character: Model)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	local st = state(character)
+	local level = character:GetAttribute("Kaioken") or 0
+	local tired = character:GetAttribute("Exhausted")
+	if level > 0 or tired then
+		st.NormalSpeed = st.NormalSpeed or humanoid.WalkSpeed
+		local mult = tired and PowerConfig.ExhaustedSpeed or PowerConfig.KaiokenSpeed[level] or 1
+		humanoid.WalkSpeed = st.NormalSpeed * mult
+	elseif st.NormalSpeed then
+		humanoid.WalkSpeed = st.NormalSpeed
+		st.NormalSpeed = nil
+	end
+end
+
+local function setKaioken(character: Model, level: number)
+	character:SetAttribute("Kaioken", level)
+	character:SetAttribute("KaiokenMult", PowerConfig.KaiokenLevels[level] or 1)
+	character:SetAttribute("AuraWind", idleWind(character))
+	applySpeed(character)
+end
+
+-- pushed too far: the Kaioken stops and you're exhausted for a few seconds
+local function exhaust(character: Model)
+	local st = state(character)
+	st.Token = (st.Token or 0) + 1
+	local token = st.Token
+	setKaioken(character, 0)
+	character:SetAttribute("Exhausted", true)
+	applySpeed(character)
+	task.delay(PowerConfig.KaiokenExhaustTime, function()
+		if character.Parent and st.Token == token then
+			character:SetAttribute("Exhausted", false)
+			applySpeed(character)
+		end
+	end)
 end
 
 local function stopCharging(character: Model)
@@ -148,8 +202,9 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 	local now = os.clock()
 	local st = state(character)
 
+	local kaioken = character:GetAttribute("Kaioken") or 0
 	if action == "Start" then
-		if powerState == "Idle" and form == "Base" then
+		if powerState == "Idle" and form == "Base" and kaioken == 0 and not character:GetAttribute("Exhausted") then
 			st.Started, st.LastUpdate = now, now
 			character:SetAttribute("PowerState", "Charging")
 			character:SetAttribute("Charge", 0)
@@ -177,17 +232,35 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 			stopCharging(character)
 		end
 	elseif action == "PowerDown" then
-		if powerState == "Idle" and form == "SSJ" then
+		if powerState == "Idle" and kaioken > 0 then
+			setKaioken(character, 0) -- let the Kaioken go
+		elseif powerState == "Idle" and form == "SSJ" then
 			st.Token = (st.Token or 0) + 1 -- cancels a pending calm-down
 			applyForm(character, "Base")
 			character:SetAttribute("AuraWind", 0)
 			character:SetAttribute("Breeze", 0)
 		end
+	elseif action == "Kaioken" then
+		-- light it, or push it one level higher: base form, standing (not charging), not
+		-- exhausted, not too soon after the last level, and with a ki pip to burn
+		local ki = character:GetAttribute("Ki") or 0
+		if
+			powerState == "Idle"
+			and form == "Base"
+			and not character:GetAttribute("Exhausted")
+			and kaioken < #PowerConfig.KaiokenLevels
+			and ki >= PowerConfig.KaiokenKiCost
+			and now - (st.KaiokenAt or -math.huge) >= PowerConfig.KaiokenCooldown
+		then
+			st.KaiokenAt = now
+			character:SetAttribute("Ki", ki - PowerConfig.KaiokenKiCost)
+			setKaioken(character, kaioken + 1)
+		end
 	end
 end)
 
--- a charging player who stopped talking (closed the game, lagged out) is cancelled; and ki
--- slowly refills
+-- a charging player who stopped talking (closed the game, lagged out) is cancelled; the
+-- Kaioken eats health; and ki slowly refills
 local kiClock = 0
 RunService.Heartbeat:Connect(function(dt)
 	local now = os.clock()
@@ -196,6 +269,18 @@ RunService.Heartbeat:Connect(function(dt)
 			info[character] = nil
 		elseif character:GetAttribute("PowerState") == "Charging" and now - (st.LastUpdate or now) > STALE_SECONDS then
 			stopCharging(character)
+		else
+			local level = character:GetAttribute("Kaioken") or 0
+			local humanoid = level > 0 and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and humanoid.Health > 0 then
+				local strain = PowerConfig.KaiokenStrain[level] or 0
+				local floor = PowerConfig.KaiokenFloor
+				local health = math.max(humanoid.Health - strain * dt, math.min(floor, humanoid.Health))
+				humanoid.Health = health
+				if health <= floor + 1e-3 then
+					exhaust(character) -- your body gives out
+				end
+			end
 		end
 	end
 	kiClock += dt
@@ -203,7 +288,9 @@ RunService.Heartbeat:Connect(function(dt)
 		for _, player in Players:GetPlayers() do
 			local character = player.Character
 			local ki = character and character:GetAttribute("Ki")
-			if ki and ki < PowerConfig.KiMax and character:GetAttribute("PowerState") ~= "Charging" then
+			if ki and ki < PowerConfig.KiMax and character:GetAttribute("PowerState") ~= "Charging"
+				and (character:GetAttribute("Kaioken") or 0) == 0
+			then
 				character:SetAttribute("Ki", math.min(PowerConfig.KiMax, ki + PowerConfig.KiRegen * kiClock))
 			end
 		end

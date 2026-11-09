@@ -40,6 +40,8 @@ bodyPart("UpperTorso", V3.new(2, 1.6, 1), CF.new(0, 3.2, 0))
 local lower = bodyPart("LowerTorso", V3.new(2, 0.4, 1), CF.new(0, 2.2, 0))
 bodyPart("LeftUpperLeg", V3.new(1, 1.2, 1), CF.new(-0.5, 1.4, 0))
 bodyPart("RightUpperLeg", V3.new(1, 1.2, 1), CF.new(0.5, 1.4, 0))
+bodyPart("LeftHand", V3.new(1, 0.387, 1), CF.new(-1.5, 2.1935, 0), true).Color = roblox.Color3.fromRGB(240, 200, 160)
+bodyPart("RightHand", V3.new(1, 0.387, 1), CF.new(1.5, 2.1935, 0), true).Color = roblox.Color3.fromRGB(240, 200, 160)
 local ownHat = I.new("Accessory"); ownHat.Name = "RigOwnScouter"; ownHat.Parent = base
 base.Parent = RS
 
@@ -99,6 +101,7 @@ modules.PowerConfig = luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.l
 modules.PowerConfig.BurstTime = 0.3
 modules.PowerConfig.SSJCalmAfter = 0.3 -- (20 s in the game)
 modules.PowerConfig.SSJCalmTime = 0.3
+modules.PowerConfig.KaiokenExhaustTime = 0.3 -- (4 s in the game)
 for _, n in { "HairPhysics", "HairConfig", "PowerConfig" } do local m = I.new("ModuleScript"); m.Name = n; m.Parent = RS end
 local fakeGame = { GetService = function(_, n)
 	if n == "Players" then return playersStub end
@@ -130,9 +133,10 @@ for _, h in info do
 		local want = attach.CFrame * cfg.Offset * (V3.new(p[1], p[2], p[3]) * mesh:GetAttribute("FitScale"))
 		worst = math.max(worst, (got - want).Magnitude)
 	end
-	print(("%-8s on %-10s bones %3d  size x%.3f  worst placement error %.5f  visible %s  tagged %s  preset %s"):format(
+	print(("%-12s on %-10s bones %3d  size x%.3f  worst placement error %.5f  visible %s  tagged %s  preset %s%s"):format(
 		h.name, attach.Name, #(function() local t = {} for k in h.bones do table.insert(t, k) end return t end)(), mesh:GetAttribute("FitScale"), worst,
-		tostring(mesh.Transparency < 1), tostring(mesh:HasTag("HairPhysics")), tostring(mesh:GetAttribute("HairPreset"))))
+		tostring(mesh.Transparency < 1), tostring(mesh:HasTag("HairPhysics")), tostring(mesh:GetAttribute("HairPreset")),
+		mesh:GetAttribute("FingerHand") and ("  fingers on " .. mesh:GetAttribute("FingerHand") .. ", hand colour " .. tostring(mesh.Color == attach.Color)) or ""))
 end
 local seen, dupes = {}, {}
 for _, d in sc:GetDescendants() do
@@ -179,3 +183,50 @@ send("Start"); clock += 10; heartbeat:Fire(0.016); show("went quiet for 10 s")
 char:SetAttribute("Ki", 10)
 for _ = 1, 8 do heartbeat:Fire(0.25) end
 print("ki refills while idle (10 -> 13 after 2 s):", char:GetAttribute("Ki"))
+
+-- the Kaioken through the referee
+print()
+local function kshow(tag)
+	print(("%-34s kaioken %d x%-2d ki %3d hp %5.1f walk %5.2f wind %.2f exhausted %s"):format(tag, char:GetAttribute("Kaioken") or -1,
+		char:GetAttribute("KaiokenMult") or -1, char:GetAttribute("Ki") or -1, h2.Health, h2.WalkSpeed, char:GetAttribute("AuraWind") or -1,
+		tostring(char:GetAttribute("Exhausted"))))
+end
+local function check(what, ok) print((ok and "PASS  " or "FAIL  ") .. what) end
+char:SetAttribute("Ki", 100); h2.Health = 100; clock += 5
+kshow("before")
+send("Kaioken"); kshow("K")
+check("K lights it: x2, one ki pip spent, faster legs, hair lifted",
+	char:GetAttribute("Kaioken") == 1 and char:GetAttribute("KaiokenMult") == 2 and char:GetAttribute("Ki") == 80
+	and math.abs(h2.WalkSpeed - 16 * 1.15) < 1e-3 and char:GetAttribute("AuraWind") > 0)
+send("Kaioken"); kshow("K again at once")
+check("a second K straight away is too soon", char:GetAttribute("Kaioken") == 1)
+clock += 0.7; send("Kaioken"); kshow("K after 0.7 s")
+check("then it climbs to x3", char:GetAttribute("Kaioken") == 2 and char:GetAttribute("KaiokenMult") == 3)
+local hp0, ki0 = h2.Health, char:GetAttribute("Ki")
+for _ = 1, 60 do heartbeat:Fire(1 / 60) end
+kshow("1 s at x3")
+check("the strain eats 2.5 health a second at x3, and ki doesn't refill",
+	math.abs((hp0 - h2.Health) - 2.5) < 0.05 and char:GetAttribute("Ki") == ki0)
+send("Start"); kshow("R to power up")
+check("can't start powering up in Kaioken", char:GetAttribute("PowerState") == "Idle")
+send("PowerDown"); kshow("R: let it go")
+check("R lets it go: speed and hair back to normal", char:GetAttribute("Kaioken") == 0 and h2.WalkSpeed == 16 and char:GetAttribute("AuraWind") == 0)
+char:SetAttribute("Ki", 100); h2.Health = 100
+for _ = 1, 5 do clock += 0.7; send("Kaioken") end
+kshow("pushed to x20")
+check("five presses reach x20 and spend all five pips", char:GetAttribute("KaiokenMult") == 20 and char:GetAttribute("Ki") == 0)
+for _ = 1, 60 * 8 do heartbeat:Fire(1 / 60) end
+kshow("8 s at x20")
+check("the body gives out at 10 health: Kaioken off, exhausted, slow",
+	char:GetAttribute("Kaioken") == 0 and char:GetAttribute("Exhausted") == true and math.abs(h2.Health - 10) < 0.01
+	and math.abs(h2.WalkSpeed - 16 * 0.55) < 1e-3)
+char:SetAttribute("Ki", 100); clock += 1
+send("Kaioken"); send("Start"); kshow("K and R while exhausted")
+check("no Kaioken and no powering up while exhausted", char:GetAttribute("Kaioken") == 0 and char:GetAttribute("PowerState") == "Idle")
+task.wait(0.4); heartbeat:Fire(0.016); kshow("rested")
+check("after resting: not exhausted, normal speed", char:GetAttribute("Exhausted") == false and h2.WalkSpeed == 16)
+char:SetAttribute("Ki", 10); clock += 1; send("Kaioken"); kshow("K with 10 ki")
+check("not enough ki: refused", char:GetAttribute("Kaioken") == 0)
+char:SetAttribute("Ki", 100); char:SetAttribute("Form", "SSJ"); clock += 1; send("Kaioken"); kshow("K as a Super Saiyan")
+check("base form only", char:GetAttribute("Kaioken") == 0)
+char:SetAttribute("Form", "Base")

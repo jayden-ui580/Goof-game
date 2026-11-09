@@ -1,9 +1,10 @@
 --[[
 	HairConfig  (ModuleScript — lives in ReplicatedStorage)
 
-	Settings for everything on the character that moves with physics: the base hair, the
-	Super Saiyan hair and the belt's ribbons. Read by CharacterSetup (which puts them on) and by
-	HairPhysics on every player's computer (which moves them).
+	Settings for the pieces put on the character: the base hair, the Super Saiyan hair and the
+	belt's ribbons (moved by physics), and the fingers (posed by HandFX). Read by CharacterSetup
+	(which puts them on) and by HairPhysics on every player's computer (which moves the hair and
+	ribbons).
 
 	Quick guide to the physics numbers (per piece, under Physics):
 	  Stiffness     One number per bone, root first: how strongly each bone springs back to its
@@ -130,6 +131,26 @@ HairConfig.Hairs = {
 			BodyColliders = { "LowerTorso", "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg" },
 			SimulationDistance = 150,
 		},
+	},
+
+	-- The fingers (LeftFingers_Rigged.fbx / RightFingers_Rigged.fbx). They aren't swung by
+	-- physics: HandFX poses them (relaxed curl, idle fidgets, fists, the point). They take the
+	-- colour and material of the hand they're on unless you give them a Color here.
+	LeftFingers = {
+		SignatureBone = "LIndex1",
+		Kind = "Fingers",
+		Offset = CFrame.new(0, 0, 0),
+		Scale = 1,
+		ScaleToHead = false,
+		VisibleIn = "Both",
+	},
+	RightFingers = {
+		SignatureBone = "RIndex1",
+		Kind = "Fingers",
+		Offset = CFrame.new(0, 0, 0),
+		Scale = 1,
+		ScaleToHead = false,
+		VisibleIn = "Both",
 	},
 }
 
@@ -410,6 +431,66 @@ HairConfig.Layouts = {
 			RibbonR_2 = Vector3.new(0.2298, -0.3562, -0.6256),
 			RibbonR_3 = Vector3.new(0.4271, -0.7697, -0.6787),
 			RibbonR_End = Vector3.new(0.4635, -1.2052, -0.6707),
+		},
+	},
+	LeftFingers = {
+		Attach = "LeftHand", -- the body part it is fixed to
+		Size = Vector3.new(0.7898, 0.9293, 0.8851),
+		HeadCenter = Vector3.zero, -- the rig point that sits on the centre of that body part
+		Chains = {
+			{ Name = "LThumb", Bones = { "LThumb1", "LThumb2" }, Tip = "LThumbTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "LIndex", Bones = { "LIndex1", "LIndex2" }, Tip = "LIndexTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "LMiddle", Bones = { "LMiddle1", "LMiddle2" }, Tip = "LMiddleTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "LRing", Bones = { "LRing1", "LRing2" }, Tip = "LRingTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "LPinky", Bones = { "LPinky1", "LPinky2" }, Tip = "LPinkyTip", Radii = { 0.1, 0.1, 0.1 } },
+		},
+		Bones = {
+			LHandRoot = Vector3.new(0, -0.1937, 0),
+			LThumb1 = Vector3.new(0.2895, -0.185, -0.3421),
+			LThumb2 = Vector3.new(0.2946, -0.4513, -0.3421),
+			LThumbTip = Vector3.new(0.2945, -0.865, -0.3421),
+			LIndex1 = Vector3.new(-0.3126, -0.185, -0.3424),
+			LIndex2 = Vector3.new(-0.3178, -0.4545, -0.3424),
+			LIndexTip = Vector3.new(-0.3178, -0.8853, -0.3424),
+			LMiddle1 = Vector3.new(-0.3126, -0.185, -0.1166),
+			LMiddle2 = Vector3.new(-0.3177, -0.4651, -0.1166),
+			LMiddleTip = Vector3.new(-0.3178, -1.0121, -0.1166),
+			LRing1 = Vector3.new(-0.3126, -0.185, 0.1155),
+			LRing2 = Vector3.new(-0.3177, -0.4632, 0.1155),
+			LRingTip = Vector3.new(-0.3178, -0.9614, 0.1155),
+			LPinky1 = Vector3.new(-0.3126, -0.185, 0.3398),
+			LPinky2 = Vector3.new(-0.3177, -0.4511, 0.3398),
+			LPinkyTip = Vector3.new(-0.3178, -0.865, 0.3398),
+		},
+	},
+	RightFingers = {
+		Attach = "RightHand", -- the body part it is fixed to
+		Size = Vector3.new(0.7896, 0.9293, 0.8854),
+		HeadCenter = Vector3.zero, -- the rig point that sits on the centre of that body part
+		Chains = {
+			{ Name = "RThumb", Bones = { "RThumb1", "RThumb2" }, Tip = "RThumbTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "RIndex", Bones = { "RIndex1", "RIndex2" }, Tip = "RIndexTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "RMiddle", Bones = { "RMiddle1", "RMiddle2" }, Tip = "RMiddleTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "RRing", Bones = { "RRing1", "RRing2" }, Tip = "RRingTip", Radii = { 0.1, 0.1, 0.1 } },
+			{ Name = "RPinky", Bones = { "RPinky1", "RPinky2" }, Tip = "RPinkyTip", Radii = { 0.1, 0.1, 0.1 } },
+		},
+		Bones = {
+			RHandRoot = Vector3.new(0, -0.1937, 0),
+			RThumb1 = Vector3.new(-0.2893, -0.185, -0.3421),
+			RThumb2 = Vector3.new(-0.2944, -0.451, -0.3421),
+			RThumbTip = Vector3.new(-0.2944, -0.865, -0.3421),
+			RIndex1 = Vector3.new(0.3126, -0.185, -0.3424),
+			RIndex2 = Vector3.new(0.3176, -0.4545, -0.3424),
+			RIndexTip = Vector3.new(0.3176, -0.8853, -0.3424),
+			RMiddle1 = Vector3.new(0.3126, -0.1835, -0.1189),
+			RMiddle2 = Vector3.new(0.3176, -0.4651, -0.1189),
+			RMiddleTip = Vector3.new(0.3177, -1.0121, -0.1189),
+			RRing1 = Vector3.new(0.3125, -0.185, 0.1078),
+			RRing2 = Vector3.new(0.3175, -0.4635, 0.1078),
+			RRingTip = Vector3.new(0.3177, -0.9614, 0.1078),
+			RPinky1 = Vector3.new(0.3126, -0.185, 0.3402),
+			RPinky2 = Vector3.new(0.3176, -0.451, 0.3402),
+			RPinkyTip = Vector3.new(0.3177, -0.865, 0.3402),
 		},
 	},
 }

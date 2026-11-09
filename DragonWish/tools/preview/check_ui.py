@@ -1,5 +1,5 @@
 """Checks the UI dumps from ui_dump.luau: what must be on screen in each scenario.
-usage: python3 check_ui.py idle.json charging.json cutscene_3.9.json"""
+usage: python3 check_ui.py idle.json charging.json cutscene_3.9.json [kaioken.json cutscene_5.4.json]"""
 import json, sys
 
 def find(node, name):
@@ -19,6 +19,8 @@ def check(what, ok):
     return ok
 
 idle, charging, cut = (json.load(open(p)) for p in sys.argv[1:4])
+kaioken = json.load(open(sys.argv[4])) if len(sys.argv) > 4 else None
+finished = json.load(open(sys.argv[5])) if len(sys.argv) > 5 else None
 ok = True
 hud = gui(idle, 'DragonHUD')
 ok &= check('HUD on screen with the plate, scouter and radar', bool(hud and hud['enabled'] and find(hud, 'Plate') and find(hud, 'Scouter') and find(hud, 'Radar')))
@@ -36,4 +38,16 @@ ok &= check('cutscene layer on, HUD hidden', bool(cs and cs['enabled'] and not g
 ok &= check('black bars in', find(cs, 'TopBar')['size'][2] > 0.1 and find(cs, 'BottomBar')['size'][2] > 0.1)
 ok &= check('both manga panels on screen with their text', bool(b1 and b2 and b1['visible'] and b2['visible'] and find(b1, 'Text')['text'] and find(b2, 'Text')['text']))
 ok &= check('the manga filter is on (grey, high contrast)', any(e['saturation'] <= -0.9 and e['contrast'] > 0.3 for e in cut.get('effects', [])))
+if kaioken:
+    form = find(find(gui(kaioken, 'DragonHUD'), 'Form'), 'Text')
+    shout = find(gui(kaioken, 'PowerUpUI'), 'Kaioken')
+    ok &= check('Kaioken: the HUD tag reads KAIOKEN x4', bool(form and form['text'] == 'KAIOKEN x4'))
+    ok &= check('Kaioken: the "KAIOKEN x4!" shout is up', bool(shout and shout['visible'] and find(shout, 'Text')['text'] == 'KAIOKEN x4!'))
+    kanji = find(gui(kaioken, 'DragonHUD'), 'Kanji')
+    ok &= check('Kaioken: the gi badge reads 拳', bool(kanji and kanji['text'] == '拳'))
+if finished:
+    cs3 = gui(finished, 'SSJCutscene')
+    p3 = find(cs3, 'PanelFinished')
+    ok &= check('the third manga panel: YOU\'RE FINISHED!', bool(p3 and p3['visible'] and find(p3, 'Text')['text'].replace('\n', ' ') == "YOU'RE FINISHED!"))
+    ok &= check('the first two panels have left', all(not find(cs3, n)['visible'] or find(cs3, n)['pos'][2] < -0.2 or find(cs3, n)['pos'][2] > 1.2 for n in ('PanelThisIs', 'PanelSuperSaiyan')))
 sys.exit(0 if ok else 1)
