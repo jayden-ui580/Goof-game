@@ -62,8 +62,23 @@ function char:GetDescendants()
 end
 
 local player = { Name = "Player1", Character = char, CharacterAdded = signal() }
+local playerGui = I.new("Folder")
 function player:WaitForChild()
-	return I.new("Folder")
+	return playerGui
+end
+local playerAttrs, playerSignals = {}, {}
+function player:GetAttribute(n)
+	return playerAttrs[n]
+end
+function player:SetAttribute(n, v)
+	playerAttrs[n] = v
+	if playerSignals[n] then
+		playerSignals[n]:Fire()
+	end
+end
+function player:GetAttributeChangedSignal(n)
+	playerSignals[n] = playerSignals[n] or signal()
+	return playerSignals[n]
 end
 
 -- the RemoteEvent: client -> server messages arrive LATENCY seconds later
@@ -129,6 +144,9 @@ local function env(isServer)
 				return cutsceneStub
 			elseif m == "DragonUI" then
 				return DragonUI
+			elseif m == "Oozaru" then
+				-- (the Great Ape has its own test: server_mock)
+				return { Available = function() return false end, Step = function() end }
 			end
 			return PowerConfig
 		end,
@@ -291,6 +309,22 @@ check(("K again pushes it higher (x%d)"):format(attrs.KaiokenMult or 0), attrs.K
 press("DWPower")
 run(0.3)
 check("R lets it go (and doesn't start powering up)", attrs.Kaioken == 0 and attrs.PowerState == "Idle" and humanoid.WalkSpeed == 16)
+
+-- 7. G: the Great Ape (the swap itself is tested in server_mock)
+attrs.Ki = 10
+local before = #sent
+press("DWOozaru")
+run(0.3)
+check("G with too little ki: told so, nothing sent", #sent == before)
+attrs.Ki = 100
+press("DWOozaru")
+run(0.3)
+check("G with enough ki: asks the server", sent[#sent] == "Oozaru")
+local powerUI = playerGui:FindFirstChild("PowerUpUI")
+player:SetAttribute("Oozaru", true)
+local hiddenWhileApe = powerUI and powerUI.Enabled == false
+player:SetAttribute("Oozaru", nil)
+check("the power-up screen hides while you're the giant, and comes back", hiddenWhileApe and powerUI.Enabled == true)
 
 print("\nwhat happened:")
 for _, l in log do

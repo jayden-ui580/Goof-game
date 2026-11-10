@@ -9,6 +9,7 @@
 	calmly. Press R again as a Super Saiyan to power down.
 	Kaioken (base form only): press K to light it, again to push it higher. More power, faster
 	legs, a red aura ... and it eats your health every second. R lets it go.
+	Great Ape (base form only): press G to become the Oozaru; G or R to turn back.
 ]]
 
 local PowerConfig = {}
@@ -61,6 +62,28 @@ PowerConfig.KaiokenCooldown = 0.6 -- seconds between level-ups
 PowerConfig.KaiokenFloor = 10 -- health at which your body gives out
 PowerConfig.KaiokenExhaustTime = 4 -- seconds you're exhausted afterwards
 PowerConfig.ExhaustedSpeed = 0.55 -- walk speed multiplier while exhausted
+
+-- The Great Ape (Oozaru), base form only. Press G: the screen goes black and you come back as
+-- a giant ape, already roaring. Press G (or R) again to turn back. You also turn back when
+-- OozaruTime runs out (your vision starts to swim red a few seconds before), and if the giant
+-- is beaten you respawn as normal. Needs Oozaru_Rigged.fbx imported into ServerStorage >
+-- CharacterParts.
+PowerConfig.OozaruKey = Enum.KeyCode.G
+PowerConfig.OozaruKiCost = 60 -- ki it costs (three of the five pips on the HUD)
+PowerConfig.OozaruTime = 60 -- seconds you stay giant (0 = until you turn back yourself)
+PowerConfig.OozaruScale = 3.2 -- how big (1 = the model as made, about 10.8 studs tall: 3.2 is ~34)
+PowerConfig.OozaruHealth = 500 -- health as the giant (you keep the same share of it either way)
+PowerConfig.OozaruWalkSpeed = 11 -- studs/s. The steps are worked out from this and the length of
+-- the legs, so the walk always matches how fast you really go
+PowerConfig.OozaruTurnSpeed = 140 -- degrees/s the giant can turn (heavy: it can't spin on the spot)
+PowerConfig.OozaruIntro = 4.4 -- seconds of roaring before you can move
+PowerConfig.OozaruFur = Color3.fromRGB(96, 60, 38)
+PowerConfig.OozaruSkin = Color3.fromRGB(212, 150, 108)
+PowerConfig.OozaruEyes = Color3.fromRGB(255, 36, 24) -- (they glow)
+PowerConfig.OozaruRoarSound = "rbxassetid://2139510606" -- the roar ("Monster Roar - Sound Effect"
+-- from the Creator Store). Any sound id works; "" for none
+PowerConfig.OozaruStepSound = "rbxasset://sounds/action_jump_land.mp3" -- each footfall, played
+-- deep and slow (Roblox's own landing thud)
 
 -- HUD
 PowerConfig.KiMax = 100

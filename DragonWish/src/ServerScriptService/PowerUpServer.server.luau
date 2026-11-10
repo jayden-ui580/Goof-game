@@ -18,14 +18,20 @@
 	It also swaps the visible hair (base <-> Super Saiyan), stops you walking while charging
 	and transforming, speeds you up in Kaioken, drains your health while it burns, and slows
 	you while you're exhausted.
+	The Great Ape (Oozaru module): "Oozaru" turns you into the giant (Form "Oozaru") and back.
+	While the screen goes black your PowerState is "GreatApe" (turning) or "Shrinking" (turning
+	back); the giant can't move while it roars (PowerConfig.OozaruIntro) and turns back by
+	itself after PowerConfig.OozaruTime.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+local Oozaru = require(script.Parent:WaitForChild("Oozaru"))
 
 local remote = ReplicatedStorage:FindFirstChild("PowerUp")
 if not remote then
@@ -191,6 +197,62 @@ local function burst(character: Model)
 	end)
 end
 
+----------------------------------------------------------------------------------------
+-- the Great Ape
+----------------------------------------------------------------------------------------
+local FADE = 0.45 -- seconds the player's screen takes to go black before the swap
+
+local function shrink(player: Player, ape: Model)
+	if ape:GetAttribute("PowerState") == "Shrinking" then
+		return
+	end
+	ape:SetAttribute("PowerState", "Shrinking") -- (their screen goes black)
+	local humanoid = ape:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.WalkSpeed = 0
+	end
+	task.delay(FADE, function()
+		local h = ape:FindFirstChildOfClass("Humanoid")
+		if player.Character == ape and ape.Parent and h and h.Health > 0 then
+			Oozaru.SwapOut(player)
+		end
+	end)
+end
+
+local function grow(player: Player, human: Model)
+	local cost = PowerConfig.OozaruKiCost or 0
+	local ki = human:GetAttribute("Ki") or 0
+	human:SetAttribute("Ki", ki - cost)
+	human:SetAttribute("PowerState", "GreatApe") -- (their screen goes black)
+	lockMovement(human, true)
+	task.delay(FADE, function()
+		local humanoid = human:FindFirstChildOfClass("Humanoid")
+		lockMovement(human, false) -- (so you can walk again when you come back)
+		local ape = (player.Character == human and humanoid and humanoid.Health > 0) and Oozaru.SwapIn(player) or nil
+		if not ape then
+			-- died, left, or the giant couldn't be built: nothing happens, ki back
+			if human.Parent then
+				human:SetAttribute("PowerState", "Idle")
+				human:SetAttribute("Ki", math.min(PowerConfig.KiMax, (human:GetAttribute("Ki") or 0) + cost))
+			end
+			return
+		end
+		task.delay(PowerConfig.OozaruIntro or 0, function()
+			local h = ape:FindFirstChildOfClass("Humanoid")
+			if h and ape.Parent and ape:GetAttribute("PowerState") == "Idle" then
+				h.WalkSpeed = PowerConfig.OozaruWalkSpeed -- (done roaring)
+			end
+		end)
+		if (PowerConfig.OozaruTime or 0) > 0 then
+			task.delay(PowerConfig.OozaruTime, function()
+				if ape.Parent and player.Character == ape then
+					shrink(player, ape) -- out of time
+				end
+			end)
+		end
+	end)
+end
+
 remote.OnServerEvent:Connect(function(player: Player, action, value)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -231,8 +293,30 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 		if powerState == "Charging" then
 			stopCharging(character)
 		end
+	elseif action == "Oozaru" then
+		if form == "Oozaru" then
+			-- turn back (not mid-roar: you've only just turned)
+			local bornAt = character:GetAttribute("OozaruAt") or 0
+			if powerState == "Idle" and Workspace:GetServerTimeNow() - bornAt >= (PowerConfig.OozaruIntro or 0) then
+				shrink(player, character)
+			end
+		elseif
+			powerState == "Idle"
+			and form == "Base"
+			and kaioken == 0
+			and not character:GetAttribute("Exhausted")
+			and (character:GetAttribute("Ki") or 0) >= (PowerConfig.OozaruKiCost or 0)
+			and Oozaru.Available()
+		then
+			grow(player, character)
+		end
 	elseif action == "PowerDown" then
-		if powerState == "Idle" and kaioken > 0 then
+		if form == "Oozaru" then
+			local bornAt = character:GetAttribute("OozaruAt") or 0
+			if powerState == "Idle" and Workspace:GetServerTimeNow() - bornAt >= (PowerConfig.OozaruIntro or 0) then
+				shrink(player, character)
+			end
+		elseif powerState == "Idle" and kaioken > 0 then
 			setKaioken(character, 0) -- let the Kaioken go
 		elseif powerState == "Idle" and form == "SSJ" then
 			st.Token = (st.Token or 0) + 1 -- cancels a pending calm-down
@@ -264,6 +348,7 @@ end)
 local kiClock = 0
 RunService.Heartbeat:Connect(function(dt)
 	local now = os.clock()
+	Oozaru.Step()
 	for character, st in info do
 		if not character.Parent then
 			info[character] = nil

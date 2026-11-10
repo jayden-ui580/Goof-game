@@ -164,6 +164,7 @@ local player = { Name = "Player1", DisplayName = "Kakarot", UserId = 1, Characte
 function player:WaitForChild() return playerGui end
 function player:GetAttribute(n) return playerAttrs[n] end
 function player:SetAttribute(n, v) playerAttrs[n] = v end
+function player:GetAttributeChangedSignal() return signal() end
 
 local camera = { CFrame = CF.new(0, 5, -10), ViewportSize = V2.new(W, H), FieldOfView = 70, CameraType = Enum.CameraType.Custom }
 local renderStepped = signal()

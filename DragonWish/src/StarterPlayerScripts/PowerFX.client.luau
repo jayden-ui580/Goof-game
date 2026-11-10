@@ -36,6 +36,7 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+local PoseLayers = require(ReplicatedStorage:WaitForChild("PoseLayers"))
 
 local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
@@ -1124,13 +1125,10 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 end)
 
--- The pose goes on after Roblox has played the character's animations for this frame (in
--- PreSimulation, as Roblox recommends), blended with them by how far into the power-up we are.
-local okPre, preSimulation = pcall(function()
-	return RunService.PreSimulation
-end)
-local poseSignal = (okPre and preSimulation) or RunService.Stepped
-poseSignal:Connect(function()
+-- The pose goes on after Roblox has played the character's animations for this frame and after
+-- Locomotion's walk / idle (PoseLayers runs them in that order, in PreSimulation as Roblox
+-- recommends), blended with them by how far into the power-up we are.
+PoseLayers.Add(20, "PowerFX", function()
 	local t = os.clock()
 	for _, fx in active do
 		-- joints can be swapped out after spawning (e.g. by the joint upgrade): look again if so

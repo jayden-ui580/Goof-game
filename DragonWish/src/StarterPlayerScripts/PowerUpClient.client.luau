@@ -99,9 +99,9 @@ local function hintEntry(index: number)
 	})
 	return { Holder = holder, Key = key, KeyText = keyText, Action = action, ActionText = actionText }
 end
-local hintEntries = { hintEntry(1), hintEntry(2) }
+local hintEntries = { hintEntry(1), hintEntry(2), hintEntry(3) }
 
--- list = { { key, what it does }, ... } (up to two), or nil for none
+-- list = { { key, what it does }, ... } (up to three), or nil for none
 local function setHint(list)
 	list = list or {}
 	hint.Visible = #list > 0
@@ -287,9 +287,12 @@ end
 local function refreshHint()
 	local powerKey = touch and "POWER" or PowerConfig.PowerKey.Name
 	local kaiokenKey = touch and "KAIOKEN" or PowerConfig.KaiokenKey.Name
+	local apeKey = touch and "APE" or PowerConfig.OozaruKey.Name
 	local kaioken = attr("Kaioken") or 0
-	if charging or bursting or attr("Exhausted") then
+	if charging or bursting or attr("Exhausted") or attr("PowerState") == "GreatApe" then
 		setHint(nil)
+	elseif attr("Form") == "Oozaru" then
+		setHint({ { apeKey, "TURN BACK" } }) -- (hidden with the rest of the UI while you're giant)
 	elseif attr("Form") == "SSJ" then
 		setHint({ { powerKey, "POWER DOWN" } })
 	elseif kaioken >= #PowerConfig.KaiokenLevels then
@@ -297,7 +300,7 @@ local function refreshHint()
 	elseif kaioken > 0 then
 		setHint({ { kaiokenKey, "HIGHER!" }, { powerKey, "LET IT GO" } })
 	else
-		setHint({ { powerKey, "POWER UP" }, { kaiokenKey, "KAIOKEN" } })
+		setHint({ { powerKey, "POWER UP" }, { kaiokenKey, "KAIOKEN" }, { apeKey, "GREAT APE" } })
 	end
 end
 
@@ -479,8 +482,8 @@ local function onPowerKey(_, state)
 	end
 	if charging then
 		stopCharging(true)
-	elseif attr("Form") == "SSJ" or (attr("Kaioken") or 0) > 0 then
-		remote:FireServer("PowerDown")
+	elseif attr("Form") == "SSJ" or attr("Form") == "Oozaru" or (attr("Kaioken") or 0) > 0 then
+		remote:FireServer("PowerDown") -- (and back from the Great Ape)
 	elseif attr("Exhausted") then
 		showToast("TOO TIRED!")
 	else
@@ -517,6 +520,42 @@ local function onKaiokenKey(_, state)
 end
 ContextActionService:BindAction("DWKaioken", onKaiokenKey, true, PowerConfig.KaiokenKey)
 ContextActionService:SetTitle("DWKaioken", "Kaioken")
+
+-- G: become the Great Ape, or turn back (the server checks; OozaruFX does the screen)
+local function onOozaruKey(_, state)
+	if state ~= Enum.UserInputState.Begin or not character then
+		return Enum.ContextActionResult.Pass
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 or charging or bursting then
+		return Enum.ContextActionResult.Sink
+	end
+	if attr("Form") == "Oozaru" then
+		remote:FireServer("Oozaru") -- turn back
+	elseif attr("PowerState") == "GreatApe" then
+		return Enum.ContextActionResult.Sink -- (already turning)
+	elseif attr("Form") == "SSJ" then
+		showToast("BASE FORM ONLY!")
+	elseif (attr("Kaioken") or 0) > 0 then
+		showToast("LET THE KAIOKEN GO FIRST!")
+	elseif attr("Exhausted") then
+		showToast("TOO TIRED!")
+	elseif (attr("Ki") or 0) < (PowerConfig.OozaruKiCost or 0) then
+		showToast("NOT ENOUGH KI!")
+	else
+		remote:FireServer("Oozaru")
+	end
+	return Enum.ContextActionResult.Sink
+end
+if PowerConfig.OozaruKey then
+	ContextActionService:BindAction("DWOozaru", onOozaruKey, true, PowerConfig.OozaruKey)
+	ContextActionService:SetTitle("DWOozaru", "Ape")
+end
+
+-- hidden with the rest of the UI while you're the Great Ape
+player:GetAttributeChangedSignal("Oozaru"):Connect(function()
+	gui.Enabled = not player:GetAttribute("Oozaru")
+end)
 
 -- the moment it lights (or climbs): the shout on screen, a red flash, a kick of the camera
 local function kaiokenPop(level: number)
@@ -624,7 +663,7 @@ local function onCharacter(newCharacter: Model)
 	if Cutscene then
 		Cutscene.Stop()
 	end
-	gui.Enabled = true
+	gui.Enabled = not player:GetAttribute("Oozaru")
 	releaseCamera()
 	newCharacter:GetAttributeChangedSignal("PowerState"):Connect(function()
 		local state = newCharacter:GetAttribute("PowerState")

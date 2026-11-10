@@ -17,23 +17,33 @@
 	                            HairConfig   (hair/belt settings: colours, stiffness, aura reaction)
 	                            PowerConfig  (power-up settings: keys, charge speed, aura colours)
 	                            DragonUI     (the look of the screens: slabs, lettering, colours)
+	                            Gait         (feet that plant and never slide: the walking engine)
+	                            PoseLayers   (stacks the walk and the power-up poses in order)
 	  ServerScriptService    -> CharacterSetup (every player becomes the Base rig with hair, belt
 	                                            and fingers)
-	                            PowerUpServer  (referee for powering up / Super Saiyan / Kaioken)
+	                            PowerUpServer  (referee for powering up / Super Saiyan / Kaioken /
+	                                            the Great Ape)
+	                            Oozaru         (ModuleScript: builds the Great Ape, swaps you in/out)
+	                            OozaruRig      (ModuleScript: where the ape's bones were designed)
 	  StarterPlayerScripts   -> HairPhysicsClient (runs the hair + belt physics on each screen)
 	                            PowerUpClient     (R / Space / K controls, front camera, power bar)
 	                            PowerFX           (aura, animation, dust, rocks, the explosion)
 	                            SSJCutscene       (ModuleScript: the transformation cutscene)
 	                            HUD               (portrait card, HP, Ki, Scouter, Dragon Radar)
 	                            HandFX            (the fingers: relaxed, fidgets, fists, the point)
+	                            Locomotion        (realistic idle / walk / run for everyone, in
+	                                               place of Roblox's cartoony ones)
+	                            OozaruFX          (the Great Ape: roar, hunch, heavy walk, your red
+	                                               screen)
 	                            HairFitTool       (press H: nudge hair/belt into place)
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Replace every script with the ones in this kit. HandFX is new (a LocalScript: it goes in
-	  StarterPlayerScripts). Import the two new finger files, LeftFingers_Rigged.fbx and
-	  RightFingers_Rigged.fbx, into ServerStorage > CharacterParts like the hair (without them
-	  you get plain hands). DragonUI (ReplicatedStorage) was new last time.
+	  Replace every script with the ones in this kit. New: Gait and PoseLayers (ReplicatedStorage),
+	  Oozaru and OozaruRig (ModuleScripts in ServerScriptService), Locomotion and OozaruFX
+	  (LocalScripts in StarterPlayerScripts). Import Oozaru_Rigged.fbx into ServerStorage >
+	  CharacterParts like the hair (without it G does nothing; the Output says why).
+	  HandFX and the two finger files were new last time.
 	  If you haven't yet, delete the old copies of these and import the new ones into
 	  ServerStorage > CharacterParts:
 	    BaseHair_Rigged.fbx  - the bangs now have bones
@@ -42,11 +52,12 @@
 
 	SETUP (once)
 	  1. Your R15 rig must be in ReplicatedStorage and called "Base".
-	  2. Import the five rigged pieces with File > Import 3D:
+	  2. Import the six rigged pieces with File > Import 3D:
 	       BaseHair_Rigged.fbx, SSJHair_Rigged.fbx, Belt_Rigged.fbx,
-	       LeftFingers_Rigged.fbx, RightFingers_Rigged.fbx
+	       LeftFingers_Rigged.fbx, RightFingers_Rigged.fbx, Oozaru_Rigged.fbx
 	     (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones").
-	     Drag all five imported models into ServerStorage > CharacterParts.
+	     Drag all six imported models into ServerStorage > CharacterParts. (The Great Ape is one
+	     model with eight meshes: keep them together. Its size doesn't matter.)
 	  3. Move the contents of each folder in this kit into the service with the same name
 	     (StarterPlayerScripts is inside StarterPlayer). Then delete this kit folder.
 	  4. In StarterPlayer's properties, untick LoadCharacterAppearance (the script tries to do
@@ -71,7 +82,12 @@
 	          it higher (x2, x3, x4, x10, x20), each level burning a ki pip, but it eats your
 	          health every second; push too far and your body gives out (exhausted for a few
 	          seconds). R lets it go. (phones: the KAIOKEN button)
+	  G       the Great Ape (base form, 60 ki): the screen goes black and cuts in on you as a giant
+	          ape, roaring. Heavy, ground-shaking steps; red screen, no UI. G or R turns you
+	          back; it wears off after a minute. (phones: the APE button)
 	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
+	  Walking: your feet plant and never slide; walk, jog or run by speed (Roblox's default
+	          speed, 16, is a run for someone your size); a settle step when you stop.
 
 	TWEAKING
 	  HairConfig: hair/belt colours (Color), textures (TextureId), placement (Offset),
@@ -88,6 +104,10 @@
 	  DragonUI: the screens' colours (INK, PAPER, GI, HP, KI ...) and how far every slab
 	            leans (SLANT).
 	  HandFX (top of the script): finger poses (POSES) and idle fidgets (FIDGETS).
+	  PowerConfig: the Great Ape (OozaruKey, OozaruKiCost, OozaruTime, OozaruScale, OozaruHealth,
+	               OozaruWalkSpeed, OozaruTurnSpeed, OozaruIntro, colours, OozaruRoarSound).
+	  Locomotion (top): how people walk (HUMAN). OozaruFX (top): how the giant walks (APE) and
+	               its hands (HANDS). Gait's DEFAULTS explains every walking setting.
 	  HairConfig: give LeftFingers / RightFingers a Color to stop them matching your hands.
 	  HUD (top of the script): the portrait camera (PORTRAIT_FOV, PORTRAIT_EYE, PORTRAIT_LOOK).
 ]]
@@ -1654,6 +1674,7 @@ return HairConfig
 	calmly. Press R again as a Super Saiyan to power down.
 	Kaioken (base form only): press K to light it, again to push it higher. More power, faster
 	legs, a red aura ... and it eats your health every second. R lets it go.
+	Great Ape (base form only): press G to become the Oozaru; G or R to turn back.
 ]]
 
 local PowerConfig = {}
@@ -1706,6 +1727,28 @@ PowerConfig.KaiokenCooldown = 0.6 -- seconds between level-ups
 PowerConfig.KaiokenFloor = 10 -- health at which your body gives out
 PowerConfig.KaiokenExhaustTime = 4 -- seconds you're exhausted afterwards
 PowerConfig.ExhaustedSpeed = 0.55 -- walk speed multiplier while exhausted
+
+-- The Great Ape (Oozaru), base form only. Press G: the screen goes black and you come back as
+-- a giant ape, already roaring. Press G (or R) again to turn back. You also turn back when
+-- OozaruTime runs out (your vision starts to swim red a few seconds before), and if the giant
+-- is beaten you respawn as normal. Needs Oozaru_Rigged.fbx imported into ServerStorage >
+-- CharacterParts.
+PowerConfig.OozaruKey = Enum.KeyCode.G
+PowerConfig.OozaruKiCost = 60 -- ki it costs (three of the five pips on the HUD)
+PowerConfig.OozaruTime = 60 -- seconds you stay giant (0 = until you turn back yourself)
+PowerConfig.OozaruScale = 3.2 -- how big (1 = the model as made, about 10.8 studs tall: 3.2 is ~34)
+PowerConfig.OozaruHealth = 500 -- health as the giant (you keep the same share of it either way)
+PowerConfig.OozaruWalkSpeed = 11 -- studs/s. The steps are worked out from this and the length of
+-- the legs, so the walk always matches how fast you really go
+PowerConfig.OozaruTurnSpeed = 140 -- degrees/s the giant can turn (heavy: it can't spin on the spot)
+PowerConfig.OozaruIntro = 4.4 -- seconds of roaring before you can move
+PowerConfig.OozaruFur = Color3.fromRGB(96, 60, 38)
+PowerConfig.OozaruSkin = Color3.fromRGB(212, 150, 108)
+PowerConfig.OozaruEyes = Color3.fromRGB(255, 36, 24) -- (they glow)
+PowerConfig.OozaruRoarSound = "rbxassetid://2139510606" -- the roar ("Monster Roar - Sound Effect"
+-- from the Creator Store). Any sound id works; "" for none
+PowerConfig.OozaruStepSound = "rbxasset://sounds/action_jump_land.mp3" -- each footfall, played
+-- deep and slow (Roblox's own landing thud)
 
 -- HUD
 PowerConfig.KiMax = 100
@@ -2113,12 +2156,906 @@ return DragonUI
 ]]></ProtectedString>
         </Properties>
       </Item>
+      <Item class="ModuleScript" referent="7">
+        <Properties>
+          <string name="Name">Gait</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	Gait  (ModuleScript — lives in ReplicatedStorage)
+
+	Walks any two-legged rig (an R15 character's joints, or a skinned model's bones) so its feet
+	really plant, the problem behind most "sliding" walks in games:
+	  * Each foot stays exactly where it landed until it steps again. The legs bend to reach it
+	    (two-bone IK: hip, knee, ankle), so a planted foot can't drift however the body moves.
+	  * The steps come from the distance actually travelled, not from a clock. How long a step
+	    is depends on the speed AND the length of the legs (the way real animals scale: a giant
+	    takes long slow strides, a person quick short ones), so the body's speed and the feet
+	    always agree, at any speed.
+	  * Each step lands where the body will be when the foot comes down (it looks ahead using
+	    the velocity and how fast you're turning), so turning and speeding up don't leave the
+	    feet behind.
+	  * Stopping is a real move: the swinging foot comes down beside the other one, and if the
+	    back foot is still trailing it takes one short settle step to come in. Turning on the
+	    spot shuffles the feet round one at a time.
+	  * The feet roll heel to toe: toes up as a foot lands on its heel, flat, then the heel
+	    peels up and the foot pushes off its toes.
+	  * The hips do what hips do: rise and fall with each step (highest over the standing foot
+	    when walking, lowest when running), sway over the standing foot, turn with the swinging
+	    leg and drop on its side.
+	The script using it (Locomotion for people, OozaruFX for the Great Ape) adds the upper
+	body, arms and head on top, reading Phase / Mode / Accel / events from here.
+
+	A rig is described as joints: { Parent, C0, C1, Instance } where the child sits at
+	parent * C0 * Transform * C1:Inverse() (Motor6D and AnimationConstraint work this way; a
+	Bone is the same with C0 = Bone.CFrame and C1 = identity). Everything is worked out in the
+	HumanoidRootPart's space. Gait writes the Transforms it wants into rig.Out; the script
+	decides how to put them on (straight, or blended with other animation).
+]]
+
+local Gait = {}
+Gait.__index = Gait
+
+local UP = Vector3.yAxis
+-- real gravity in studs/s² (a stud is about 28 cm). Only used to judge how fast a walk "is"
+-- for legs that long, so a giant and a person each move like themselves.
+local G = 35
+
+local function smooth(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+local function lerp(a: number, b: number, t: number): number
+	return a + (b - a) * t
+end
+
+local function flat(v: Vector3): Vector3
+	return Vector3.new(v.X, 0, v.Z)
+end
+
+-- an orientation whose X axis runs along dir and whose Y axis is as close to ref as it can be
+local function basis(dir: Vector3, ref: Vector3): CFrame
+	local x = dir.Unit
+	local y = ref - x * ref:Dot(x)
+	if y.Magnitude < 1e-5 then
+		local alt = math.abs(x.Y) < 0.9 and Vector3.yAxis or Vector3.xAxis
+		y = alt - x * alt:Dot(x)
+	end
+	y = y.Unit
+	return CFrame.fromMatrix(Vector3.zero, x, y, x:Cross(y))
+end
+
+-- the turn that carries (dir0, ref0) onto (dir1, ref1)
+local function turnBetween(dir0: Vector3, ref0: Vector3, dir1: Vector3, ref1: Vector3): CFrame
+	return basis(dir1, ref1) * basis(dir0, ref0):Inverse()
+end
+
+local function about(pivot: Vector3, turn: CFrame): CFrame
+	return CFrame.new(pivot) * turn * CFrame.new(-pivot)
+end
+
+-- which way a flat direction points, as a turn about the vertical (0 = facing -Z)
+local function yawOf(v: Vector3): number
+	return math.atan2(-v.X, -v.Z)
+end
+
+local function yawVector(yaw: number): Vector3
+	return Vector3.new(-math.sin(yaw), 0, -math.cos(yaw))
+end
+
+local function angleDiff(a: number, b: number): number
+	return (a - b + math.pi) % (2 * math.pi) - math.pi
+end
+
+Gait.Smooth = smooth
+Gait.Basis = basis
+Gait.TurnBetween = turnBetween
+Gait.About = about
+Gait.AngleDiff = angleDiff
+Gait.YawOf = yawOf
+Gait.YawVector = yawVector
+
+----------------------------------------------------------------------------------------
+-- rigs
+----------------------------------------------------------------------------------------
+local Rig = {}
+Rig.__index = Rig
+Gait.Rig = Rig
+
+-- joints: { [name] = { Parent = name?, C0 = CFrame, C1 = CFrame, Instance = Instance? } }
+-- base: where the top joints' parent sits, in root space (identity when it's the root part)
+function Rig.new(joints, base: CFrame?)
+	local self = setmetatable({ Joints = joints, Base = base or CFrame.identity, Rest = {}, Out = {} }, Rig)
+	local function rest(name)
+		if self.Rest[name] then
+			return self.Rest[name]
+		end
+		local j = joints[name]
+		local parent = j.Parent and rest(j.Parent) or self.Base
+		self.Rest[name] = parent * j.C0 * j.C1:Inverse()
+		return self.Rest[name]
+	end
+	for name in joints do
+		rest(name)
+	end
+	return self
+end
+
+-- the frame a joint's parent is in, at rest
+function Rig:RestParent(name: string): CFrame
+	local j = self.Joints[name]
+	return j.Parent and self.Rest[j.Parent] or self.Base
+end
+
+-- the joint's pivot frame (parent * C0) given the parent's frame
+function Rig:Pivot(name: string, parentFrame: CFrame): CFrame
+	return parentFrame * self.Joints[name].C0
+end
+
+-- the Transform that puts a joint's child at `child` (root space) when its parent is at `parent`
+function Rig:TransformFor(name: string, parent: CFrame, child: CFrame): CFrame
+	local j = self.Joints[name]
+	return j.C0:Inverse() * parent:Inverse() * child * j.C1
+end
+
+-- A turn (and a shift) in the rig's rest axes, applied at the joint: the same idea as
+-- CFrame.Angles on an R15 joint, for any rig (x = right, y = up, -z = forward, as the
+-- character stands at rest). The axes follow the parent when it moves.
+function Rig:Local(name: string, turn: CFrame): CFrame
+	local axes = (self:RestParent(name) * self.Joints[name].C0).Rotation
+	return axes:Inverse() * turn * axes
+end
+
+-- the child's frame given its parent's frame and a Transform
+function Rig:ChildFrame(name: string, parent: CFrame, transform: CFrame): CFrame
+	local j = self.Joints[name]
+	return parent * j.C0 * transform * j.C1:Inverse()
+end
+
+-- the frame of every piece (root space) for a set of Transforms (missing ones are at rest)
+function Rig:Frames(transforms)
+	local frames = {}
+	local function frame(name)
+		local f = frames[name]
+		if f then
+			return f
+		end
+		local j = self.Joints[name]
+		local parent = j.Parent and frame(j.Parent) or self.Base
+		f = parent * j.C0 * (transforms[name] or CFrame.identity) * j.C1:Inverse()
+		frames[name] = f
+		return f
+	end
+	for name in self.Joints do
+		frame(name)
+	end
+	return frames
+end
+
+function Rig:Write(name: string, transform: CFrame)
+	self.Out[name] = transform
+end
+
+-- puts rig.Out straight onto the joints
+function Rig:Apply()
+	for name, t in self.Out do
+		local inst = self.Joints[name].Instance
+		if inst and inst.Parent then
+			inst.Transform = t
+		end
+	end
+end
+
+----------------------------------------------------------------------------------------
+-- the gait
+----------------------------------------------------------------------------------------
+local DEFAULTS = {
+	-- a step is Stride x leg x (Froude number)^0.3 long: the rule real walkers and runners of
+	-- every size follow. The Froude number (speed² / (gravity x leg)) says how fast a walk is
+	-- for legs that long.
+	Stride = 1.15,
+	MinStep = 0.3, -- shortest and longest step (leg lengths)
+	MaxStep = 2.1,
+	SideStep = 0.5, -- steps sideways are this much shorter (feet would cross otherwise) ...
+	SideWiden = 0.45, -- ... and the stance this much wider
+	BackStep = 0.7, -- steps backward are this much shorter
+	SwingShare = { 0.4, 0.78 }, -- share of a stride each foot is in the air: walking, running
+	AheadShare = { 0.42, 0.5 }, -- how much of its time on the ground a foot spends in front of the
+	-- hips (the rest behind them): walking lands closer and pushes off further back, where
+	-- rolling onto the toes gives the leg the reach
+	RunFrom = 0.35, -- Froude number where walking starts turning into running ...
+	RunTo = 1.3, -- ... and where it's fully running
+	Lift = { 0.12, 0.36 }, -- how high a swinging foot rises (leg lengths): walking, running
+	Width = 1, -- stance width (1 = the hips' own width)
+	ToeOut = math.rad(7), -- feet turned out a little
+	Bob = { 0.02, 0.045 }, -- hips rising and falling (leg lengths): walking, running
+	HeavyDrop = 0, -- an extra dip after a foot lands (leg lengths), for heavy walkers
+	ImpactTime = 0.3, -- how long that dip takes (seconds)
+	Sway = 0.03, -- hips swaying over the standing foot (leg lengths)
+	Yaw = math.rad(7), -- hips turning with the swinging leg
+	Roll = math.rad(4), -- the swinging side's hip dropping
+	Pitch = { math.rad(2), math.rad(8) }, -- hips tipping forward: walking, running
+	KneeOut = 0.12, -- knees pointing out as well as forward
+	Crouch = 0.002, -- knees never quite locked straight (leg lengths; a little goes a long way)
+	MaxDrop = 0.25, -- the most the hips sink to let a foot reach (leg lengths)
+	ToeOff = math.rad(30), -- the heel rising at the end of a step
+	HeelStrike = math.rad(14), -- the toes up as a foot lands
+	StartFroude = 0.02, -- start walking above this (a person: about 1.2 studs/s) ...
+	StopFroude = 0.005, -- ... and stop below this
+	SettleTime = 0.34, -- a stopping / turning step's length (seconds)
+	SettleDistance = 0.16, -- a foot further than this (leg lengths) from its spot steps in
+	TurnTolerance = math.rad(32), -- a foot turned more than this from the body shuffles round
+	FootForward = 0.3, -- ankle to toe pivot, along the ground (leg lengths)
+	FootBack = 0.1, -- ankle to heel (leg lengths)
+}
+Gait.Defaults = DEFAULTS
+
+-- spec = { Pelvis = joint name, Legs = { Left = { Hip, Knee, Ankle }, Right = { ... } },
+--          GroundY = root-space height of the ground at rest, Params = { overrides } }
+function Gait.new(rig, spec)
+	local self = setmetatable({}, Gait)
+	self.Rig = rig
+	self.Pelvis = spec.Pelvis
+	local p = table.clone(DEFAULTS)
+	for k, v in spec.Params or {} do
+		p[k] = v
+	end
+	self.P = p
+	self.GroundY = spec.GroundY
+	self.Legs = {}
+	local forward = Vector3.new(0, 0, -1)
+	local right = Vector3.xAxis
+	local hipHeights = 0
+	for side, names in spec.Legs do
+		local hip = rig:Pivot(names.Hip, rig:RestParent(names.Hip)).Position
+		local knee = rig:Pivot(names.Knee, rig:RestParent(names.Knee)).Position
+		local ankle = rig:Pivot(names.Ankle, rig:RestParent(names.Ankle)).Position
+		local thighRest, shinRest, footRest = rig.Rest[names.Hip], rig.Rest[names.Knee], rig.Rest[names.Ankle]
+		local leg = {
+			Side = side,
+			Sign = (hip.X < 0) and -1 or 1,
+			Names = names,
+			L1 = (knee - hip).Magnitude,
+			L2 = (ankle - knee).Magnitude,
+			Hip = hip,
+			AnkleHeight = ankle.Y - spec.GroundY,
+			Spot = Vector3.new(ankle.X, 0, ankle.Z), -- where the foot stands at rest (root space, flat)
+			-- the leg's directions, in each piece's own frame, to turn them by later
+			ThighDir = thighRest:VectorToObjectSpace(knee - hip),
+			ThighHinge = thighRest:VectorToObjectSpace(right),
+			ShinDir = shinRest:VectorToObjectSpace(ankle - knee),
+			ShinHinge = shinRest:VectorToObjectSpace(right),
+			FootFwd = footRest:VectorToObjectSpace(forward),
+			FootUp = footRest:VectorToObjectSpace(UP),
+			Pos = nil, -- where the foot is planted (world, the ground under the ankle)
+			Yaw = 0, -- which way it points (world)
+			Swing = nil, -- the step it's taking, if it's in the air
+			Stance = 1, -- 0..1 through its time on the ground
+			FootPitch = 0,
+			FootYaw = 0,
+		}
+		leg.Length = leg.L1 + leg.L2
+		hipHeights += hip.Y - spec.GroundY
+		self.Legs[side] = leg
+	end
+	assert(self.Legs.Left and self.Legs.Right, "Gait needs a Left and a Right leg")
+	self.HipHeight = hipHeights / 2 -- the "leg length" every size rule uses
+	self.Phase = 0 -- 0..1 through a stride (two steps): the left foot lifts at 0, the right at 0.5
+	self.Mode = "Idle" -- "Idle", "Walk", "Stop" (settling after walking), "Air"
+	self.RunBlend = 0
+	self.Speed = 0
+	self.Froude = 0
+	self.StepLen = 0
+	self.Forwardness = 1
+	self.Drop = 0
+	self.Impact = 0 -- 1 right after a foot lands, counting down
+	self.ImpactScale = 0
+	self.WalkWeight = 0 -- eases 0..1 into and out of walking
+	self.Accel = Vector3.zero -- the body's acceleration (x = right, z = forward), smoothed
+	self.YawRate = 0 -- how fast it's turning (radians/s, + = left)
+	self.AirTime = 0
+	self.Events = {}
+	return self
+end
+
+-- which way a foot should point when the body faces rootYaw
+function Gait:FootYaw(leg, rootYaw: number): number
+	return rootYaw - leg.Sign * self.P.ToeOut
+end
+
+-- the world spot a leg stands on when idle, under the root
+function Gait:IdleSpot(leg, root: CFrame): Vector3
+	local spot = leg.Spot
+	return root * Vector3.new(spot.X * self.P.Width, self.GroundY, spot.Z)
+end
+
+local function plantAt(leg, pos: Vector3, yaw: number, ground)
+	local y = ground and ground(pos)
+	leg.Pos = y and Vector3.new(pos.X, y, pos.Z) or pos
+	leg.Yaw = yaw
+	leg.Swing = nil
+	leg.Stance = 0
+end
+
+local function startSwing(leg, toPitch: number)
+	leg.Swing = {
+		From = leg.Pos,
+		FromYaw = leg.Yaw,
+		FromHeight = 0,
+		FromPitch = leg.FootPitch or 0,
+		RollFrom = 1,
+		To = leg.Pos,
+		ToYaw = leg.Yaw,
+		ToPitch = toPitch,
+		T = 0,
+		Duration = nil, -- seconds for a timed (settle) step; nil while walking
+		Head = 0, -- (walking steps) how much of the usual time in the air it skips
+		LiftScale = 1,
+		Current = leg.Pos,
+		Height = 0,
+		Yaw = leg.Yaw,
+		Pitch = leg.FootPitch or 0,
+		RollW = 1,
+	}
+	return leg.Swing
+end
+
+-- sends a foot that's in the air somewhere else, from wherever it is right now
+local function retarget(leg, to: Vector3, toYaw: number, duration: number, toPitch: number, liftScale: number)
+	local sw = leg.Swing
+	sw.From = sw.Current
+	sw.FromYaw = sw.Yaw
+	sw.FromHeight = sw.Height
+	sw.FromPitch = sw.Pitch
+	sw.RollFrom = sw.RollW
+	sw.To = to
+	sw.ToYaw = toYaw
+	sw.ToPitch = toPitch
+	sw.T = 0
+	sw.Duration = duration
+	sw.LiftScale = liftScale
+	sw.ProbeAt = nil
+end
+
+-- the ground height under a landing spot, looked up again only when the spot has moved
+local function probe(sw, pos: Vector3, ground, size: number): number?
+	if not ground then
+		return nil
+	end
+	if sw.ProbeAt and flat(sw.ProbeAt - pos).Magnitude < size * 0.08 then
+		return sw.ProbeY
+	end
+	sw.ProbeAt = pos
+	sw.ProbeY = ground(pos)
+	return sw.ProbeY
+end
+
+-- Starting to walk (or picking the walk back up): one foot steps first, and the stride is
+-- lined up with where the other foot already stands, so it lifts off when it's as far behind
+-- as it would be mid-walk (not later, trailing behind a body that's already moving).
+function Gait:StartWalking(root: CFrame, heading: Vector3, swingShare: number, stepLen: number)
+	local left, right = self.Legs.Left, self.Legs.Right
+	self.Mode = "Walk"
+	-- a foot already in the air (a settle step) carries on as the first step; otherwise the
+	-- foot further behind goes first
+	local first = (left.Swing and left) or (right.Swing and right)
+	if not first then
+		local lBack = (left.Pos - root.Position):Dot(heading)
+		local rBack = (right.Pos - root.Position):Dot(heading)
+		first = (lBack <= rBack) and left or right
+	end
+	local other = (first == left) and right or left
+	if other.Swing then
+		plantAt(other, other.Swing.Current, other.Swing.Yaw, nil)
+	end
+	-- how far through its time on the ground the standing foot is, from where it is
+	local travel = math.max((1 - swingShare) * 2 * stepLen, 1e-3) -- how far the hips pass over a foot
+	local ahead = travel * lerp(self.P.AheadShare[1], self.P.AheadShare[2], self.RunBlend)
+	local x = (other.Pos - root.Position):Dot(heading)
+	local progress = math.clamp((ahead - x) / travel, 0, 0.9)
+	other.Stance = progress
+	local otherStart = (other.Side == "Left") and 0 or 0.5
+	self.Phase = (otherStart - (1 - progress) * (1 - swingShare)) % 1
+	local firstStart = (first.Side == "Left") and 0 or 0.5
+	local into = (self.Phase - firstStart) % 1
+	if into > swingShare then -- (can't happen with the numbers above; just in case)
+		into = 0
+	end
+	local sw = first.Swing
+	if sw then
+		local done = math.clamp(sw.T, 0, 0.95)
+		sw.Duration = nil
+		sw.LiftScale = math.max(sw.LiftScale, 0.8)
+		sw.Head = math.max(0, into - done * swingShare)
+		sw.T = done
+	else
+		sw = startSwing(first, 0)
+		sw.Head = into
+	end
+	table.insert(self.Events, { Kind = "Start" })
+end
+
+-- one frame. root: the HumanoidRootPart's CFrame; vel: its velocity; grounded: standing on
+-- something; ground(pos) -> the ground's height there, or nil (optional);
+-- extra = { Offset = Vector3, Turn = CFrame } added to the hips (rest axes, after the gait's own)
+function Gait:Step(dt: number, root: CFrame, vel: Vector3, grounded: boolean, ground, extra)
+	local p = self.P
+	local events = self.Events
+	table.clear(events)
+	dt = math.max(dt, 1e-4)
+	local L = self.HipHeight
+	local planar = flat(vel)
+	local speed = planar.Magnitude
+	local facing = flat(root.LookVector)
+	facing = (facing.Magnitude > 1e-3) and facing.Unit or Vector3.new(0, 0, -1)
+	local rootYaw = yawOf(facing)
+	local bodyRight = facing:Cross(UP)
+	local heading = (speed > 0.05) and planar / speed or facing
+	self.Speed = speed
+
+	-- how the body is speeding up and turning (the scripts lean with these)
+	local accel = (planar - (self.LastVel or planar)) / dt
+	self.LastVel = planar
+	local k = 1 - math.exp(-dt * 10)
+	self.Accel = self.Accel:Lerp(Vector3.new(accel:Dot(bodyRight), 0, accel:Dot(facing)), k)
+	local yawRate = angleDiff(rootYaw, self.LastYaw or rootYaw) / dt
+	self.LastYaw = rootYaw
+	self.YawRate += (math.clamp(yawRate, -20, 20) - self.YawRate) * (1 - math.exp(-dt * 8))
+
+	-- how fast this is for these legs, and the steps that go with it
+	local fr = speed * speed / (G * L)
+	self.Froude = fr
+	self.RunBlend = smooth((fr - p.RunFrom) / math.max(p.RunTo - p.RunFrom, 1e-3))
+	local swingShare = lerp(p.SwingShare[1], p.SwingShare[2], self.RunBlend)
+	self.SwingShare = swingShare
+	local forwardness = heading:Dot(facing)
+	local sideways = math.abs(heading:Dot(bodyRight))
+	local dirFactor = 1 - (1 - p.SideStep) * sideways * sideways - (1 - p.BackStep) * math.max(0, -forwardness) ^ 2
+	local stepLen = math.clamp(p.Stride * L * fr ^ 0.3, p.MinStep * L, p.MaxStep * L) * dirFactor
+	self.StepLen = stepLen
+	self.Forwardness = forwardness
+	self.Sideways = sideways
+	local rate = speed / (2 * stepLen) -- strides per second
+	self.Rate = rate
+	local left, right = self.Legs.Left, self.Legs.Right
+
+	-- first frame, or teleported: stand where we are
+	for _, leg in self.Legs do
+		if not leg.Pos or flat(leg.Pos - root.Position).Magnitude > L * 6 then
+			for _, l in self.Legs do
+				plantAt(l, self:IdleSpot(l, root), self:FootYaw(l, rootYaw), ground)
+			end
+			self.Mode = grounded and "Idle" or "Air"
+			break
+		end
+	end
+
+	-- in the air, landing, starting and stopping
+	if not grounded then
+		if self.Mode ~= "Air" then
+			self.Mode = "Air"
+			self.AirTime = 0
+			for _, leg in self.Legs do
+				leg.Swing = nil
+			end
+		end
+		self.AirTime += dt
+	elseif self.Mode == "Air" then
+		for _, leg in self.Legs do
+			plantAt(leg, leg.Pos, self:FootYaw(leg, rootYaw), ground)
+		end
+		self.Mode = "Stop"
+		self.Impact = 1
+		self.ImpactScale = math.clamp(0.4 + self.AirTime * 1.5, 0.4, 1.5)
+		table.insert(events, { Kind = "Land", Strength = self.ImpactScale })
+	end
+	if grounded then
+		if self.Mode ~= "Walk" and speed > math.sqrt(p.StartFroude * G * L) then
+			self:StartWalking(root, heading, swingShare, stepLen)
+		elseif self.Mode == "Walk" and speed < math.sqrt(p.StopFroude * G * L) then
+			self.Mode = "Stop"
+			table.insert(events, { Kind = "Stop", Speed = self.LastWalkSpeed or 0 })
+			-- a foot still in the air comes down beside the other one
+			for _, leg in self.Legs do
+				if leg.Swing then
+					local spot = self:IdleSpot(leg, root)
+					local gy = ground and ground(spot)
+					retarget(leg, gy and Vector3.new(spot.X, gy, spot.Z) or spot, self:FootYaw(leg, rootYaw), p.SettleTime * 0.75, 0, 0.6)
+				end
+			end
+		end
+	end
+
+	if self.Mode == "Walk" then
+		self.LastWalkSpeed = speed
+		-- the stride: driven by the distance travelled, two steps per stride
+		local before = self.Phase
+		self.Phase = (self.Phase + rate * dt) % 1
+		local travel = (1 - swingShare) * 2 * stepLen -- how far the hips pass over a planted foot
+		local ahead = travel * lerp(p.AheadShare[1], p.AheadShare[2], self.RunBlend) -- it lands this far in front
+		for _, leg in self.Legs do
+			local start = (leg.Side == "Left") and 0 or 0.5
+			local was = (before - start) % 1
+			local into = (self.Phase - start) % 1
+			local sw = leg.Swing
+			if not sw and into < was then
+				sw = startSwing(leg, 0) -- its turn: lift off
+			end
+			if not sw then
+				-- a foot left behind (the body sped up, turned hard, or is stepping sideways
+				-- over it) lifts off early, once the other one is down or nearly; the stride
+				-- lines up with it
+				local other = (leg == left) and right or left
+				local rel = leg.Pos - root.Position
+				local behind = -rel:Dot(heading)
+				local outward = rel:Dot(bodyRight) * leg.Sign -- out to its own side
+				local otherReady = not other.Swing or other.Swing.T > 0.35
+				if otherReady and (behind > (travel - ahead) * 1.25 + 0.06 * L or (leg.Reach or 0) > 1.05 or outward < 0.1 * L) then
+					sw = startSwing(leg, 0)
+					self.Phase = start
+				end
+			end
+			if sw then
+				if sw.Duration then -- (a settle step carries on as a walking step)
+					sw.Duration = nil
+				end
+				local span = math.max(swingShare - (sw.Head or 0), 0.12)
+				sw.T += rate * dt / span
+				-- where it comes down: where the hips will be by then, plus half a step (on the
+				-- frame it lands, timeLeft is a hair below zero: it came down a moment ago)
+				local timeLeft = (1 - sw.T) * span / math.max(rate, 1e-3)
+				local futureYaw = rootYaw + self.YawRate * math.clamp(timeLeft, -0.1, 0.5)
+				local futureFacing = yawVector(futureYaw)
+				local futureRight = futureFacing:Cross(UP)
+				local land = root.Position
+					+ planar * timeLeft
+					+ heading * ahead
+					+ futureRight * (leg.Spot.X * p.Width * (1 + p.SideWiden * sideways))
+					- futureFacing * leg.Spot.Z
+				land = Vector3.new(land.X, root.Position.Y + self.GroundY, land.Z)
+				local gy = probe(sw, land, ground, L)
+				if gy then
+					land = Vector3.new(land.X, gy, land.Z)
+				end
+				sw.To = land
+				sw.Arrive = land - planar * timeLeft -- (the landing spot, seen from where the hips are now)
+				sw.ToYaw = self:FootYaw(leg, futureYaw)
+				sw.ToPitch = -p.HeelStrike * math.clamp(forwardness, 0, 1)
+				if sw.T >= 1 then
+					plantAt(leg, sw.To, sw.ToYaw, nil)
+					table.insert(events, { Kind = "Footfall", Side = leg.Side, Position = leg.Pos, Speed = speed })
+					self.Impact = 1
+					self.ImpactScale = 1
+				end
+			else
+				leg.Stance = math.min(1, leg.Stance + rate * dt / math.max(1 - swingShare, 0.05))
+			end
+		end
+	elseif self.Mode ~= "Air" then
+		-- standing (or stopping): timed steps to settle in, or to turn on the spot
+		for _, leg in self.Legs do
+			local sw = leg.Swing
+			if sw then
+				if not sw.Duration then
+					local spot = self:IdleSpot(leg, root)
+					retarget(leg, spot, self:FootYaw(leg, rootYaw), p.SettleTime * 0.75, 0, 0.6)
+				end
+				sw.T += dt / sw.Duration
+				if sw.T >= 1 then
+					plantAt(leg, sw.To, sw.ToYaw, ground)
+					table.insert(events, { Kind = "Footfall", Side = leg.Side, Position = leg.Pos, Speed = 0, Settle = true })
+					self.Impact = 1
+					self.ImpactScale = 0.5
+				end
+			end
+		end
+		if not (left.Swing or right.Swing) then
+			-- the foot furthest from where it should stand steps in (one at a time)
+			local worst, worstScore = nil, 1
+			for _, leg in self.Legs do
+				local spot = self:IdleSpot(leg, root)
+				local off = flat(leg.Pos - spot).Magnitude / L
+				local turn = math.abs(angleDiff(leg.Yaw, self:FootYaw(leg, rootYaw)))
+				local score = math.max(off / p.SettleDistance, turn / p.TurnTolerance)
+				if score > worstScore then
+					worst, worstScore = leg, score
+				end
+			end
+			if worst then
+				local spot = self:IdleSpot(worst, root)
+				local gy = ground and ground(spot)
+				startSwing(worst, 0)
+				retarget(worst, gy and Vector3.new(spot.X, gy, spot.Z) or spot, self:FootYaw(worst, rootYaw), p.SettleTime, 0, 0.55)
+			elseif self.Mode == "Stop" then
+				self.Mode = "Idle"
+				table.insert(events, { Kind = "Settled" })
+			end
+		end
+		for _, leg in self.Legs do
+			leg.Stance = 0.4 -- (flat-footed)
+		end
+	end
+
+	-- in the air the feet hang under the hips, tucked up a little
+	if self.Mode == "Air" then
+		for _, leg in self.Legs do
+			leg.Pos = root * Vector3.new(leg.Spot.X * p.Width, self.GroundY + L * 0.16, leg.Spot.Z - L * 0.04)
+			leg.Yaw = self:FootYaw(leg, rootYaw)
+		end
+	end
+
+	-- where each swinging foot is right now
+	for _, leg in self.Legs do
+		local sw = leg.Swing
+		if sw then
+			local s = math.clamp(sw.T, 0, 1)
+			-- running: the foot flicks up behind (the heel kicks up), then comes through and down
+			local kick = sw.Duration and 0 or self.RunBlend
+			-- Walking, the foot peels up off its toes before it starts forward; it gets to its
+			-- new spot a moment before it's down. Either way it never scuffs along the ground.
+			local wait = sw.Duration and 0 or lerp(0.12, 0, kick) * sw.RollFrom
+			local done = sw.Duration and 1 or lerp(0.97, 0.93, kick)
+			local e = smooth((s - wait) / (done - wait))
+			local lift = sw.LiftScale * lerp(p.Lift[1], p.Lift[2], self.RunBlend) * L
+			local peak = lerp(0.45, 0.3, kick) -- when it's highest
+			local arc
+			if s < peak then
+				arc = math.sin(0.5 * math.pi * s / peak)
+			else
+				-- walking: an even arc down to the ground; running: the foot drops early and
+				-- comes through low, reaching forward to land
+				local t = (s - peak) / (1 - peak)
+				arc = lerp(math.cos(0.5 * math.pi * t), (1 - t) ^ 1.15, kick)
+			end
+			sw.Current = sw.From:Lerp(sw.To, e)
+			sw.Height = lift * arc + sw.FromHeight * (1 - e)
+			sw.Yaw = sw.FromYaw + angleDiff(sw.ToYaw, sw.FromYaw) * e
+			-- the foot's tip: from how it left (pushing off its toes) to how it lands (on its heel)
+			local bulge = (sw.Duration and 0.25 or 0.12) * p.ToeOff
+			sw.Pitch = lerp(sw.FromPitch, sw.ToPitch, e) + bulge * math.sin(math.pi * s)
+			sw.RollW = math.max(sw.RollFrom * (1 - smooth(s / 0.35)), smooth((s - 0.65) / 0.35))
+		end
+	end
+
+	-- the hips
+	local run = self.RunBlend
+	self.WalkWeight += (((self.Mode == "Walk") and 1 or 0) - self.WalkWeight) * (1 - math.exp(-dt * 6))
+	local w = self.WalkWeight
+	local cyc = 2 * math.pi * (self.Phase + 0.05) -- (lined up with mid-stance)
+	local bobAmp = lerp(p.Bob[1], p.Bob[2], run) * L * w
+	-- walking: highest over the standing foot (vaulting over it); running: lowest (landing)
+	local bob = lerp(-math.cos(2 * cyc), math.cos(2 * cyc), run) * bobAmp
+	self.Impact = math.max(0, self.Impact - dt / math.max(p.ImpactTime, 0.05))
+	local dip = -p.HeavyDrop * L * self.ImpactScale * math.sin(math.pi * (1 - self.Impact)) * ((self.Impact > 0) and 1 or 0)
+	local sway = math.sin(cyc) * p.Sway * L * w * (1 - run * 0.6)
+	local yaw = -math.sin(cyc) * p.Yaw * w
+	local roll = math.sin(cyc) * p.Roll * w * (1 - run * 0.4)
+	local pitch = lerp(p.Pitch[1], p.Pitch[2], run) * w * forwardness
+	-- reach: the hips sit as high as the legs let them. A foot far out in front or behind (or
+	-- down a step) pulls them down; that's what makes a walk rise over each standing foot.
+	local want = -math.huge
+	local targets = {}
+	local crouch = p.Crouch * L
+	for _, leg in self.Legs do
+		local target = self:AnkleTarget(leg, root)
+		local hip = leg.Hip + Vector3.new(0, bob + dip - crouch - self.Drop, 0)
+		want = math.max(want, (target - hip).Magnitude - leg.Length * 0.99)
+		targets[leg] = target
+		-- a foot about to land: the hips get low enough for it before it's down
+		local sw = leg.Swing
+		if sw and sw.Arrive and not sw.Duration and sw.T > 0.4 then
+			local landing = root:PointToObjectSpace(sw.Arrive + UP * leg.AnkleHeight)
+			local need = (landing - hip).Magnitude - leg.Length * 0.99
+			want = math.max(want, need * smooth((sw.T - 0.4) / 0.35))
+		end
+	end
+	local goal = math.clamp(want + self.Drop, 0, p.MaxDrop * L)
+	local rate2 = (goal > self.Drop) and 45 or 16
+	self.Drop += (goal - self.Drop) * (1 - math.exp(-dt * rate2))
+	local offset = Vector3.new(sway, bob + dip - crouch - self.Drop, 0)
+	local turn = CFrame.Angles(-pitch, yaw, roll)
+	if extra then
+		if extra.Offset then
+			offset += extra.Offset
+		end
+		if extra.Turn then
+			turn = extra.Turn * turn
+		end
+	end
+	local rig = self.Rig
+	local pelvisT = rig:Local(self.Pelvis, CFrame.new(offset) * turn)
+	rig:Write(self.Pelvis, pelvisT)
+	local pelvisFrame = rig:ChildFrame(self.Pelvis, rig:RestParent(self.Pelvis), pelvisT)
+	self.PelvisFrame = pelvisFrame
+	self.PelvisT = pelvisT
+
+	-- the legs
+	for _, leg in self.Legs do
+		self:SolveLeg(leg, root, pelvisFrame, targets[leg])
+	end
+	return self
+end
+
+-- how far the ankle moves when the foot tips by `pitch` about a point `along` studs ahead of
+-- the ankle (the toes) or behind it (the heel)
+local function rollOffset(fwd: Vector3, side: Vector3, height: number, pitch: number, along: number): Vector3
+	local rel = UP * height - fwd * along
+	return CFrame.fromAxisAngle(side, -pitch):VectorToWorldSpace(rel) - rel
+end
+
+-- where the ankle should be (root space): over the planted (or swinging) foot, with the heel
+-- rising at the end of a step and the toes up as it lands
+function Gait:AnkleTarget(leg, root: CFrame): Vector3
+	local p = self.P
+	local L = self.HipHeight
+	local sw = leg.Swing
+	local groundPt = sw and sw.Current or leg.Pos
+	local yaw = sw and sw.Yaw or leg.Yaw
+	local fwd = yawVector(yaw)
+	local side = fwd:Cross(UP)
+	local ankle = groundPt + UP * (leg.AnkleHeight + (sw and sw.Height or 0))
+	local pitch = 0
+	local fwdness = math.clamp(self.Forwardness or 1, 0, 1)
+	if sw then
+		pitch = sw.Pitch
+		if sw.RollW > 1e-3 and math.abs(pitch) > 1e-4 then
+			local along = (pitch > 0) and p.FootForward * L or -p.FootBack * L
+			ankle += rollOffset(fwd, side, leg.AnkleHeight, pitch, along) * sw.RollW
+		end
+		-- a foot in the air never dips its toes or heel into the ground: lift it clear
+		local tip = CFrame.fromAxisAngle(side, -pitch)
+		local toe = tip:VectorToWorldSpace(fwd * (p.FootForward * L) - UP * leg.AnkleHeight)
+		local heel = tip:VectorToWorldSpace(-fwd * (p.FootBack * L) - UP * leg.AnkleHeight)
+		local st = math.clamp(sw.T, 0, 1)
+		local clear = 0.04 * L * smooth(st / 0.2) * (1 - smooth((st - 0.7) / 0.3))
+		local under = groundPt.Y + clear - (ankle.Y + math.min(toe.Y, heel.Y))
+		if under > 0 then
+			ankle += UP * under
+		end
+	elseif self.Mode == "Walk" then
+		local st = leg.Stance
+		local along = 0
+		if st > 0.55 then -- heel off: the foot turns on its toes
+			pitch = p.ToeOff * smooth((st - 0.55) / 0.45) * fwdness
+			along = p.FootForward * L
+		elseif st < 0.15 then -- just landed on the heel, rolling flat
+			pitch = -p.HeelStrike * (1 - smooth(st / 0.15)) * fwdness
+			along = -p.FootBack * L
+		end
+		if math.abs(pitch) > 1e-4 then
+			ankle += rollOffset(fwd, side, leg.AnkleHeight, pitch, along)
+		end
+	end
+	leg.FootPitch = pitch
+	leg.FootYaw = yaw
+	return root:PointToObjectSpace(ankle)
+end
+
+function Gait:SolveLeg(leg, root: CFrame, pelvisFrame: CFrame, ankleTarget: Vector3)
+	local rig = self.Rig
+	local names = leg.Names
+	local p = self.P
+	-- hip pivot (root space) with the hips posed
+	local hipParent = pelvisFrame
+	local hipParentName = rig.Joints[names.Hip].Parent
+	if hipParentName ~= self.Pelvis then
+		hipParent = rig:ChildFrame(hipParentName, pelvisFrame, CFrame.identity)
+	end
+	local hip = rig:Pivot(names.Hip, hipParent).Position
+	-- the knee bends forward (toward the foot's facing) and a little out
+	local footFwd = root:VectorToObjectSpace(yawVector(leg.FootYaw))
+	local pole = (footFwd + Vector3.new(leg.Sign * p.KneeOut, 0, 0)).Unit
+	local d = ankleTarget - hip
+	local L1, L2 = leg.L1, leg.L2
+	local dist = math.clamp(d.Magnitude, math.abs(L1 - L2) + 1e-3, L1 + L2 - 1e-4)
+	local u = (d.Magnitude > 1e-5) and d.Unit or Vector3.new(0, -1, 0)
+	local cosA = math.clamp((L1 * L1 + dist * dist - L2 * L2) / (2 * L1 * dist), -1, 1)
+	local sinA = math.sqrt(1 - cosA * cosA)
+	local v = pole - u * pole:Dot(u)
+	v = (v.Magnitude > 1e-5) and v.Unit or Vector3.new(0, 0, -1)
+	local knee = hip + (u * cosA + v * sinA) * L1
+	local ankle = hip + u * dist
+	local hinge = u:Cross(v) -- the knee's hinge (points to the right)
+	hinge = (hinge.Magnitude > 1e-5) and hinge.Unit or Vector3.xAxis
+
+	-- thigh
+	local thighRest = rig:ChildFrame(names.Hip, hipParent, CFrame.identity)
+	local turn = turnBetween(thighRest:VectorToWorldSpace(leg.ThighDir), thighRest:VectorToWorldSpace(leg.ThighHinge), knee - hip, hinge)
+	local thigh = about(hip, turn) * thighRest
+	rig:Write(names.Hip, rig:TransformFor(names.Hip, hipParent, thigh))
+	-- shin
+	local shinRest = rig:ChildFrame(names.Knee, thigh, CFrame.identity)
+	local kneePivot = rig:Pivot(names.Knee, thigh).Position
+	turn = turnBetween(shinRest:VectorToWorldSpace(leg.ShinDir), shinRest:VectorToWorldSpace(leg.ShinHinge), ankle - kneePivot, hinge)
+	local shin = about(kneePivot, turn) * shinRest
+	rig:Write(names.Knee, rig:TransformFor(names.Knee, thigh, shin))
+	-- foot: flat on the ground, facing its planted way, tipped by the heel-toe roll
+	local footRest = rig:ChildFrame(names.Ankle, shin, CFrame.identity)
+	local anklePivot = rig:Pivot(names.Ankle, shin).Position
+	local side = footFwd:Cross(Vector3.yAxis)
+	local tip = CFrame.fromAxisAngle((side.Magnitude > 1e-5) and side.Unit or Vector3.xAxis, -leg.FootPitch)
+	turn = turnBetween(
+		footRest:VectorToWorldSpace(leg.FootFwd),
+		footRest:VectorToWorldSpace(leg.FootUp),
+		tip:VectorToWorldSpace(footFwd),
+		tip:VectorToWorldSpace(Vector3.yAxis)
+	)
+	local foot = about(anklePivot, turn) * footRest
+	rig:Write(names.Ankle, rig:TransformFor(names.Ankle, shin, foot))
+	leg.FootFrame = foot
+	leg.KneeAt = knee
+	leg.AnkleAt = ankle
+	leg.AnkleWant = ankleTarget
+	leg.Reach = (ankleTarget - hip).Magnitude / (L1 + L2)
+end
+
+return Gait
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="8">
+        <Properties>
+          <string name="Name">PoseLayers</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	PoseLayers  (ModuleScript — lives in ReplicatedStorage)
+
+	More than one script poses the same character's joints after Roblox has played its
+	animations for the frame: Locomotion lays down the walk / idle, then PowerFX puts the
+	power-up poses on top of it. Roblox doesn't promise which script's handler runs first, so
+	they all run from here, every frame, in a fixed order (lowest Order first):
+	    10  Locomotion   the idle, walk and run
+	    20  PowerFX      powering up, the "YOU'RE FINISHED!" point, Kaioken, exhausted
+	They run in PreSimulation (or Stepped on older Roblox versions), where Roblox says joint
+	Transforms should be changed.
+]]
+
+local RunService = game:GetService("RunService")
+
+local PoseLayers = {}
+
+local layers = {}
+local started = false
+
+local function runAll(dt: number)
+	for _, layer in layers do
+		local ok, err = pcall(layer.Fn, dt)
+		if not ok and not layer.Warned then
+			layer.Warned = true -- (once, not every frame)
+			warn(("[PoseLayers] %s failed: %s"):format(layer.Name, tostring(err)))
+		end
+	end
+end
+
+-- fn(dt) runs every frame, after every layer with a lower order
+function PoseLayers.Add(order: number, name: string, fn: (number) -> ())
+	table.insert(layers, { Order = order, Name = name, Fn = fn })
+	table.sort(layers, function(a, b)
+		return a.Order < b.Order
+	end)
+	if not started then
+		started = true
+		local ok, preSimulation = pcall(function()
+			return RunService.PreSimulation
+		end)
+		if ok and preSimulation then
+			preSimulation:Connect(runAll)
+		else
+			RunService.Stepped:Connect(function(_, dt)
+				runAll(dt)
+			end)
+		end
+	end
+end
+
+return PoseLayers
+]]></ProtectedString>
+        </Properties>
+      </Item>
     </Item>
-    <Item class="Folder" referent="7">
+    <Item class="Folder" referent="9">
       <Properties>
         <string name="Name">ServerScriptService</string>
       </Properties>
-      <Item class="Script" referent="8">
+      <Item class="Script" referent="10">
         <Properties>
           <string name="Name">CharacterSetup</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2552,7 +3489,7 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="Script" referent="9">
+      <Item class="Script" referent="11">
         <Properties>
           <string name="Name">PowerUpServer</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2575,14 +3512,20 @@ end
 	It also swaps the visible hair (base <-> Super Saiyan), stops you walking while charging
 	and transforming, speeds you up in Kaioken, drains your health while it burns, and slows
 	you while you're exhausted.
+	The Great Ape (Oozaru module): "Oozaru" turns you into the giant (Form "Oozaru") and back.
+	While the screen goes black your PowerState is "GreatApe" (turning) or "Shrinking" (turning
+	back); the giant can't move while it roars (PowerConfig.OozaruIntro) and turns back by
+	itself after PowerConfig.OozaruTime.
 	Settings: ReplicatedStorage > PowerConfig.
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+local Oozaru = require(script.Parent:WaitForChild("Oozaru"))
 
 local remote = ReplicatedStorage:FindFirstChild("PowerUp")
 if not remote then
@@ -2748,6 +3691,62 @@ local function burst(character: Model)
 	end)
 end
 
+----------------------------------------------------------------------------------------
+-- the Great Ape
+----------------------------------------------------------------------------------------
+local FADE = 0.45 -- seconds the player's screen takes to go black before the swap
+
+local function shrink(player: Player, ape: Model)
+	if ape:GetAttribute("PowerState") == "Shrinking" then
+		return
+	end
+	ape:SetAttribute("PowerState", "Shrinking") -- (their screen goes black)
+	local humanoid = ape:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.WalkSpeed = 0
+	end
+	task.delay(FADE, function()
+		local h = ape:FindFirstChildOfClass("Humanoid")
+		if player.Character == ape and ape.Parent and h and h.Health > 0 then
+			Oozaru.SwapOut(player)
+		end
+	end)
+end
+
+local function grow(player: Player, human: Model)
+	local cost = PowerConfig.OozaruKiCost or 0
+	local ki = human:GetAttribute("Ki") or 0
+	human:SetAttribute("Ki", ki - cost)
+	human:SetAttribute("PowerState", "GreatApe") -- (their screen goes black)
+	lockMovement(human, true)
+	task.delay(FADE, function()
+		local humanoid = human:FindFirstChildOfClass("Humanoid")
+		lockMovement(human, false) -- (so you can walk again when you come back)
+		local ape = (player.Character == human and humanoid and humanoid.Health > 0) and Oozaru.SwapIn(player) or nil
+		if not ape then
+			-- died, left, or the giant couldn't be built: nothing happens, ki back
+			if human.Parent then
+				human:SetAttribute("PowerState", "Idle")
+				human:SetAttribute("Ki", math.min(PowerConfig.KiMax, (human:GetAttribute("Ki") or 0) + cost))
+			end
+			return
+		end
+		task.delay(PowerConfig.OozaruIntro or 0, function()
+			local h = ape:FindFirstChildOfClass("Humanoid")
+			if h and ape.Parent and ape:GetAttribute("PowerState") == "Idle" then
+				h.WalkSpeed = PowerConfig.OozaruWalkSpeed -- (done roaring)
+			end
+		end)
+		if (PowerConfig.OozaruTime or 0) > 0 then
+			task.delay(PowerConfig.OozaruTime, function()
+				if ape.Parent and player.Character == ape then
+					shrink(player, ape) -- out of time
+				end
+			end)
+		end
+	end)
+end
+
 remote.OnServerEvent:Connect(function(player: Player, action, value)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -2788,8 +3787,30 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 		if powerState == "Charging" then
 			stopCharging(character)
 		end
+	elseif action == "Oozaru" then
+		if form == "Oozaru" then
+			-- turn back (not mid-roar: you've only just turned)
+			local bornAt = character:GetAttribute("OozaruAt") or 0
+			if powerState == "Idle" and Workspace:GetServerTimeNow() - bornAt >= (PowerConfig.OozaruIntro or 0) then
+				shrink(player, character)
+			end
+		elseif
+			powerState == "Idle"
+			and form == "Base"
+			and kaioken == 0
+			and not character:GetAttribute("Exhausted")
+			and (character:GetAttribute("Ki") or 0) >= (PowerConfig.OozaruKiCost or 0)
+			and Oozaru.Available()
+		then
+			grow(player, character)
+		end
 	elseif action == "PowerDown" then
-		if powerState == "Idle" and kaioken > 0 then
+		if form == "Oozaru" then
+			local bornAt = character:GetAttribute("OozaruAt") or 0
+			if powerState == "Idle" and Workspace:GetServerTimeNow() - bornAt >= (PowerConfig.OozaruIntro or 0) then
+				shrink(player, character)
+			end
+		elseif powerState == "Idle" and kaioken > 0 then
 			setKaioken(character, 0) -- let the Kaioken go
 		elseif powerState == "Idle" and form == "SSJ" then
 			st.Token = (st.Token or 0) + 1 -- cancels a pending calm-down
@@ -2821,6 +3842,7 @@ end)
 local kiClock = 0
 RunService.Heartbeat:Connect(function(dt)
 	local now = os.clock()
+	Oozaru.Step()
 	for character, st in info do
 		if not character.Parent then
 			info[character] = nil
@@ -2863,12 +3885,558 @@ end)
 ]]></ProtectedString>
         </Properties>
       </Item>
+      <Item class="ModuleScript" referent="12">
+        <Properties>
+          <string name="Name">Oozaru</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	Oozaru  (ModuleScript — lives in ServerScriptService)
+
+	Builds the Great Ape and swaps players in and out of it (PowerUpServer decides when).
+	  * The giant is made once, from the rigged model imported from Oozaru_Rigged.fbx (put it in
+	    ServerStorage > CharacterParts; it's found by its tail-tip bone, TAIL18). Its bones are
+	    compared with where they were designed (OozaruRig) to learn how the importer sized and
+	    turned it; it's then resized to PowerConfig.OozaruScale and stood upright on the spot.
+	  * It gets a HumanoidRootPart (an invisible box round the body that does the walking and
+	    bumping into things), a Humanoid, and everything welded on. Bone poses are drawn by
+	    OozaruFX on every player's screen.
+	  * Turning into it: a copy is put where you stand, facing your way, and becomes your
+	    character; your own body is kept aside (with its hair, belt, health share and ki) and
+	    put back exactly where the giant stands when you turn back.
+]]
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
+
+local HairConfig = require(ReplicatedStorage:WaitForChild("HairConfig"))
+local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+local OozaruRig = require(script.Parent:WaitForChild("OozaruRig"))
+
+local Oozaru = {}
+Oozaru.Tag = "DW_Oozaru"
+
+-- the attributes that carry over between your body and the giant
+local CARRY = { "Ki" }
+
+local template: Model? = nil
+local problem: string? = nil
+local stash = {} -- [player] = your own body while you're the giant
+local stashFolder: Folder? = nil
+
+local function log(message: string)
+	print("[Oozaru] " .. message)
+end
+
+local function complain(message: string)
+	warn("[Oozaru] " .. message)
+end
+
+local function partOfBone(bone: Instance): BasePart?
+	local node = bone.Parent
+	while node and not node:IsA("BasePart") do
+		node = node.Parent
+	end
+	return node :: BasePart?
+end
+
+-- the imported model (searched the same places CharacterSetup looks)
+local function findSource(): Bone?
+	local signature = OozaruRig.SignatureBone
+	for _, container in { ServerStorage, ReplicatedStorage, Workspace } do
+		local folder = container:FindFirstChild(HairConfig.ModelFolder)
+		local bone = folder and folder:FindFirstChild(signature, true)
+		if bone and bone:IsA("Bone") then
+			return bone
+		end
+	end
+	for _, container in { ServerStorage, Workspace } do
+		for _, d in container:GetDescendants() do
+			if d.Name == signature and d:IsA("Bone") and not d:FindFirstAncestorWhichIsA("Humanoid") then
+				local model = d:FindFirstAncestorWhichIsA("Model")
+				if not (model and CollectionService:HasTag(model, Oozaru.Tag)) then
+					return d
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- where each designed bone ended up (world positions), for fitting
+local function bonePairs(model: Model)
+	local design, actual = {}, {}
+	for name, modeled in OozaruRig.Bones do
+		local bone = model:FindFirstChild(name, true)
+		local part = bone and bone:IsA("Bone") and partOfBone(bone)
+		if part then
+			local cf = HairPhysics.PartSpaceCFrame(bone, part)
+			if cf then
+				table.insert(design, modeled)
+				table.insert(actual, (part.CFrame * cf).Position)
+			end
+		end
+	end
+	return design, actual
+end
+
+local COLOURS = { -- mesh name -> colour (the meshes are named by build_oozaru.py)
+	{ "EarInner", Color3.fromRGB(150, 82, 52) },
+	{ "Fur", nil }, -- PowerConfig.OozaruFur
+	{ "Skin", nil }, -- PowerConfig.OozaruSkin
+	{ "Face", nil },
+	{ "Ink", Color3.fromRGB(22, 16, 16) },
+	{ "Mouth", Color3.fromRGB(118, 26, 32) },
+	{ "Teeth", Color3.fromRGB(245, 240, 226) },
+	{ "Eyes", nil }, -- PowerConfig.OozaruEyes, glowing
+}
+
+local function paint(part: BasePart)
+	for _, entry in COLOURS do
+		local key = entry[1]
+		if string.find(part.Name, key, 1, true) then
+			local colour = entry[2]
+			if key == "Fur" then
+				colour = PowerConfig.OozaruFur
+			elseif key == "Skin" or key == "Face" then
+				colour = PowerConfig.OozaruSkin
+			elseif key == "Eyes" then
+				colour = PowerConfig.OozaruEyes
+				part.Material = Enum.Material.Neon
+				local glow = Instance.new("PointLight")
+				glow.Name = "EyeGlow"
+				glow.Color = PowerConfig.OozaruEyes
+				glow.Brightness = 2.5
+				glow.Range = 14
+				glow.Shadows = false
+				glow.Parent = part
+			end
+			if colour then
+				part.Color = colour
+			end
+			if key ~= "Eyes" then
+				part.Material = Enum.Material.SmoothPlastic
+			end
+			return
+		end
+	end
+end
+
+local function build(): Model
+	local bone = findSource()
+	if not bone then
+		error(("couldn't find the Great Ape model (looking for its bone '%s'). Import Oozaru_Rigged.fbx (File > Import 3D) and put it in ServerStorage > %s."):format(
+			OozaruRig.SignatureBone, HairConfig.ModelFolder), 0)
+	end
+	-- copy the whole imported model (all its meshes share one skeleton)
+	local source: Instance? = bone:FindFirstAncestorWhichIsA("Model")
+	if not source or source:IsA("WorldRoot") then
+		local part = partOfBone(bone)
+		source = part and part.Parent
+	end
+	if not source then
+		error("found the Great Ape's bones but no model around them", 0)
+	end
+	local copy = (source :: Instance):Clone()
+	local model: Model
+	if copy:IsA("Model") then
+		model = copy
+	else
+		model = Instance.new("Model")
+		for _, child in copy:GetChildren() do
+			child.Parent = model
+		end
+		copy:Destroy()
+	end
+	-- keep the meshes and bones; drop what the importer may have added (scripts, a Humanoid or
+	-- AnimationController, joints holding the meshes together)
+	for _, d in model:GetDescendants() do
+		if d:IsA("LuaSourceContainer") or d:IsA("Humanoid") or d:IsA("AnimationController") or d:IsA("Animator")
+			or d:IsA("JointInstance") or d:IsA("WeldConstraint") or d:IsA("Constraint")
+		then
+			d:Destroy()
+		end
+	end
+	local parts = {}
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			table.insert(parts, d)
+		end
+	end
+	if #parts == 0 then
+		error("the Great Ape model has no meshes in it", 0)
+	end
+
+	-- how it came in: size and turn, from its bones
+	local design, actual = bonePairs(model)
+	if #design < 10 then
+		local total = 0
+		for _ in OozaruRig.Bones do
+			total += 1
+		end
+		error(("the Great Ape is missing its bones (found %d of %d): re-import it with the rig"):format(#design, total), 0)
+	end
+	local fit = HairPhysics.FitRig(design, actual)
+	local want = PowerConfig.OozaruScale or 3.2
+	if math.abs(fit.Scale / want - 1) > 0.02 then
+		local ok, err = pcall(function()
+			model:ScaleTo(model:GetScale() * want / fit.Scale)
+		end)
+		if not ok then
+			complain("couldn't resize the Great Ape (it keeps the size it was imported at): " .. tostring(err))
+		end
+		design, actual = bonePairs(model)
+		fit = HairPhysics.FitRig(design, actual)
+	end
+	if fit.Error > 0.05 * fit.Scale then
+		complain(("the Great Ape's bones don't match the expected layout (off by %.2f studs): re-import the latest Oozaru_Rigged.fbx"):format(fit.Error))
+	end
+	local s = fit.Scale
+
+	-- stand it on the origin, upright, facing -Z (the way characters face)
+	local placed = (CFrame.new(fit.Translation) * fit.Rotation):Inverse()
+	for _, part in parts do
+		part.CFrame = placed * part.CFrame
+		part.Anchored = false
+		part.CanCollide = false
+		part.CanTouch = false
+		part.CanQuery = false
+		part.Massless = true
+		paint(part)
+	end
+
+	-- the body that walks: a box from just under the hips to the head
+	local hipHeight = 4.0 * s
+	local root = Instance.new("Part")
+	root.Name = "HumanoidRootPart"
+	root.Size = Vector3.new(4.0, 4.4, 2.6) * s
+	root.CFrame = CFrame.new(0, hipHeight + root.Size.Y / 2, 0)
+	root.Transparency = 1
+	root.CanCollide = true
+	root.CanQuery = true
+	root.Anchored = false
+	root.Parent = model
+	for _, part in parts do
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = root
+		weld.Part1 = part
+		weld.Parent = part
+	end
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.RigType = Enum.HumanoidRigType.R15
+	humanoid.HipHeight = hipHeight
+	humanoid.RequiresNeck = false -- (it has no neck joint: bones do the bending)
+	humanoid.BreakJointsOnDeath = false
+	humanoid.AutomaticScalingEnabled = false
+	humanoid.UseJumpPower = true
+	humanoid.JumpPower = 0 -- far too heavy to jump
+	humanoid.WalkSpeed = PowerConfig.OozaruWalkSpeed
+	humanoid.MaxHealth = PowerConfig.OozaruHealth
+	humanoid.Health = PowerConfig.OozaruHealth
+	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	humanoid.Parent = model
+
+	model.Name = "GreatApe"
+	model.PrimaryPart = root
+	model:SetAttribute("Oozaru", true)
+	model:SetAttribute("OozaruScale", s)
+	model:SetAttribute("Form", "Oozaru")
+	model:SetAttribute("PowerState", "Idle")
+	model:SetAttribute("Charge", 0)
+	model:SetAttribute("AuraWind", 0)
+	model:SetAttribute("Breeze", 0)
+	model:SetAttribute("Kaioken", 0)
+	model:SetAttribute("KaiokenMult", 1)
+	model:SetAttribute("Exhausted", false)
+	CollectionService:AddTag(model, Oozaru.Tag)
+	log(("built the Great Ape: %d meshes, %d bones lined up, %.1f studs tall"):format(#parts, #design, (OozaruRig.Bounds[2].Y - OozaruRig.Bounds[1].Y) * s))
+	return model
+end
+
+-- builds the giant the first time it's asked for; nil (and why) if it can't
+function Oozaru.Available(): (boolean, string?)
+	if template then
+		return true
+	end
+	if problem then
+		return false, problem
+	end
+	local ok, result = pcall(build)
+	if ok then
+		template = result
+		return true
+	end
+	problem = tostring(result)
+	complain(problem)
+	return false, problem
+end
+
+local function groundUnder(character: Model, root: BasePart, humanoid: Humanoid): number
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+	params.IgnoreWater = true
+	local hit = Workspace:Raycast(root.CFrame.Position, Vector3.new(0, -(humanoid.HipHeight + root.Size.Y) * 2 - 4, 0), params)
+	if hit then
+		return hit.Position.Y
+	end
+	return root.CFrame.Position.Y - humanoid.HipHeight - root.Size.Y / 2
+end
+
+local function facing(root: BasePart): CFrame
+	local look = root.CFrame.LookVector
+	return CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
+end
+
+-- you become the giant; returns it (nil if it couldn't be built)
+function Oozaru.SwapIn(player: Player): Model?
+	local human = player.Character
+	local humanoid = human and human:FindFirstChildOfClass("Humanoid")
+	local root = human and human:FindFirstChild("HumanoidRootPart")
+	if not (human and humanoid and root and Oozaru.Available()) then
+		return nil
+	end
+	local ape = (template :: Model):Clone()
+	ape.Name = player.Name
+	local apeHumanoid = ape:FindFirstChildOfClass("Humanoid") :: Humanoid
+	local apeRoot = ape:FindFirstChild("HumanoidRootPart") :: BasePart
+	-- standing where you stood, facing your way (its root part sits HipHeight above the ground)
+	local ground = groundUnder(human, root :: BasePart, humanoid)
+	local up = apeHumanoid.HipHeight + apeRoot.Size.Y / 2
+	local spot = CFrame.new(root.CFrame.Position.X, ground + up, root.CFrame.Position.Z) * facing(root :: BasePart)
+	ape:PivotTo(spot * apeRoot.CFrame:Inverse() * ape:GetPivot())
+	for _, name in CARRY do
+		ape:SetAttribute(name, human:GetAttribute(name))
+	end
+	local share = (humanoid.MaxHealth > 0) and humanoid.Health / humanoid.MaxHealth or 1
+	apeHumanoid.Health = math.max(1, apeHumanoid.MaxHealth * share)
+	apeHumanoid.WalkSpeed = 0 -- (roaring first)
+	ape:SetAttribute("OozaruAt", Workspace:GetServerTimeNow())
+	ape:SetAttribute("OozaruUntil", (PowerConfig.OozaruTime or 0) > 0 and Workspace:GetServerTimeNow() + PowerConfig.OozaruTime or 0)
+	ape.Parent = Workspace
+
+	-- your body goes aside until you turn back
+	if not stashFolder then
+		stashFolder = Instance.new("Folder")
+		stashFolder.Name = "DW_OozaruStash"
+		stashFolder.Parent = ServerStorage
+	end
+	stash[player] = human
+	player.Character = ape
+	human.Parent = stashFolder
+	pcall(function()
+		apeRoot:SetNetworkOwner(player)
+	end)
+	return ape
+end
+
+-- every frame (PowerUpServer calls it): a giant that's been beaten goes back to the start like
+-- any other death, and your body that was kept aside goes with it
+function Oozaru.Step()
+	for player, human in stash do
+		local ape = player.Character
+		local humanoid = ape and ape:FindFirstChildOfClass("Humanoid")
+		if ape and ape:GetAttribute("Oozaru") and humanoid and humanoid.Health <= 0 and not ape:GetAttribute("Beaten") then
+			ape:SetAttribute("Beaten", true)
+			task.delay(Players.RespawnTime + 0.5, function()
+				if player.Parent and player.Character == ape then
+					player:LoadCharacter()
+				end
+				if stash[player] == human then
+					stash[player] = nil
+					human:Destroy()
+				end
+				if ape.Parent then
+					ape:Destroy()
+				end
+			end)
+		elseif not (ape and ape:GetAttribute("Oozaru")) then
+			-- (respawned some other way while giant)
+			stash[player] = nil
+			human:Destroy()
+		end
+	end
+end
+
+-- you turn back into yourself where the giant stands; returns your body
+function Oozaru.SwapOut(player: Player): Model?
+	local ape = player.Character
+	local human = stash[player]
+	if not (ape and human and ape:GetAttribute("Oozaru")) then
+		return nil
+	end
+	local apeHumanoid = ape:FindFirstChildOfClass("Humanoid")
+	local apeRoot = ape:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local humanoid = human:FindFirstChildOfClass("Humanoid")
+	local root = human:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not (apeHumanoid and apeRoot and humanoid and root) then
+		return nil
+	end
+	local ground = apeRoot.CFrame.Position.Y - apeHumanoid.HipHeight - apeRoot.Size.Y / 2
+	local spot = CFrame.new(apeRoot.CFrame.Position.X, ground + humanoid.HipHeight + root.Size.Y / 2, apeRoot.CFrame.Position.Z) * facing(apeRoot)
+	human:PivotTo(spot * root.CFrame:Inverse() * human:GetPivot())
+	for _, name in CARRY do
+		human:SetAttribute(name, ape:GetAttribute(name))
+	end
+	local share = (apeHumanoid.MaxHealth > 0) and apeHumanoid.Health / apeHumanoid.MaxHealth or 1
+	humanoid.Health = math.max(1, humanoid.MaxHealth * share)
+	human:SetAttribute("Form", "Base")
+	human:SetAttribute("PowerState", "Idle")
+	stash[player] = nil
+	human.Parent = Workspace
+	player.Character = human
+	pcall(function()
+		root:SetNetworkOwner(player)
+	end)
+	ape:SetAttribute("Gone", true)
+	ape:Destroy()
+	return human
+end
+
+function Oozaru.IsApe(character: Model?): boolean
+	return character ~= nil and character:GetAttribute("Oozaru") == true
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	local human = stash[player]
+	stash[player] = nil
+	if human then
+		human:Destroy()
+	end
+end)
+
+return Oozaru
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="13">
+        <Properties>
+          <string name="Name">OozaruRig</string>
+          <ProtectedString name="Source"><![CDATA[-- GENERATED by tools/rig/emit_oozaru.py from tools/rig/oozaru.json: do not edit by hand.
+-- The Great Ape as designed: every bone's head (Roblox axes: x right, y up, -z forward, the
+-- feet standing on y = 0) in the model's own units, its size, and the meshes it is made of.
+return {
+	SignatureBone = "TAIL18", -- (no other piece has a bone with this name)
+	Bounds = { Vector3.new(-7.8369, -0.0282, -2.0651), Vector3.new(7.8369, 10.7674, 9.5421) },
+	Meshes = { "Fur", "Skin", "Face", "Ink", "Mouth", "Teeth", "EarInner", "Eyes" },
+	Bones = {
+		NULL = Vector3.new(0.0000, 0.0000, 0.0000),
+		WAIST = Vector3.new(0.0000, 4.6500, -0.2168),
+		TAIL1 = Vector3.new(-0.0000, 4.5533, 1.0415),
+		TAIL2 = Vector3.new(-0.0000, 4.5533, 1.5115),
+		TAIL3 = Vector3.new(-0.0000, 4.5533, 1.9815),
+		TAIL4 = Vector3.new(-0.0000, 4.5533, 2.4515),
+		TAIL5 = Vector3.new(-0.0000, 4.5533, 2.9215),
+		TAIL6 = Vector3.new(-0.0000, 4.5533, 3.3915),
+		TAIL7 = Vector3.new(-0.0000, 4.5533, 3.8615),
+		TAIL8 = Vector3.new(-0.0000, 4.5533, 4.3315),
+		TAIL9 = Vector3.new(-0.0000, 4.5533, 4.8015),
+		TAIL10 = Vector3.new(-0.0000, 4.5533, 5.2715),
+		TAIL11 = Vector3.new(-0.0000, 4.5533, 5.7415),
+		TAIL12 = Vector3.new(-0.0000, 4.5533, 6.2115),
+		TAIL13 = Vector3.new(-0.0000, 4.5533, 6.6815),
+		TAIL14 = Vector3.new(-0.0000, 4.5533, 7.1515),
+		TAIL15 = Vector3.new(-0.0000, 4.5533, 7.6215),
+		TAIL16 = Vector3.new(-0.0000, 4.5533, 8.0915),
+		TAIL17 = Vector3.new(-0.0000, 4.5533, 8.5615),
+		TAIL18 = Vector3.new(-0.0000, 4.5533, 9.0315),
+		THIGH_L = Vector3.new(-0.9025, 4.3331, -0.2472),
+		CLANK_L = Vector3.new(-0.9025, 2.4518, -0.1646),
+		TOE1_L = Vector3.new(-0.9025, 0.4359, -0.0760),
+		TOE2_L = Vector3.new(-0.9025, 0.2647, -0.3945),
+		MIDDLE1_L = Vector3.new(-0.9246, 0.2514, -0.9152),
+		MIDDLE2_L = Vector3.new(-0.9024, 0.2380, -1.2190),
+		MIDDLE3_L = Vector3.new(-0.8936, 0.2083, -1.4562),
+		THUMB1_L = Vector3.new(-0.3759, 0.2668, -0.1961),
+		THUMB2_L = Vector3.new(-0.1806, 0.2528, -0.4392),
+		THUMB3_L = Vector3.new(0.0147, 0.2388, -0.6823),
+		FORE1_L = Vector3.new(-0.5365, 0.2466, -0.7901),
+		FORE2_L = Vector3.new(-0.4491, 0.2536, -1.0575),
+		FORE3_L = Vector3.new(-0.3633, 0.2075, -1.3106),
+		LITTLE1_L = Vector3.new(-1.6660, 0.2828, -0.6767),
+		LITTLE2_L = Vector3.new(-1.7901, 0.2784, -0.8571),
+		LITTLE3_L = Vector3.new(-1.9085, 0.2598, -1.0330),
+		MEDICINAL1_L = Vector3.new(-1.3267, 0.2727, -0.8855),
+		MEDICINAL2_L = Vector3.new(-1.3859, 0.2523, -1.1444),
+		MEDICINAL3_L = Vector3.new(-1.4403, 0.2248, -1.3786),
+		THIGH_R = Vector3.new(0.9025, 4.3331, -0.2472),
+		CLANK_R = Vector3.new(0.9025, 2.4518, -0.1646),
+		TOE1_R = Vector3.new(0.9025, 0.4359, -0.0760),
+		TOE2_R = Vector3.new(0.9025, 0.2647, -0.3945),
+		MIDDLE1_R = Vector3.new(0.9246, 0.2514, -0.9152),
+		MIDDLE2_R = Vector3.new(0.9024, 0.2380, -1.2190),
+		MIDDLE3_R = Vector3.new(0.8936, 0.2083, -1.4562),
+		THUMB1_R = Vector3.new(0.3759, 0.2668, -0.1961),
+		THUMB2_R = Vector3.new(0.1806, 0.2528, -0.4392),
+		THUMB3_R = Vector3.new(-0.0148, 0.2388, -0.6823),
+		FORE1_R = Vector3.new(0.5365, 0.2466, -0.7901),
+		FORE2_R = Vector3.new(0.4491, 0.2536, -1.0575),
+		FORE3_R = Vector3.new(0.3633, 0.2074, -1.3106),
+		LITTLE1_R = Vector3.new(1.6660, 0.2828, -0.6767),
+		LITTLE2_R = Vector3.new(1.7901, 0.2784, -0.8571),
+		LITTLE3_R = Vector3.new(1.9085, 0.2598, -1.0330),
+		MEDICINAL1_R = Vector3.new(1.3267, 0.2727, -0.8855),
+		MEDICINAL2_R = Vector3.new(1.3859, 0.2522, -1.1444),
+		MEDICINAL3_R = Vector3.new(1.4403, 0.2248, -1.3786),
+		SPINE1 = Vector3.new(0.0000, 5.0473, -0.2411),
+		SPINE2 = Vector3.new(0.0000, 5.8373, -0.2051),
+		SPINE3 = Vector3.new(0.0000, 6.8235, -0.1485),
+		NECK = Vector3.new(0.0000, 8.0181, 0.1028),
+		HEAD = Vector3.new(0.0000, 8.3993, -0.4299),
+		FACE = Vector3.new(0.0000, 8.4401, -0.5831),
+		CHIN = Vector3.new(0.0000, 8.4000, -0.5500),
+		CLAVICLE_L = Vector3.new(-0.6631, 7.4225, -0.4204),
+		SHOULDER_L = Vector3.new(-2.1336, 7.3856, -0.0687),
+		ELBOW_L = Vector3.new(-4.0684, 7.3035, -0.0301),
+		WRIST_L = Vector3.new(-5.8020, 7.3511, -0.0598),
+		F_THUMB1_L = Vector3.new(-6.1000, 6.9986, -0.4263),
+		F_THUMB2_L = Vector3.new(-6.3346, 6.8521, -0.6414),
+		F_THUMB3_L = Vector3.new(-6.7020, 6.7772, -0.6751),
+		F_FORE1_L = Vector3.new(-6.6447, 7.3115, -0.4264),
+		F_FORE2_L = Vector3.new(-7.0193, 7.3077, -0.4384),
+		F_FORE3_L = Vector3.new(-7.3757, 7.2954, -0.4400),
+		F_MIDDLE1_L = Vector3.new(-6.7043, 7.4100, -0.1236),
+		F_MIDDLE2_L = Vector3.new(-7.0888, 7.3815, -0.1203),
+		F_MIDDLE3_L = Vector3.new(-7.4428, 7.3643, -0.1278),
+		F_MEDICINAL1_L = Vector3.new(-6.6490, 7.4051, 0.1735),
+		F_MEDICINAL2_L = Vector3.new(-7.0514, 7.3947, 0.1596),
+		F_MEDICINAL3_L = Vector3.new(-7.3972, 7.3885, 0.1526),
+		F_LITTLE1_L = Vector3.new(-6.5869, 7.3500, 0.4531),
+		F_LITTLE2_L = Vector3.new(-6.8716, 7.3453, 0.4503),
+		F_LITTLE3_L = Vector3.new(-7.1454, 7.3335, 0.4361),
+		CLAVICLE_R = Vector3.new(0.6631, 7.4225, -0.4204),
+		SHOULDER_R = Vector3.new(2.1336, 7.3856, -0.0687),
+		ELBOW_R = Vector3.new(4.0684, 7.3035, -0.0301),
+		WRIST_R = Vector3.new(5.8020, 7.3511, -0.0598),
+		F_THUMB1_R = Vector3.new(6.1000, 6.9986, -0.4263),
+		F_THUMB2_R = Vector3.new(6.3346, 6.8521, -0.6414),
+		F_THUMB3_R = Vector3.new(6.7020, 6.7772, -0.6751),
+		F_FORE1_R = Vector3.new(6.6447, 7.3115, -0.4264),
+		F_FORE2_R = Vector3.new(7.0193, 7.3077, -0.4384),
+		F_FORE3_R = Vector3.new(7.3757, 7.2954, -0.4400),
+		F_MIDDLE1_R = Vector3.new(6.7043, 7.4100, -0.1236),
+		F_MIDDLE2_R = Vector3.new(7.0888, 7.3815, -0.1203),
+		F_MIDDLE3_R = Vector3.new(7.4428, 7.3643, -0.1278),
+		F_MEDICINAL1_R = Vector3.new(6.6490, 7.4298, 0.1642),
+		F_MEDICINAL2_R = Vector3.new(7.0514, 7.3947, 0.1596),
+		F_MEDICINAL3_R = Vector3.new(7.3972, 7.3885, 0.1526),
+		F_LITTLE1_R = Vector3.new(6.5869, 7.3500, 0.4531),
+		F_LITTLE2_R = Vector3.new(6.8716, 7.3453, 0.4503),
+		F_LITTLE3_R = Vector3.new(7.1454, 7.3335, 0.4361),
+	},
+}
+]]></ProtectedString>
+        </Properties>
+      </Item>
     </Item>
-    <Item class="Folder" referent="10">
+    <Item class="Folder" referent="14">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="11">
+      <Item class="LocalScript" referent="15">
         <Properties>
           <string name="Name">HairPhysicsClient</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2886,7 +4454,7 @@ HairPhysics.StartClient()
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="12">
+      <Item class="LocalScript" referent="16">
         <Properties>
           <string name="Name">PowerUpClient</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -2990,9 +4558,9 @@ local function hintEntry(index: number)
 	})
 	return { Holder = holder, Key = key, KeyText = keyText, Action = action, ActionText = actionText }
 end
-local hintEntries = { hintEntry(1), hintEntry(2) }
+local hintEntries = { hintEntry(1), hintEntry(2), hintEntry(3) }
 
--- list = { { key, what it does }, ... } (up to two), or nil for none
+-- list = { { key, what it does }, ... } (up to three), or nil for none
 local function setHint(list)
 	list = list or {}
 	hint.Visible = #list > 0
@@ -3178,9 +4746,12 @@ end
 local function refreshHint()
 	local powerKey = touch and "POWER" or PowerConfig.PowerKey.Name
 	local kaiokenKey = touch and "KAIOKEN" or PowerConfig.KaiokenKey.Name
+	local apeKey = touch and "APE" or PowerConfig.OozaruKey.Name
 	local kaioken = attr("Kaioken") or 0
-	if charging or bursting or attr("Exhausted") then
+	if charging or bursting or attr("Exhausted") or attr("PowerState") == "GreatApe" then
 		setHint(nil)
+	elseif attr("Form") == "Oozaru" then
+		setHint({ { apeKey, "TURN BACK" } }) -- (hidden with the rest of the UI while you're giant)
 	elseif attr("Form") == "SSJ" then
 		setHint({ { powerKey, "POWER DOWN" } })
 	elseif kaioken >= #PowerConfig.KaiokenLevels then
@@ -3188,7 +4759,7 @@ local function refreshHint()
 	elseif kaioken > 0 then
 		setHint({ { kaiokenKey, "HIGHER!" }, { powerKey, "LET IT GO" } })
 	else
-		setHint({ { powerKey, "POWER UP" }, { kaiokenKey, "KAIOKEN" } })
+		setHint({ { powerKey, "POWER UP" }, { kaiokenKey, "KAIOKEN" }, { apeKey, "GREAT APE" } })
 	end
 end
 
@@ -3370,8 +4941,8 @@ local function onPowerKey(_, state)
 	end
 	if charging then
 		stopCharging(true)
-	elseif attr("Form") == "SSJ" or (attr("Kaioken") or 0) > 0 then
-		remote:FireServer("PowerDown")
+	elseif attr("Form") == "SSJ" or attr("Form") == "Oozaru" or (attr("Kaioken") or 0) > 0 then
+		remote:FireServer("PowerDown") -- (and back from the Great Ape)
 	elseif attr("Exhausted") then
 		showToast("TOO TIRED!")
 	else
@@ -3408,6 +4979,42 @@ local function onKaiokenKey(_, state)
 end
 ContextActionService:BindAction("DWKaioken", onKaiokenKey, true, PowerConfig.KaiokenKey)
 ContextActionService:SetTitle("DWKaioken", "Kaioken")
+
+-- G: become the Great Ape, or turn back (the server checks; OozaruFX does the screen)
+local function onOozaruKey(_, state)
+	if state ~= Enum.UserInputState.Begin or not character then
+		return Enum.ContextActionResult.Pass
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 or charging or bursting then
+		return Enum.ContextActionResult.Sink
+	end
+	if attr("Form") == "Oozaru" then
+		remote:FireServer("Oozaru") -- turn back
+	elseif attr("PowerState") == "GreatApe" then
+		return Enum.ContextActionResult.Sink -- (already turning)
+	elseif attr("Form") == "SSJ" then
+		showToast("BASE FORM ONLY!")
+	elseif (attr("Kaioken") or 0) > 0 then
+		showToast("LET THE KAIOKEN GO FIRST!")
+	elseif attr("Exhausted") then
+		showToast("TOO TIRED!")
+	elseif (attr("Ki") or 0) < (PowerConfig.OozaruKiCost or 0) then
+		showToast("NOT ENOUGH KI!")
+	else
+		remote:FireServer("Oozaru")
+	end
+	return Enum.ContextActionResult.Sink
+end
+if PowerConfig.OozaruKey then
+	ContextActionService:BindAction("DWOozaru", onOozaruKey, true, PowerConfig.OozaruKey)
+	ContextActionService:SetTitle("DWOozaru", "Ape")
+end
+
+-- hidden with the rest of the UI while you're the Great Ape
+player:GetAttributeChangedSignal("Oozaru"):Connect(function()
+	gui.Enabled = not player:GetAttribute("Oozaru")
+end)
 
 -- the moment it lights (or climbs): the shout on screen, a red flash, a kick of the camera
 local function kaiokenPop(level: number)
@@ -3515,7 +5122,7 @@ local function onCharacter(newCharacter: Model)
 	if Cutscene then
 		Cutscene.Stop()
 	end
-	gui.Enabled = true
+	gui.Enabled = not player:GetAttribute("Oozaru")
 	releaseCamera()
 	newCharacter:GetAttributeChangedSignal("PowerState"):Connect(function()
 		local state = newCharacter:GetAttribute("PowerState")
@@ -3562,7 +5169,7 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="13">
+      <Item class="LocalScript" referent="17">
         <Properties>
           <string name="Name">PowerFX</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -3603,6 +5210,7 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+local PoseLayers = require(ReplicatedStorage:WaitForChild("PoseLayers"))
 
 local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
@@ -4691,13 +6299,10 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 end)
 
--- The pose goes on after Roblox has played the character's animations for this frame (in
--- PreSimulation, as Roblox recommends), blended with them by how far into the power-up we are.
-local okPre, preSimulation = pcall(function()
-	return RunService.PreSimulation
-end)
-local poseSignal = (okPre and preSimulation) or RunService.Stepped
-poseSignal:Connect(function()
+-- The pose goes on after Roblox has played the character's animations for this frame and after
+-- Locomotion's walk / idle (PoseLayers runs them in that order, in PreSimulation as Roblox
+-- recommends), blended with them by how far into the power-up we are.
+PoseLayers.Add(20, "PowerFX", function()
 	local t = os.clock()
 	for _, fx in active do
 		-- joints can be swapped out after spawning (e.g. by the joint upgrade): look again if so
@@ -4762,7 +6367,7 @@ end)
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">SSJCutscene</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -5399,7 +7004,7 @@ return Cutscene
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="15">
+      <Item class="LocalScript" referent="19">
         <Properties>
           <string name="Name">HUD</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -5906,7 +7511,7 @@ end
 RunService.RenderStepped:Connect(function(dt)
 	dt = math.min(dt, 0.1)
 	local now = os.clock()
-	local hidden = player:GetAttribute("InCutscene")
+	local hidden = player:GetAttribute("InCutscene") or player:GetAttribute("Oozaru") -- (the Great Ape: no UI)
 	gui.Enabled = not hidden
 	if hidden then
 		-- frozen while the cutscene plays, so afterwards the HUD slides back in and the Scouter
@@ -6108,7 +7713,7 @@ end
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="16">
+      <Item class="LocalScript" referent="20">
         <Properties>
           <string name="Name">HandFX</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -6528,7 +8133,1409 @@ end)
 ]]></ProtectedString>
         </Properties>
       </Item>
-      <Item class="LocalScript" referent="17">
+      <Item class="LocalScript" referent="21">
+        <Properties>
+          <string name="Name">Locomotion</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	Locomotion  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	A realistic idle, walk and run for every R15 character on this player's screen, in place of
+	Roblox's default (cartoony) idle / walk / run animations. Coded joint by joint, no animation
+	assets:
+	  * The legs come from Gait (ReplicatedStorage): feet that plant and never slide, steps that
+	    match the speed you actually move at (walk -> jog -> run), a settle step when you stop,
+	    the feet shuffling round when you turn on the spot.
+	  * Standing: slow breathing, your weight shifting from one leg to the other now and then
+	    (that hip drops, the knee of the other leg softens, the shoulders tilt against it), the
+	    head looking around, arms hanging loose with soft elbows, a tiny balance sway.
+	  * Moving: the arms swing against the legs (further, and bent more, the faster you go), the
+	    chest turns against the hips, the head stays level and looking ahead, you lean into
+	    turns, and when you stop the body carries on forward a little and rocks back upright.
+	Roblox's own jump, fall, climb, swim and sit animations still play: this fades out while
+	you're off your feet and back in when you land. Emotes, and anything an attack plays at
+	Action priority, take over from it while they play. Tools keep their arm pose.
+	The Great Ape is animated by OozaruFX instead. Walk / run style: the HUMAN table below.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local Gait = require(ReplicatedStorage:WaitForChild("Gait"))
+local PoseLayers = require(ReplicatedStorage:WaitForChild("PoseLayers"))
+
+-- how the legs move (see Gait for what each one does)
+local HUMAN = {
+	Stride = 1.0,
+	Yaw = math.rad(9),
+	Width = 1.05,
+	ToeOut = math.rad(8),
+	KneeOut = 0.04,
+	Sway = 0.03,
+	Bob = { 0.022, 0.05 },
+	SettleTime = 0.32,
+}
+
+local JOINTS = {
+	"Root", "Waist", "Neck",
+	"LeftShoulder", "LeftElbow", "LeftWrist", "RightShoulder", "RightElbow", "RightWrist",
+	"LeftHip", "LeftKnee", "LeftAnkle", "RightHip", "RightKnee", "RightAnkle",
+}
+local LEGS = { "Root", "LeftHip", "LeftKnee", "LeftAnkle", "RightHip", "RightKnee", "RightAnkle" }
+local RIGHT_ARM = { RightShoulder = true, RightElbow = true, RightWrist = true }
+local FAR = 110 -- studs from the camera: further away the pose is worked out every third frame
+local OOZARU_TAG = "DW_Oozaru"
+
+-- Roblox's own animations this replaces (the Animate script's idle / walk / run) ...
+local REPLACED = { idle = true, walk = true, run = true }
+-- ... and the ones it leaves alone: being off your feet
+local STATES = { jump = true, fall = true, climb = true, sit = true, swim = true, swimidle = true }
+-- emotes take over the whole body while they play; tools take the right arm
+local EMOTES = { wave = true, point = true, dance = true, dance2 = true, dance3 = true, laugh = true, cheer = true }
+local TOOLS = { toolnone = true, toolslash = true, toollunge = true }
+
+local State = Enum.HumanoidStateType
+local ON_FEET = {
+	[State.Running] = true,
+	[State.RunningNoPhysics] = true,
+	[State.Landed] = true,
+	[State.GettingUp] = true,
+	[State.None] = true,
+}
+local IN_AIR = { [State.Jumping] = true, [State.Freefall] = true }
+
+local rng = Random.new()
+
+local function smooth(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+local function lerp(a: number, b: number, t: number): number
+	return a + (b - a) * t
+end
+
+local function ease(current: number, target: number, rate: number, dt: number): number
+	return current + (target - current) * (1 - math.exp(-dt * rate))
+end
+
+-- a damped spring, for things with weight (the arms, the body's lean)
+local function spring(s, target: number, omega: number, zeta: number, dt: number): number
+	local steps = math.max(1, math.ceil(dt / (1 / 120)))
+	local h = dt / steps
+	for _ = 1, steps do
+		local a = omega * omega * (target - s.X) - 2 * zeta * omega * s.V
+		s.V += a * h
+		s.X += s.V * h
+	end
+	return s.X
+end
+
+local function newSpring()
+	return { X = 0, V = 0 }
+end
+
+----------------------------------------------------------------------------------------
+-- the character's joints
+----------------------------------------------------------------------------------------
+-- Characters now spawn with AnimationConstraints (Roblox's joint upgrade); older ones have
+-- Motor6Ds. Both put the child at parent * C0 * Transform * C1:Inverse().
+local function findJoints(character: Model)
+	local found = {}
+	for _, d in character:GetDescendants() do
+		if (d:IsA("AnimationConstraint") or d:IsA("Motor6D")) and table.find(JOINTS, d.Name) then
+			if not found[d.Name] or d:IsA("AnimationConstraint") then
+				found[d.Name] = d
+			end
+		end
+	end
+	return found
+end
+
+local function partsOf(joint): (BasePart?, BasePart?, CFrame, CFrame)
+	if joint:IsA("Motor6D") then
+		return joint.Part0, joint.Part1, joint.C0, joint.C1
+	end
+	local a0, a1 = joint.Attachment0, joint.Attachment1
+	if a0 and a1 and a0.Parent and a1.Parent then
+		return a0.Parent :: BasePart, a1.Parent :: BasePart, a0.CFrame, a1.CFrame
+	end
+	return nil, nil, CFrame.identity, CFrame.identity
+end
+
+-- the rig as Gait needs it, or nil if this isn't an R15 body
+local function buildRig(root: BasePart, humanoid: Humanoid, found)
+	for _, name in LEGS do
+		if not found[name] then
+			return nil
+		end
+	end
+	local spec, byChild = {}, {}
+	for name, joint in found do
+		local p0, p1, c0, c1 = partsOf(joint)
+		if p0 and p1 then
+			spec[name] = { C0 = c0, C1 = c1, Instance = joint, Part0 = p0 }
+			byChild[p1] = name
+		end
+	end
+	for name, j in spec do
+		j.Parent = byChild[j.Part0]
+	end
+	if not spec.Root or spec.Root.Part0 ~= root then
+		return nil
+	end
+	for name, j in spec do
+		if name ~= "Root" and not j.Parent then
+			spec[name] = nil -- (hangs off something we don't know: leave it alone)
+		end
+	end
+	for _, name in LEGS do
+		if not spec[name] then
+			return nil
+		end
+	end
+	local rig = Gait.Rig.new(spec)
+	local gait = Gait.new(rig, {
+		Pelvis = "Root",
+		Legs = {
+			Left = { Hip = "LeftHip", Knee = "LeftKnee", Ankle = "LeftAnkle" },
+			Right = { Hip = "RightHip", Knee = "RightKnee", Ankle = "RightAnkle" },
+		},
+		GroundY = -(humanoid.HipHeight + root.Size.Y / 2),
+		Params = HUMAN,
+	})
+	return rig, gait
+end
+
+----------------------------------------------------------------------------------------
+-- each character
+----------------------------------------------------------------------------------------
+local states = {} -- [character] = state
+local retryAt = {} -- [character] = when to look at a body that wasn't R15 again
+
+local function stopWatching(st)
+	for _, c in st.Connections do
+		c:Disconnect()
+	end
+	table.clear(st.Connections)
+end
+
+-- Roblox's idle / walk / run are stopped as they start; emotes and tool poses are noted
+local function watchAnimator(st)
+	local animator = st.Humanoid:FindFirstChildOfClass("Animator")
+	if not animator or st.Animator == animator then
+		return
+	end
+	st.Animator = animator
+	local function onTrack(track: AnimationTrack)
+		local anim = track.Animation
+		local holder = anim and anim.Parent
+		local kind = (holder and holder.Parent and holder.Parent.Name == "Animate") and holder.Name or nil
+		if kind and REPLACED[kind] then
+			if not st.Broken then
+				track:Stop(0)
+			end
+			return
+		end
+		if kind and STATES[kind] then
+			return
+		end
+		local priority = track.Priority
+		local takesOver = (kind and EMOTES[kind])
+			or (priority ~= Enum.AnimationPriority.Core and priority.Value >= Enum.AnimationPriority.Action.Value)
+		local set = (takesOver and st.Override) or ((kind and TOOLS[kind]) and st.ArmOverride) or nil
+		if set then
+			set[track] = true
+			table.insert(st.Connections, track.Stopped:Connect(function()
+				set[track] = nil
+			end))
+		end
+	end
+	table.insert(st.Connections, animator.AnimationPlayed:Connect(onTrack))
+	for _, track in animator:GetPlayingAnimationTracks() do
+		onTrack(track)
+	end
+end
+
+local function newState(character: Model, root: BasePart, humanoid: Humanoid)
+	local found = findJoints(character)
+	local rig, gait = buildRig(root, humanoid, found)
+	if not rig then
+		return nil
+	end
+	local now = os.clock()
+	local st = {
+		Character = character,
+		Root = root,
+		Humanoid = humanoid,
+		Rig = rig,
+		Gait = gait,
+		HipHeight = humanoid.HipHeight,
+		Weight = 0,
+		Override = {},
+		ArmOverride = {},
+		Connections = {},
+		Lean = newSpring(), -- forward lean (radians, + = forward)
+		SideLean = newSpring(), -- leaning into turns (+ = to the left)
+		ArmL = newSpring(), -- arm swing (radians, + = forward)
+		ArmR = newSpring(),
+		LookYaw = newSpring(),
+		LookPitch = newSpring(),
+		LookAt = Vector2.zero,
+		NextLook = now + rng:NextNumber(1, 3),
+		Shift = 0, -- -1 = weight on the left leg, +1 = on the right
+		ShiftTo = 0,
+		NextShift = now + rng:NextNumber(2, 5),
+		Seed = rng:NextNumber(0, 100),
+		Skip = 0,
+		SkipDt = 0,
+		Errors = 0,
+		NextCheck = now + 1,
+	}
+	watchAnimator(st)
+	return st
+end
+
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+rayParams.IgnoreWater = true
+pcall(function()
+	rayParams.RespectCanCollide = true
+end)
+
+local function groundAt(pos: Vector3): number?
+	local hit = Workspace:Raycast(pos + Vector3.new(0, 2.5, 0), Vector3.new(0, -6, 0), rayParams)
+	return hit and hit.Position.Y or nil
+end
+
+-- the walk and idle for one character, into st.Rig.Out
+local function pose(st, dt: number, now: number, grounded: boolean)
+	local gait, rig = st.Gait, st.Rig
+	local P = gait.P
+	local L = gait.HipHeight
+	local walk = gait.WalkWeight
+	local idle = 1 - walk
+	local run = gait.RunBlend
+	local fwd = math.clamp(gait.Forwardness or 1, 0, 1)
+
+	-- standing: weight shifts from leg to leg, the head looks around
+	if now > st.NextShift then
+		local options = { -0.9, -0.55, 0, 0.55, 0.9 }
+		st.ShiftTo = options[rng:NextInteger(1, #options)]
+		st.NextShift = now + rng:NextNumber(4, 9)
+	end
+	st.Shift = ease(st.Shift, st.ShiftTo * idle, 1.8, dt)
+	local shift = st.Shift
+	if now > st.NextLook then
+		local far = rng:NextNumber() < 0.3
+		st.LookAt = Vector2.new(rng:NextNumber(-1, 1) * (far and 0.7 or 0.28), rng:NextNumber(-0.12, 0.08))
+		st.NextLook = now + rng:NextNumber(1.8, 5.5)
+	end
+	local breath = math.sin(now * 2 * math.pi / 4.2 + st.Seed)
+	local balance = math.sin(now * 0.9 + st.Seed) * 0.006 + math.sin(now * 0.37 + st.Seed * 2) * 0.005
+
+	-- leaning: into turns, and the body carrying on forward when you stop
+	for _, e in gait.Events do
+		if e.Kind == "Stop" then
+			st.Lean.V += 1.9 * math.clamp(e.Speed / 16, 0.25, 1.3)
+		elseif e.Kind == "Start" then
+			st.Lean.V += 0.9
+		elseif e.Kind == "Land" then
+			st.Lean.V += 0.6 * (e.Strength or 1)
+		end
+	end
+	local lean = spring(st.Lean, 0, 7, 0.45, dt)
+	local turnLean = math.clamp(gait.YawRate * gait.Speed / 196.2 * 0.7, -0.22, 0.22) * walk
+	local sideLean = spring(st.SideLean, turnLean, 9, 0.8, dt)
+
+	-- the hips (Gait adds its own walking motion to this)
+	local extra = {
+		Offset = Vector3.new(shift * 0.07 * L, -math.abs(shift) * 0.03 * L, -lean * 0.22 * L),
+		Turn = CFrame.Angles(-lean * 0.3 + balance, shift * 0.05, shift * 0.075 + sideLean),
+	}
+	gait:Step(dt, st.Root.CFrame, st.Root.AssemblyLinearVelocity, grounded, groundAt, extra)
+
+	-- the walk's rhythm, the same numbers Gait moves the hips with
+	local cyc = 2 * math.pi * (gait.Phase + 0.05)
+	local hipYaw = -math.sin(cyc) * P.Yaw * walk
+	local hipRoll = math.sin(cyc) * P.Roll * walk * (1 - run * 0.4)
+	local hipPitch = lerp(P.Pitch[1], P.Pitch[2], run) * walk * fwd
+
+	-- spine: leaning forward the faster you go, the chest turning against the hips and
+	-- keeping the shoulders level, breathing when still
+	local chestPitch = -(0.025 + 0.07 * run) * walk * fwd - lean * 0.7 + breath * 0.014 * idle
+	local chestYaw = math.sin(cyc) * math.rad(13) * walk * (1 - 0.35 * run) - hipYaw * 0.3
+	local chestRoll = -shift * 0.1 - hipRoll * 0.85 - sideLean * 0.3
+	rig:Write("Waist", rig:Local("Waist", CFrame.Angles(chestPitch, chestYaw, chestRoll)))
+
+	-- head: level, looking where you're going (and into turns); looking around when still
+	local lookYaw = spring(st.LookYaw, st.LookAt.X * idle + math.clamp(gait.YawRate * 0.09, -0.4, 0.4) * walk, 7, 0.85, dt)
+	local lookPitch = spring(st.LookPitch, st.LookAt.Y * idle, 7, 0.85, dt)
+	local neckPitch = -(chestPitch - lean * 0.3 - hipPitch) * 0.75 + lookPitch - 0.03 - breath * 0.006 * idle
+	local neckYaw = -(chestYaw + hipYaw) * 0.9 + lookYaw - shift * 0.04
+	local neckRoll = -(chestRoll + shift * 0.075 + hipRoll + sideLean) * 0.6
+	rig:Write("Neck", rig:Local("Neck", CFrame.Angles(neckPitch, neckYaw, neckRoll)))
+
+	-- arms: against the legs while moving (the right arm forward as the left foot does),
+	-- hanging loose when still. They swing on springs so they carry on when you stop.
+	local omega = lerp(20, 30, run)
+	-- (the springs lag behind a quick swing: aim that much ahead, and a little bigger)
+	local r = 2 * math.pi * (gait.Rate or 0) * walk / omega
+	local lag = math.atan2(1.4 * r, 1 - r * r)
+	local gain = math.clamp(math.sqrt((1 - r * r) ^ 2 + (1.4 * r) ^ 2), 1, 2.5)
+	-- (the right arm is furthest forward as the left foot lands)
+	local swing = math.sin(2 * math.pi * (gait.Phase - (gait.SwingShare or 0.4) + 0.25) + lag)
+	local amp = lerp(0.3, 0.52, run) * walk * lerp(0.35, 1, fwd) * gain
+	local carry = -(0.03 + 0.1 * run) * walk -- (arms swing a little further back than forward)
+	local hang = 0.04 + breath * 0.012 * idle
+	local armR = spring(st.ArmR, swing * amp + carry + hang * idle, omega, 0.7, dt)
+	local armL = spring(st.ArmL, -swing * amp + carry + hang * idle, omega, 0.7, dt)
+	local out = lerp(0.06, 0.03, walk) + 0.03 * run
+	for _, side in { "Left", "Right" } do
+		local s = (side == "Left") and -1 or 1
+		local a = (side == "Left") and armL or armR
+		local forward = math.max(a, 0)
+		-- elbows: soft when still, bending more as the arm comes forward, ~90 degrees running
+		local elbow = lerp(0.17, lerp(0.2 + forward * 0.45, 1.2 + forward * 0.4, run), walk)
+		rig:Write(side .. "Shoulder", rig:Local(side .. "Shoulder", CFrame.Angles(a, s * 0.14 * run * walk, s * out - s * chestRoll * 0.5)))
+		rig:Write(side .. "Elbow", rig:Local(side .. "Elbow", CFrame.Angles(elbow, 0, 0)))
+		rig:Write(side .. "Wrist", rig:Local(side .. "Wrist", CFrame.Angles(lerp(0.08, -0.05, walk), 0, 0)))
+	end
+end
+
+-- puts rig.Out on the joints, blended with whatever Roblox's animations left there
+local function apply(st, weight: number)
+	local rig = st.Rig
+	local armBusy = next(st.ArmOverride) ~= nil
+	for name, t in rig.Out do
+		if not (armBusy and RIGHT_ARM[name]) then
+			local inst = rig.Joints[name].Instance
+			if inst and inst.Parent then
+				if weight >= 0.999 then
+					inst.Transform = t
+				else
+					inst.Transform = inst.Transform:Lerp(t, weight)
+				end
+			end
+		end
+	end
+end
+
+local function stepCharacter(st, dt: number, now: number, near: boolean)
+	local humanoid, gait = st.Humanoid, st.Gait
+	local hs = humanoid:GetState()
+	local grounded = ON_FEET[hs] == true
+	local airborne = IN_AIR[hs] == true
+	local busy = next(st.Override) ~= nil
+	local want = (grounded and not busy and not humanoid.Sit) and 1 or 0
+	st.Weight = ease(st.Weight, want, (want > st.Weight) and 7 or 14, dt)
+	if not grounded and not airborne then
+		-- sitting, climbing, swimming, ragdolled...: Roblox's animations have the body; the
+		-- feet start fresh when you're back on them
+		for _, leg in gait.Legs do
+			leg.Pos = nil
+		end
+		return
+	end
+	-- (far away: worked out every third frame, put back on every frame)
+	st.SkipDt += dt
+	st.Skip -= 1
+	if near or st.Skip <= 0 or not next(st.Rig.Out) then
+		pose(st, math.min(st.SkipDt, 0.1), now, grounded)
+		st.SkipDt = 0
+		st.Skip = near and 0 or 3
+	end
+	local w = smooth(st.Weight)
+	if w > 0.002 then
+		apply(st, w)
+	end
+end
+
+-- every frame, in the order PoseLayers keeps (before PowerFX's poses go on top)
+PoseLayers.Add(10, "Locomotion", function(dt: number)
+	dt = math.clamp(dt, 0, 0.1)
+	local now = os.clock()
+	local camera = Workspace.CurrentCamera
+	local camPos = camera and camera.CFrame.Position
+	local seen = {}
+	local exclude = {}
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		if character then
+			table.insert(exclude, character)
+		end
+	end
+	rayParams.FilterDescendantsInstances = exclude
+
+	for _, character in exclude do
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if root and humanoid and humanoid.RigType == Enum.HumanoidRigType.R15 and not character:GetAttribute("Oozaru") then
+			seen[character] = true
+			local st = states[character]
+			-- joints swapped out (the joint upgrade, a respawned limb) or the body resized:
+			-- build it again
+			if st and now > st.NextCheck then
+				st.NextCheck = now + 1
+				local stale = st.Root ~= root or st.HipHeight ~= humanoid.HipHeight
+				for _, j in st.Rig.Joints do
+					if not (j.Instance and j.Instance.Parent) then
+						stale = true
+					end
+				end
+				if stale then
+					stopWatching(st)
+					states[character] = nil
+					st = nil
+				else
+					watchAnimator(st)
+				end
+			end
+			if not st and now >= (retryAt[character] or 0) then
+				st = newState(character, root, humanoid)
+				states[character] = st
+				retryAt[character] = (not st) and now + 2 or nil
+			end
+			if st and not st.Broken then
+				local near = not camPos or (root.Position - camPos).Magnitude < FAR
+				local ok, err = pcall(stepCharacter, st, dt, now, near)
+				if not ok then
+					st.Errors += 1
+					if st.Errors >= 3 then
+						-- give the body back to Roblox's own animations rather than freeze it
+						st.Broken = true
+						warn("[Locomotion] stopped animating " .. character.Name .. ": " .. tostring(err))
+					end
+				end
+			end
+		end
+	end
+	for character, st in states do
+		if not seen[character] then
+			stopWatching(st)
+			states[character] = nil
+		end
+	end
+	for character in retryAt do
+		if not character.Parent then
+			retryAt[character] = nil
+		end
+	end
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="22">
+        <Properties>
+          <string name="Name">OozaruFX</string>
+          <ProtectedString name="Source"><![CDATA[--[[
+	OozaruFX  (LocalScript — lives in StarterPlayer > StarterPlayerScripts)
+
+	Brings the Great Ape to life on this player's screen (every giant, not just yours), coded
+	bone by bone, no animation assets:
+	  * The entrance: it comes in already roaring: leaning back, head thrown up, jaw wide open,
+	    arms flung out with the fingers curled in rage (clawed, not fists), toes gripping the
+	    ground, trembling, rings of sound pounding out of its mouth and dust blasting off the
+	    ground ... then it drops forward into its hunch: back rounded, head up, knees bent, feet
+	    wide apart, arms hanging heavy.
+	  * Standing: deep, slow breaths (a puff of breath on each one), its weight rolling from
+	    foot to foot, looking around (at anyone close by, if there is someone), now and then a
+	    snarl and a shake of the head. The tail sways on its own.
+	  * Walking: heavy steps from Gait: each one lands with a dip of the whole body, a thud, a
+	    ring of dust and the ground shaking for anyone near. The hips sway, the shoulders roll,
+	    the arms swing, the tail swings behind. The steps are worked out from how fast it
+	    really moves, so the feet never slide.
+	  * Stopping: the swinging foot comes down, the body carries on forward and rocks back, it
+	    lets out a big breath, and settles.
+	  * Turning: it can't spin on the spot. It turns at a giant's pace (PowerConfig.
+	    OozaruTurnSpeed), slowing while it turns hard, and shuffles its feet round.
+	For you, while you're the giant: the screen goes black and cuts in on the roar; everything
+	is tinted red with a dark red edge that throbs with its breathing; your UI is hidden; the
+	camera pulls back to take it all in. A few seconds before it wears off your vision starts
+	to swim.
+	Settings: ReplicatedStorage > PowerConfig (Oozaru...).
+]]
+
+local CollectionService = game:GetService("CollectionService")
+local Lighting = game:GetService("Lighting")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local Workspace = game:GetService("Workspace")
+
+local Gait = require(ReplicatedStorage:WaitForChild("Gait"))
+local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
+
+local player = Players.LocalPlayer
+local TAG = "DW_Oozaru"
+local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
+local INTRO = PowerConfig.OozaruIntro or 4.4
+local CUT_IN = 0.25 -- seconds after the giant appears that your screen cuts in on it
+local rng = Random.new()
+
+-- how the giant walks (see Gait for what each one does)
+local APE = {
+	Stride = 1.0, -- shorter, heavier steps than a person's
+	Width = 1.3, -- feet wide apart
+	ToeOut = math.rad(16),
+	SwingShare = { 0.36, 0.6 }, -- (a long time on each foot)
+	Lift = { 0.09, 0.2 },
+	Bob = { 0.022, 0.03 },
+	HeavyDrop = 0.04, -- the whole body dips as each foot lands ...
+	ImpactTime = 0.5, -- ... and takes this long to come back up
+	Sway = 0.065, -- a rolling waddle from foot to foot
+	Yaw = math.rad(8),
+	Roll = math.rad(5),
+	Pitch = { math.rad(3), math.rad(6) },
+	KneeOut = 0.3, -- bow-legged
+	ToeOff = math.rad(16), -- flat-footed: not much heel-toe roll
+	HeelStrike = math.rad(5),
+	SettleTime = 0.7, -- slow, heavy steps to settle or turn
+	SettleDistance = 0.12,
+	TurnTolerance = math.rad(24),
+	FootForward = 0.075, -- (to the ball of the foot, where its toes bend)
+	FootBack = 0.05,
+	MaxDrop = 0.15,
+}
+
+-- fingers: how far each joint curls (degrees) from the knuckle out, and how far they fan
+local HANDS = {
+	Loose = { 8, 10, 6 },
+	Relaxed = { 16, 22, 14 },
+	Rage = { 36, 64, 46 }, -- clawed, not a fist
+}
+local FINGERS = { FORE = -8, MIDDLE = 0, MEDICINAL = 7, LITTLE = 14 } -- (fan, degrees)
+local TOES = { "MIDDLE", "FORE", "MEDICINAL", "LITTLE", "THUMB" }
+
+local function smooth(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+local function lerp(a: number, b: number, t: number): number
+	return a + (b - a) * t
+end
+
+local function ease(current: number, target: number, rate: number, dt: number): number
+	return current + (target - current) * (1 - math.exp(-dt * rate))
+end
+
+local function spring(s, target: number, omega: number, zeta: number, dt: number): number
+	local steps = math.max(1, math.ceil(dt / (1 / 120)))
+	local h = dt / steps
+	for _ = 1, steps do
+		local a = omega * omega * (target - s.X) - 2 * zeta * omega * s.V
+		s.V += a * h
+		s.X += s.V * h
+	end
+	return s.X
+end
+
+local function newSpring(x: number?)
+	return { X = x or 0, V = 0 }
+end
+
+local function flatYaw(v: Vector3): number
+	return math.atan2(-v.X, -v.Z)
+end
+
+----------------------------------------------------------------------------------------
+-- effects in the world (seen by everyone)
+----------------------------------------------------------------------------------------
+local folder = Instance.new("Folder")
+folder.Name = "OozaruFX"
+folder.Parent = Workspace
+
+local effects = {} -- { Update = function(dt) -> keep } running each frame
+
+local function fxPart(name: string, shape: Enum.PartType, colour: Color3, material: Enum.Material): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Shape = shape
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanTouch = false
+	p.CanQuery = false
+	p.CastShadow = false
+	p.Color = colour
+	p.Material = material
+	p.Transparency = 1
+	p.Parent = folder
+	return p
+end
+
+-- a ring of sound: a shimmering bubble bursting out of the mouth, rushing forward and fading
+local function soundRing(at: CFrame, size: number)
+	local p = fxPart("RoarRing", Enum.PartType.Ball, Color3.fromRGB(255, 196, 170), Enum.Material.ForceField)
+	local t = 0
+	table.insert(effects, function(dt)
+		t += dt
+		local k = math.clamp(t / 0.7, 0, 1)
+		local grow = 1 - (1 - k) ^ 3
+		local r = size * (0.35 + 2.4 * grow)
+		p.Size = Vector3.new(r, r, r * 0.55)
+		p.CFrame = at * CFrame.new(0, 0, -size * 2.6 * grow)
+		p.Transparency = 0.05 + 0.95 * k
+		if k >= 1 then
+			p:Destroy()
+			return false
+		end
+		return true
+	end)
+end
+
+-- a ring of dust blowing out along the ground
+local function dustRing(position: Vector3, radius: number, time: number, strength: number)
+	local p = fxPart("DustRing", Enum.PartType.Cylinder, Color3.fromRGB(176, 158, 128), Enum.Material.SmoothPlastic)
+	local t = 0
+	table.insert(effects, function(dt)
+		t += dt
+		local k = math.clamp(t / time, 0, 1)
+		local grow = 1 - (1 - k) ^ 2.4
+		local r = radius * (0.25 + 0.75 * grow)
+		p.Size = Vector3.new(radius * 0.08 * (1 - k) + 0.05, r * 2, r * 2)
+		p.CFrame = CFrame.new(position + Vector3.new(0, radius * 0.03, 0)) * CFrame.Angles(0, 0, math.pi / 2)
+		p.Transparency = 1 - strength * 0.55 * (1 - k) ^ 1.5
+		if k >= 1 then
+			p:Destroy()
+			return false
+		end
+		return true
+	end)
+end
+
+-- puffs of smoke / dust / breath: one emitter, moved to wherever it's needed
+local puffHolder = fxPart("Puffs", Enum.PartType.Block, Color3.new(1, 1, 1), Enum.Material.SmoothPlastic)
+puffHolder.Size = Vector3.new(0.2, 0.2, 0.2)
+local puffAt = Instance.new("Attachment")
+puffAt.Parent = puffHolder
+local puffs = Instance.new("ParticleEmitter")
+puffs.Texture = SMOKE
+puffs.Rate = 0
+puffs.LightEmission = 0
+puffs.Parent = puffAt
+local function puff(position: Vector3, count: number, size: number, colour: Color3, speed: number, direction: Vector3?, life: number?)
+	puffHolder.CFrame = CFrame.lookAt(position, position + (direction or Vector3.yAxis))
+	puffs.Color = ColorSequence.new(colour)
+	puffs.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, size * 0.5), NumberSequenceKeypoint.new(1, size * 1.6) })
+	puffs.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1) })
+	puffs.Lifetime = NumberRange.new((life or 1.2) * 0.7, life or 1.2)
+	puffs.Speed = NumberRange.new(speed * 0.6, speed)
+	puffs.SpreadAngle = Vector2.new(direction and 18 or 180, direction and 18 or 180)
+	puffs.EmissionDirection = Enum.NormalId.Front
+	puffs.Drag = 2
+	puffs.Rotation = NumberRange.new(0, 360)
+	puffs.RotSpeed = NumberRange.new(-40, 40)
+	puffs:Emit(count)
+end
+
+local function sound(id: string, parent: Instance, volume: number, speed: number, range: number)
+	if not id or id == "" then
+		return
+	end
+	local s = Instance.new("Sound")
+	s.SoundId = id
+	s.Volume = volume
+	s.PlaybackSpeed = speed
+	s.RollOffMaxDistance = range
+	s.RollOffMinDistance = range * 0.15
+	s.Parent = parent
+	s:Play()
+	task.delay(10, function()
+		s:Destroy()
+	end)
+end
+
+-- the camera shaking (stomps and roars near you)
+local shake = 0
+local function addShake(amount: number)
+	shake = math.min(shake + amount, 2.5)
+end
+local function shakeFrom(position: Vector3, strength: number, reach: number)
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+	local d = (camera.CFrame.Position - position).Magnitude
+	local k = 1 - math.clamp(d / reach, 0, 1)
+	if k > 0 then
+		addShake(strength * k * k)
+	end
+end
+pcall(function()
+	RunService:BindToRenderStep("DW_OozaruShake", Enum.RenderPriority.Camera.Value + 1, function(dt)
+		if shake > 0.002 then
+			local camera = Workspace.CurrentCamera
+			local t = os.clock()
+			local a = shake
+			camera.CFrame = camera.CFrame
+				* CFrame.new(math.noise(t * 23, 1.3) * a * 0.5, math.noise(t * 23, 2.7) * a * 0.5, 0)
+				* CFrame.Angles(math.noise(t * 19, 3.1) * a * 0.012, math.noise(t * 19, 4.9) * a * 0.012, math.noise(t * 17, 5.3) * a * 0.025)
+			shake = math.max(0, shake - dt * (1.2 + shake * 1.8))
+		end
+	end)
+end)
+
+----------------------------------------------------------------------------------------
+-- each giant
+----------------------------------------------------------------------------------------
+local function partOfBone(bone: Instance): BasePart?
+	local node = bone.Parent
+	while node and not node:IsA("BasePart") do
+		node = node.Parent
+	end
+	return node :: BasePart?
+end
+
+local apes = {} -- [model] = state
+
+local function newApe(model: Model)
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	local waist = model:FindFirstChild("WAIST", true)
+	if not (root and humanoid and waist and waist:IsA("Bone")) then
+		return nil
+	end
+	local holder = partOfBone(waist)
+	if not holder then
+		return nil
+	end
+	-- the skeleton, from the bones as they stand
+	local joints = {}
+	for _, d in holder:GetDescendants() do
+		if d:IsA("Bone") then
+			local parent = d.Parent
+			joints[d.Name] = {
+				Parent = (parent and parent:IsA("Bone")) and parent.Name or nil,
+				C0 = d.CFrame,
+				C1 = CFrame.identity,
+				Instance = d,
+			}
+		end
+	end
+	for _, name in { "THIGH_L", "CLANK_L", "TOE1_L", "THIGH_R", "CLANK_R", "TOE1_R", "SPINE1", "HEAD" } do
+		if not joints[name] then
+			return nil
+		end
+	end
+	local rig = Gait.Rig.new(joints, root.CFrame:ToObjectSpace(holder.CFrame))
+	local gait = Gait.new(rig, {
+		Pelvis = "WAIST",
+		Legs = {
+			Left = { Hip = "THIGH_L", Knee = "CLANK_L", Ankle = "TOE1_L" },
+			Right = { Hip = "THIGH_R", Knee = "CLANK_R", Ankle = "TOE1_R" },
+		},
+		GroundY = -(humanoid.HipHeight + root.Size.Y / 2),
+		Params = APE,
+	})
+	local s = model:GetAttribute("OozaruScale") or 3.2
+	-- where the mouth is, on the jaw (for the roar rings and breath)
+	local mouth = Vector3.zero
+	if joints.CHIN then
+		local chinRest = rig.Rest.CHIN
+		mouth = chinRest:PointToObjectSpace(chinRest.Position + Vector3.new(0, -0.08 * s, -0.55 * s))
+	end
+	local tail = {}
+	for i = 1, 30 do
+		local name = "TAIL" .. i
+		if joints[name] then
+			table.insert(tail, { Name = name, Yaw = newSpring(), Pitch = newSpring() })
+		end
+	end
+	local now = os.clock()
+	return {
+		Model = model,
+		Root = root,
+		Humanoid = humanoid,
+		Rig = rig,
+		Gait = gait,
+		Scale = s,
+		Mouth = mouth,
+		Tail = tail,
+		Lean = newSpring(), -- forward lean (+ = forward): the body carrying on when it stops
+		ArmL = newSpring(),
+		ArmR = newSpring(),
+		LookYaw = newSpring(),
+		LookPitch = newSpring(),
+		LookAt = Vector2.zero,
+		NextLook = now + rng:NextNumber(1.5, 3),
+		Breath = rng:NextNumber(0, 6),
+		LastBreath = 0,
+		SnarlAt = -10,
+		NextSnarl = now + rng:NextNumber(7, 12),
+		HaltAt = -10, -- when it last stopped walking
+		Rage = 0,
+		LastRing = 0,
+		RoarSounded = false,
+		Dust = false,
+		Seed = rng:NextNumber(0, 100),
+		TurnRate = 0,
+		Throttle = 0,
+		Dead = 0,
+	}
+end
+
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+rayParams.IgnoreWater = true
+pcall(function()
+	rayParams.RespectCanCollide = true
+end)
+
+local function groundFinder(size: number)
+	return function(pos: Vector3): number?
+		local hit = Workspace:Raycast(pos + Vector3.new(0, size * 0.6, 0), Vector3.new(0, -size * 1.6, 0), rayParams)
+		return hit and hit.Position.Y or nil
+	end
+end
+
+-- which way a bone's "forward" (the model's -Z at rest) points now, in the world
+local function forwardOf(ape, frames, name: string): Vector3
+	local rest = ape.Rig.Rest[name]
+	local posed = frames[name]
+	if not (rest and posed) then
+		return ape.Root.CFrame.LookVector
+	end
+	return (ape.Root.CFrame * posed):VectorToWorldSpace(rest:VectorToObjectSpace(Vector3.new(0, 0, -1)))
+end
+
+local function turn(rig, name: string, x: number, y: number, z: number)
+	if rig.Joints[name] then
+		rig:Write(name, rig:Local(name, CFrame.Angles(x, y, z)))
+	end
+end
+
+-- the closest person (not a giant) in front of it, to look at
+local function someoneNear(ape): Vector3?
+	local best, bestD = nil, 26 * ape.Scale
+	local root = ape.Root
+	for _, p in Players:GetPlayers() do
+		local c = p.Character
+		local r = c and c:FindFirstChild("HumanoidRootPart")
+		if r and c ~= ape.Model and not c:GetAttribute("Oozaru") then
+			local rel = root.CFrame:PointToObjectSpace(r.Position)
+			local d = rel.Magnitude
+			if d < bestD and rel.Z < 0 then
+				best, bestD = r.Position, d
+			end
+		end
+	end
+	return best
+end
+
+local function poseApe(ape, dt: number, now: number)
+	local rig, gait, model, root = ape.Rig, ape.Gait, ape.Model, ape.Root
+	local s = ape.Scale
+	local L = gait.HipHeight
+	local age = Workspace:GetServerTimeNow() - (model:GetAttribute("OozaruAt") or -100)
+	local state = model:GetAttribute("PowerState")
+	local dead = ape.Humanoid.Health <= 0
+	ape.Dead = ease(ape.Dead, dead and 1 or 0, 3, dt)
+
+	-- the entrance: roar = 1 while it's roaring at full; slam = the drop into the hunch
+	local roar = 0
+	if age < 0.5 then
+		roar = 0.35 + 0.65 * smooth(age / 0.5)
+	elseif age < 3.0 then
+		roar = 1
+	elseif age < 3.9 then
+		roar = 1 - smooth((age - 3.0) / 0.9)
+	end
+	local slam = (age > 3.25 and age < 4.35) and math.sin(math.pi * (age - 3.25) / 1.1) or 0
+	local tremble = roar * ((age > 0.4 and age < 3.1) and 1 or 0)
+	local shrinking = (state == "Shrinking") and 1 or 0
+	ape.Shrink = ease(ape.Shrink or 0, shrinking, 5, dt)
+
+	-- roar effects: the sound, rings out of the mouth, dust off the ground, the ground shaking
+	local frames = nil
+	if roar > 0.75 and age < 3.0 then
+		frames = rig:Frames(rig.Out)
+		local mouthAt = root.CFrame * (frames.CHIN or frames.HEAD) * ape.Mouth
+		local headFwd = forwardOf(ape, frames, "HEAD")
+		if not ape.RoarSounded and age > 0.2 then
+			ape.RoarSounded = true
+			local headBone = rig.Joints.HEAD and rig.Joints.HEAD.Instance
+			sound(PowerConfig.OozaruRoarSound, headBone or root, 3, 0.85, 120 * s)
+		end
+		if now - ape.LastRing > 0.2 then
+			ape.LastRing = now
+			soundRing(CFrame.lookAt(mouthAt, mouthAt + headFwd), 1.6 * s)
+		end
+		if not ape.Dust and age > 0.45 then
+			ape.Dust = true
+			local feet = root.Position + Vector3.new(0, gait.GroundY, 0)
+			dustRing(feet, 9 * s, 1.3, 1)
+			puff(feet, 30, 2.2 * s, Color3.fromRGB(170, 150, 120), 9 * s, nil, 1.6)
+		end
+		shakeFrom(mouthAt, 0.06 * roar, 60 * s)
+	end
+
+	-- standing: breathing, looking about, a snarl now and then
+	local walk = gait.WalkWeight
+	local idle = (1 - walk) * (1 - roar)
+	ape.Breath += dt * 2 * math.pi / lerp(3.6, 2.4, walk)
+	local breath = math.sin(ape.Breath)
+	local exhale = math.max(0, -math.cos(ape.Breath)) -- (mouth opens a little as it breathes out)
+	if math.floor(ape.Breath / (2 * math.pi)) ~= ape.LastBreath then
+		ape.LastBreath = math.floor(ape.Breath / (2 * math.pi))
+		if roar < 0.1 and not dead then
+			frames = frames or rig:Frames(rig.Out)
+			local mouthAt = root.CFrame * (frames.CHIN or frames.HEAD) * ape.Mouth
+			local headFwd = forwardOf(ape, frames, "HEAD")
+			puff(mouthAt, 3, 0.9 * s, Color3.fromRGB(240, 236, 228), 1.6 * s, (headFwd - Vector3.yAxis * 0.4).Unit, 1.4)
+		end
+	end
+	if now > ape.NextLook then
+		local far = rng:NextNumber() < 0.35
+		ape.LookAt = Vector2.new(rng:NextNumber(-1, 1) * (far and 0.55 or 0.22), rng:NextNumber(-0.1, 0.12))
+		ape.NextLook = now + rng:NextNumber(2.5, 6)
+	end
+	local look = ape.LookAt
+	local someone = someoneNear(ape)
+	if someone then
+		local rel = root.CFrame:PointToObjectSpace(someone)
+		local headY = L * 0.95
+		look = Vector2.new(
+			math.clamp(math.atan2(-rel.X, -rel.Z), -0.8, 0.8),
+			math.clamp(math.atan2(rel.Y - headY, math.sqrt(rel.X * rel.X + rel.Z * rel.Z)), -0.5, 0.3)
+		)
+	end
+	if now > ape.NextSnarl and idle > 0.8 then
+		ape.SnarlAt = now
+		ape.NextSnarl = now + rng:NextNumber(8, 15)
+	end
+	local sn = now - ape.SnarlAt
+	local snarl = (sn < 1.1) and math.sin(math.pi * sn / 1.1) or 0
+	local headShake = (sn < 1.1) and math.sin(sn * 26) * 0.09 * snarl or 0
+
+	-- stopping: the body carries on forward, rocks back, and it blows out a big breath
+	for _, e in gait.Events do
+		if e.Kind == "Stop" then
+			ape.Lean.V += 0.9 * math.clamp(e.Speed / math.max(PowerConfig.OozaruWalkSpeed, 1), 0.3, 1.2)
+			ape.HaltAt = now
+		elseif e.Kind == "Start" then
+			ape.Lean.V += 0.35
+		elseif e.Kind == "Footfall" then
+			local strength = e.Settle and 0.45 or 1
+			local at = e.Position
+			dustRing(at, 2.6 * s, 0.9, strength)
+			puff(at + Vector3.new(0, 0.2 * s, 0), math.floor(5 * strength + 0.5), 0.9 * s, Color3.fromRGB(170, 150, 120), 3.2 * s, nil, 1.1)
+			shakeFrom(at, 0.35 * strength, 42 * s)
+			local leg = gait.Legs[e.Side]
+			local footBone = leg and rig.Joints[leg.Names.Ankle] and rig.Joints[leg.Names.Ankle].Instance
+			sound(PowerConfig.OozaruStepSound, footBone or root, 1.6 * strength, 0.32 + rng:NextNumber(-0.03, 0.03), 70 * s)
+		elseif e.Kind == "Land" then
+			dustRing(root.Position + Vector3.new(0, gait.GroundY, 0), 6 * s, 1.1, 1)
+			shakeFrom(root.Position, 0.8, 60 * s)
+		end
+	end
+	local lean = spring(ape.Lean, 0, 4.2, 0.38, dt)
+	local h = now - ape.HaltAt
+	local halt = (h < 1.6) and math.sin(math.pi * math.clamp((h - 0.25) / 1.1, 0, 1)) or 0 -- the big breath out
+
+	-- how much rage is in the hands (the roar, a snarl)
+	ape.Rage = ease(ape.Rage, math.max(roar, snarl * 0.6), 9, dt)
+	local rage = ape.Rage
+
+	-- the hips: crouched, leaning into the hunch; up and back to roar; down on the slam
+	local cyc = 2 * math.pi * (gait.Phase + 0.05)
+	local sway = math.sin(now * 0.8 + ape.Seed) * idle
+	local crouch = lerp(-0.075, 0.03, roar) - 0.06 * slam - 0.03 * halt - 0.05 * ape.Dead - 0.08 * ape.Shrink
+	local extra = {
+		Offset = Vector3.new(sway * 0.045 * L, (crouch + breath * 0.004 * (1 - roar)) * L, -lean * 0.14 * L),
+		Turn = CFrame.Angles(lerp(-0.12, 0.2, roar) - 0.1 * slam - lean * 0.25, 0, sway * 0.025),
+	}
+	local hs = ape.Humanoid:GetState()
+	local grounded = hs ~= Enum.HumanoidStateType.Freefall and hs ~= Enum.HumanoidStateType.Jumping
+	gait:Step(dt, root.CFrame, root.AssemblyLinearVelocity, grounded, ape.Ground, extra)
+
+	-- the spine: rounded forward into the hunch (back on the roar), turning and rolling
+	-- against the hips as it walks, breathing
+	local hipYaw = -math.sin(cyc) * gait.P.Yaw * walk
+	local tremor = function(k)
+		return math.sin(now * 37 + k * 1.9) * 0.022 * tremble
+	end
+	local hunch = { -0.22, -0.24, -0.13 }
+	local rear = { 0.19, 0.22, 0.25 }
+	local spineYaw = { 0.03, 0.08, 0.1 }
+	local pitchSum = lerp(-0.12, 0.2, roar) - 0.1 * slam - lean * 0.25
+	local yawSum = hipYaw
+	for i, name in { "SPINE1", "SPINE2", "SPINE3" } do
+		local p = lerp(hunch[i], rear[i], roar) - 0.07 * slam - lean * 0.2 - 0.08 * halt - 0.12 * ape.Dead
+			+ ((i == 3) and breath * 0.035 * (1 - roar) or 0) + tremor(i)
+		local y = math.sin(cyc) * spineYaw[i] * walk
+		local r = -math.sin(cyc) * 0.035 * walk * i
+		turn(rig, name, p, y, r)
+		pitchSum += p
+		yawSum += y
+	end
+	-- head: up and looking ahead out of the hunch; thrown back to roar; looking about
+	local lookYaw = spring(ape.LookYaw, look.X * (1 - roar), 3.2, 0.9, dt)
+	local lookPitch = spring(ape.LookPitch, look.Y * (1 - roar), 3.2, 0.9, dt)
+	local level = -pitchSum * 0.8 * (1 - roar) -- (keeps the eyes on the horizon; not while roaring)
+	local up = 0.4 * roar -- (roaring at the sky)
+	turn(rig, "NECK", level * 0.45 + up * 0.4 + lookPitch * 0.4 + tremor(4), -yawSum * 0.5 + lookYaw * 0.4 + headShake * 0.4, 0)
+	turn(rig, "HEAD", level * 0.55 + up * 0.6 + lookPitch * 0.6 - 0.1 * halt - 0.25 * ape.Dead, -yawSum * 0.4 + lookYaw * 0.6 + headShake, math.sin(now * 0.7) * 0.03 * idle)
+	-- the jaw: wide open roaring (with a chatter of rage), parting as it breathes out
+	local jaw = 0.72 * roar + math.sin(now * 31) * 0.035 * tremble + 0.05 * exhale * (1 - roar) + 0.24 * snarl + 0.2 * halt + 0.3 * ape.Dead
+	turn(rig, "CHIN", -jaw, 0, 0)
+
+	-- arms: hanging heavy in front out of the hunch, swinging against the legs; flung out wide
+	-- to roar
+	local swingTarget = math.sin(2 * math.pi * (gait.Phase - (gait.SwingShare or 0.36) + 0.25)) * 0.32 * walk
+	local armR = spring(ape.ArmR, swingTarget + lean * 0.5, 5.5, 0.55, dt)
+	local armL = spring(ape.ArmL, -swingTarget + lean * 0.5, 5.5, 0.55, dt)
+	local forwardHang = -pitchSum * 0.9 + 0.12 -- (straight down in the world, a touch in front)
+	for _, side in { "L", "R" } do
+		local sg = (side == "L") and 1 or -1
+		local a = (side == "L") and armL or armR
+		local raise = lerp(0.05 * breath * idle, -0.22, roar)
+		turn(rig, "CLAVICLE_" .. side, 0, -sg * lerp(0.16, 0.05, roar), sg * -raise * 0.6)
+		local hang = lerp(1.22, 0.78, roar) + 0.06 * breath * idle - 0.15 * ape.Shrink
+		local swingX = lerp(forwardHang, -0.55, roar) + a + tremor(5 + sg)
+		turn(rig, "SHOULDER_" .. side, swingX, 0, sg * hang)
+		local bend = lerp(0.42 + math.max(a, 0) * 0.5, 0.95, roar) + 0.35 * ape.Shrink
+		turn(rig, "ELBOW_" .. side, 0, -sg * bend, -sg * 0.45 * roar)
+		turn(rig, "WRIST_" .. side, 0, 0, sg * lerp(0.08, -0.25, rage))
+		-- fingers: softly curled, clawed in rage, loose while walking
+		local base = HANDS.Relaxed
+		local claw = HANDS.Rage
+		local loose = HANDS.Loose
+		for finger, fan in FINGERS do
+			for j = 1, 3 do
+				local curl = lerp(lerp(base[j], loose[j], walk * 0.6), claw[j], rage)
+				local spread = (j == 1) and fan * (1 + rage) or 0
+				turn(rig, ("F_%s%d_%s"):format(finger, j, side), 0, -sg * math.rad(spread), sg * math.rad(curl))
+			end
+		end
+		for j = 1, 3 do
+			local curl = lerp(lerp(10, 6, walk), 30, rage)
+			turn(rig, ("F_THUMB%d_%s"):format(j, side), sg * math.rad(curl * 0.4), 0, sg * math.rad(curl * 0.5))
+		end
+		-- toes: flat on the ground as the heel lifts; gripping while it roars
+		local leg = gait.Legs[(side == "L") and "Left" or "Right"]
+		turn(rig, "TOE2_" .. side, math.max(leg.FootPitch or 0, 0), 0, 0)
+		for _, toe in TOES do
+			turn(rig, toe .. "1_" .. side, -0.22 * roar, 0, 0)
+			turn(rig, toe .. "2_" .. side, -0.15 * roar, 0, 0)
+		end
+	end
+
+	-- the tail: hangs back in a lazy curve, swaying on its own, swinging with the steps,
+	-- trailing behind turns, lashing while it roars
+	local n = #ape.Tail
+	for i, seg in ape.Tail do
+		local k = i / n
+		local shape = (i <= 3) and (0.3 - 0.08 * (i - 1)) or ((k > 0.55) and -0.06 or 0.01)
+		local wave = math.sin(now * 1.3 + ape.Seed - i * 0.32) * 0.05 * (0.4 + k)
+		local stepSwing = math.sin(cyc - i * 0.22) * 0.035 * walk
+		local lash = math.sin(now * 6.5 - i * 0.45) * 0.07 * roar
+		local trail = -math.clamp(gait.YawRate, -1.5, 1.5) * 0.035 * k
+		local yaw = spring(seg.Yaw, wave + stepSwing + lash + trail, lerp(12, 5, k), 0.5, dt)
+		local pitch = spring(seg.Pitch, shape * (1 - 0.7 * roar) - 0.06 * roar * (1 - k * 0.5) + 0.02 * ape.Dead, lerp(12, 5, k), 0.6, dt)
+		turn(rig, seg.Name, pitch, yaw, 0)
+	end
+
+	rig:Apply()
+end
+
+-- where the giant's screen effects and camera stand (only for your own giant)
+local mine = {
+	Ape = nil,
+	SavedZoom = nil,
+}
+
+-- your giant: turning at a giant's pace and slow to get going (before physics)
+local function steerMine(dt: number)
+	local character = player.Character
+	local ape = character and apes[character]
+	if not ape then
+		return
+	end
+	local humanoid, root = ape.Humanoid, ape.Root
+	if humanoid.Health <= 0 then
+		return
+	end
+	humanoid.AutoRotate = false
+	local age = Workspace:GetServerTimeNow() - (character:GetAttribute("OozaruAt") or -100)
+	local move = humanoid.MoveDirection
+	local moving = move.Magnitude > 0.1
+	local yaw = flatYaw(root.CFrame.LookVector)
+	local diff = moving and Gait.AngleDiff(flatYaw(move), yaw) or 0
+	local maxRate = math.rad(PowerConfig.OozaruTurnSpeed or 140)
+	ape.TurnRate = ease(ape.TurnRate, math.clamp(diff * 3, -maxRate, maxRate), 5, dt)
+	local step = math.clamp(ape.TurnRate * dt, -math.abs(diff), math.abs(diff))
+	if math.abs(step) > 1e-5 then
+		root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, yaw + step, 0)
+	end
+	local free = age >= INTRO and character:GetAttribute("PowerState") == "Idle"
+	ape.Throttle = ease(ape.Throttle, (free and moving) and 1 or 0, moving and 1.8 or 10, dt)
+	local facingOk = math.max(0.2, math.cos(math.min(math.abs(diff), math.pi / 2)))
+	humanoid.WalkSpeed = free and (PowerConfig.OozaruWalkSpeed * ape.Throttle * facingOk) or 0
+end
+
+local okPre, preSimulation = pcall(function()
+	return RunService.PreSimulation
+end)
+local stepSignal = (okPre and preSimulation) or RunService.Stepped
+stepSignal:Connect(function(a, b)
+	local dt = (typeof(b) == "number") and b or a
+	steerMine(math.clamp(dt, 0, 0.1))
+end)
+
+----------------------------------------------------------------------------------------
+-- your screen while you're the giant
+----------------------------------------------------------------------------------------
+local playerGui = player:WaitForChild("PlayerGui")
+local screen = Instance.new("ScreenGui")
+screen.Name = "OozaruScreen"
+screen.ResetOnSpawn = false
+screen.IgnoreGuiInset = true
+screen.DisplayOrder = 100
+screen.Parent = playerGui
+
+local function frame(name: string, colour: Color3, z: number): Frame
+	local f = Instance.new("Frame")
+	f.Name = name
+	f.Size = UDim2.fromScale(1, 1)
+	f.BackgroundColor3 = colour
+	f.BackgroundTransparency = 1
+	f.BorderSizePixel = 0
+	f.ZIndex = z
+	f.Parent = screen
+	return f
+end
+local black = frame("Black", Color3.new(0, 0, 0), 10)
+local flash = frame("Flash", Color3.fromRGB(255, 40, 30), 9)
+-- a dark red edge: four strips fading inward
+local edges = {}
+for i, spec in {
+	{ UDim2.fromScale(0.3, 1), UDim2.fromScale(0, 0), 0 },
+	{ UDim2.fromScale(0.3, 1), UDim2.fromScale(0.7, 0), 180 },
+	{ UDim2.fromScale(1, 0.32), UDim2.fromScale(0, 0), 90 },
+	{ UDim2.fromScale(1, 0.32), UDim2.fromScale(0, 0.68), 270 },
+} do
+	local f = frame("Edge" .. i, Color3.fromRGB(60, 0, 0), 2)
+	f.Size, f.Position = spec[1], spec[2]
+	f.BackgroundTransparency = 0
+	local g = Instance.new("UIGradient")
+	g.Rotation = spec[3]
+	g.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.15), NumberSequenceKeypoint.new(0.55, 0.75), NumberSequenceKeypoint.new(1, 1) })
+	g.Parent = f
+	f.Visible = false
+	table.insert(edges, { Frame = f, Gradient = g })
+end
+
+local tint = Instance.new("ColorCorrectionEffect")
+tint.Name = "OozaruTint"
+tint.Enabled = false
+tint.Parent = Lighting
+local blur = Instance.new("BlurEffect")
+blur.Name = "OozaruBlur"
+blur.Size = 0
+blur.Enabled = false
+blur.Parent = Lighting
+
+local blackness = 0
+local wasApe = false
+local turningSince = nil
+local hidden = {} -- ScreenGuis this hid, to show again
+local coreHidden = {}
+local CORE = { Enum.CoreGuiType.Backpack, Enum.CoreGuiType.PlayerList, Enum.CoreGuiType.EmotesMenu }
+
+local function hideUI(hide: boolean)
+	player:SetAttribute("Oozaru", hide or nil) -- (the HUD and the power-up screen hide themselves)
+	if hide then
+		for _, g in playerGui:GetChildren() do
+			if g:IsA("ScreenGui") and g ~= screen and g.Enabled and not hidden[g] then
+				hidden[g] = true
+				g.Enabled = false
+			end
+		end
+		for _, kind in CORE do
+			if coreHidden[kind] == nil then
+				local ok, on = pcall(function()
+					return StarterGui:GetCoreGuiEnabled(kind)
+				end)
+				coreHidden[kind] = ok and on or false
+				pcall(function()
+					StarterGui:SetCoreGuiEnabled(kind, false)
+				end)
+			end
+		end
+	else
+		for g in hidden do
+			if g.Parent then
+				g.Enabled = true
+			end
+		end
+		table.clear(hidden)
+		for kind, was in coreHidden do
+			if was then
+				pcall(function()
+					StarterGui:SetCoreGuiEnabled(kind, true)
+				end)
+			end
+		end
+		table.clear(coreHidden)
+	end
+end
+
+local function camera(apeSize: number?)
+	if apeSize then
+		if not mine.SavedZoom then
+			mine.SavedZoom = { player.CameraMinZoomDistance, player.CameraMaxZoomDistance }
+		end
+		player.CameraMaxZoomDistance = math.max(mine.SavedZoom[2], 45 * apeSize)
+		player.CameraMinZoomDistance = 16 * apeSize -- (pulls the camera back out of the fur)
+	elseif mine.SavedZoom then
+		player.CameraMaxZoomDistance = math.min(mine.SavedZoom[2], 18) -- (zooms back in) ...
+		player.CameraMinZoomDistance = mine.SavedZoom[1]
+		local saved = mine.SavedZoom
+		mine.SavedZoom = nil
+		task.delay(0.1, function()
+			if not mine.SavedZoom then
+				player.CameraMaxZoomDistance = saved[2] -- ... then lets you zoom out again
+			end
+		end)
+	end
+end
+
+local function updateScreen(dt: number, now: number)
+	local character = player.Character
+	local isApe = character ~= nil and character:GetAttribute("Oozaru") == true
+	local ape = isApe and apes[character] or nil
+	local state = character and character:GetAttribute("PowerState")
+	local age = isApe and (Workspace:GetServerTimeNow() - (character:GetAttribute("OozaruAt") or -100)) or 99
+	if state == "GreatApe" and not isApe then
+		turningSince = turningSince or now
+	else
+		turningSince = nil
+	end
+	local stuck = turningSince ~= nil and now - turningSince > 2.5 -- (the server said no)
+	local wantBlack = ((turningSince and not stuck) or state == "Shrinking" or (isApe and age < CUT_IN)) and 1 or 0
+	if wantBlack > blackness then
+		blackness = math.min(1, blackness + dt / 0.3) -- fade to black ...
+	elseif isApe and wantBlack == 0 and blackness > 0 and age < 1 then
+		blackness = 0 -- ... and cut straight in on the roar
+		flash.BackgroundTransparency = 0.35
+	else
+		blackness = math.max(0, blackness - dt / 0.45)
+	end
+	black.BackgroundTransparency = 1 - blackness
+	flash.BackgroundTransparency = math.min(1, flash.BackgroundTransparency + dt * 1.6)
+
+	if isApe ~= wasApe then
+		wasApe = isApe
+		hideUI(isApe)
+		camera(isApe and (character:GetAttribute("OozaruScale") or 3.2) or nil)
+		tint.Enabled = isApe
+		for _, e in edges do
+			e.Frame.Visible = isApe
+		end
+		if isApe then
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.CameraOffset = Vector3.new(0, 1.2 * (character:GetAttribute("OozaruScale") or 3.2), 0)
+			end
+		end
+	end
+	if isApe then
+		hideUI(true) -- (anything new that shows up)
+		-- red, throbbing with the breath; swimming as it wears off
+		local breath = ape and math.sin(ape.Breath) or 0
+		local left = (character:GetAttribute("OozaruUntil") or 0) - Workspace:GetServerTimeNow()
+		local fading = ((character:GetAttribute("OozaruUntil") or 0) > 0) and (1 - math.clamp(left / 6, 0, 1)) or 0
+		local throb = 0.5 + 0.5 * breath
+		local roarK = math.clamp(1 - math.abs(age - 1.7) / 1.5, 0, 1)
+		tint.TintColor = Color3.fromRGB(255, 196 - 20 * throb, 186 - 24 * throb)
+		tint.Saturation = 0.12 + 0.1 * roarK
+		tint.Contrast = 0.14 + 0.08 * roarK
+		tint.Brightness = -0.02
+		for _, e in edges do
+			e.Frame.BackgroundTransparency = math.clamp(0.45 - 0.09 * throb - 0.15 * roarK - 0.2 * math.sin(now * 9) * fading, 0, 1)
+		end
+		local swim = fading * (0.5 + 0.5 * math.sin(now * 4.2))
+		blur.Enabled = swim > 0.01 or roarK > 0.05
+		blur.Size = 10 * swim + 3 * roarK
+	else
+		blur.Enabled = false
+	end
+end
+
+----------------------------------------------------------------------------------------
+-- every frame
+----------------------------------------------------------------------------------------
+local okRender, preRender = pcall(function()
+	return RunService.PreRender
+end)
+local renderSignal = (okRender and preRender) or RunService.RenderStepped
+local lastPositions = {}
+
+renderSignal:Connect(function(dt)
+	dt = math.clamp(dt, 0, 0.1)
+	local now = os.clock()
+	-- the ground under the feet: everything but characters
+	local exclude = {}
+	for _, p in Players:GetPlayers() do
+		if p.Character then
+			table.insert(exclude, p.Character)
+		end
+	end
+	table.insert(exclude, folder)
+	rayParams.FilterDescendantsInstances = exclude
+
+	local seen = {}
+	for _, model in CollectionService:GetTagged(TAG) do
+		if model:IsA("Model") and model.Parent then
+			seen[model] = true
+			local ape = apes[model]
+			if not ape then
+				ape = newApe(model)
+				if ape then
+					apes[model] = ape
+					ape.Ground = groundFinder(ape.Gait.HipHeight)
+					-- it appears in a burst of smoke
+					local age = Workspace:GetServerTimeNow() - (model:GetAttribute("OozaruAt") or -100)
+					if age < 1.5 then
+						local feet = ape.Root.Position + Vector3.new(0, ape.Gait.GroundY, 0)
+						puff(feet + Vector3.new(0, 4 * ape.Scale, 0), 45, 4 * ape.Scale, Color3.fromRGB(205, 200, 195), 7 * ape.Scale, nil, 2)
+					end
+				end
+			end
+			if ape then
+				local ok, err = pcall(poseApe, ape, dt, now)
+				if not ok and not ape.Warned then
+					ape.Warned = true
+					warn("[OozaruFX] " .. tostring(err))
+				end
+				lastPositions[model] = { ape.Root.Position, ape.Gait.GroundY, ape.Scale }
+			end
+		end
+	end
+	for model in apes do
+		if not seen[model] then
+			apes[model] = nil
+			-- gone (turned back, or left): a puff of smoke where it stood
+			local last = lastPositions[model]
+			if last then
+				puff(last[1] + Vector3.new(0, last[2] * 0.5, 0), 40, 4 * last[3], Color3.fromRGB(205, 200, 195), 6 * last[3], nil, 1.8)
+			end
+			lastPositions[model] = nil
+		end
+	end
+	for i = #effects, 1, -1 do
+		if not effects[i](dt) then
+			table.remove(effects, i)
+		end
+	end
+	updateScreen(dt, now)
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="23">
         <Properties>
           <string name="Name">HairFitTool</string>
           <ProtectedString name="Source"><![CDATA[--[[
@@ -6817,11 +9824,11 @@ ContextActionService:SetPosition("HairFitTool", UDim2.new(1, -70, 0, 10))
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="18">
+    <Item class="Folder" referent="24">
       <Properties>
         <string name="Name">ServerStorage</string>
       </Properties>
-      <Item class="Folder" referent="19">
+      <Item class="Folder" referent="25">
         <Properties>
           <string name="Name">CharacterParts</string>
         </Properties>

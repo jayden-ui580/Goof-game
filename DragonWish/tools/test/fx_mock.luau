@@ -68,14 +68,20 @@ local env = {
 		end,
 	},
 	os = { clock = function() return fakeClock end },
-	require = function() return luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.luau"), { environment = { Color3 = roblox.Color3, Enum = roblox.Enum } })() end,
+	require = function(name)
+		if name == "PoseLayers" then
+			-- (the real one runs every layer in PreSimulation; here PowerFX is the only one)
+			return { Add = function(_, _, fn) stepped:Connect(function(dt) fn(dt) end) end }
+		end
+		return luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.luau"), { environment = { Color3 = roblox.Color3, Enum = roblox.Enum } })()
+	end,
 }
 env.game = { GetService = function(_, n)
 	if n == "Players" then return { GetPlayers = function() return { { Character = char } } end } end
 	if n == "RunService" then return { RenderStepped = render, Stepped = stepped } end
 	if n == "TweenService" then return { Create = function() tweens += 1; return { Play = function() end } end } end
 	if n == "Workspace" then return workspaceStub end
-	if n == "ReplicatedStorage" then return { WaitForChild = function() return {} end } end
+	if n == "ReplicatedStorage" then return { WaitForChild = function(_, name) return name end } end
 end }
 local created = {}
 env.Instance = { new = function(cls)

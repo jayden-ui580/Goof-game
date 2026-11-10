@@ -502,7 +502,7 @@ end
 RunService.RenderStepped:Connect(function(dt)
 	dt = math.min(dt, 0.1)
 	local now = os.clock()
-	local hidden = player:GetAttribute("InCutscene")
+	local hidden = player:GetAttribute("InCutscene") or player:GetAttribute("Oozaru") -- (the Great Ape: no UI)
 	gui.Enabled = not hidden
 	if hidden then
 		-- frozen while the cutscene plays, so afterwards the HUD slides back in and the Scouter
