@@ -255,17 +255,19 @@ local function acheck(what, ok)
 	print((ok and "PASS  " or "FAIL  ") .. what)
 	failed = failed or not ok
 end
--- a fake imported Great Ape: its meshes and skeleton (oozaru.json) at the model's own size,
--- turned a quarter round and somewhere else in the world, with an AnimationController the
--- importer added
+-- a fake imported Great Ape, laid out the way Roblox's importer does it: the meshes (each
+-- centred on itself) plus a little RootPart holding the whole skeleton (oozaru.json), at the
+-- model's own size, turned a quarter round and somewhere else in the world, with an
+-- AnimationController the importer added
 local apeInfo = serde.decode("json", fs.readFile("tools/rig/oozaru.json"))
 local apeModel = I.new("Model"); apeModel.Name = "Oozaru_Rigged"; apeModel.Parent = parts
 local importCF = CF.new(60, 3, -20) * CF.Angles(0, math.rad(90), 0)
 local apeMeshes = {}
-for _, name in { "Fur", "Skin", "Face", "Ink", "Mouth", "Teeth", "EarInner", "Eyes" } do
-	local mp = I.new("MeshPart"); mp.Name = name; mp.CFrame = importCF; mp.Size = V3.new(15.7, 10.8, 11.6); mp.Parent = apeModel
+for i, name in { "Fur", "Skin", "Face", "Ink", "Mouth", "Teeth", "EarInner", "Eyes" } do
+	local mp = I.new("MeshPart"); mp.Name = name; mp.CFrame = importCF * CF.new(0.3 * i, 5 + 0.2 * i, -0.1 * i); mp.Size = V3.new(15.7, 10.8, 11.6); mp.Parent = apeModel
 	table.insert(apeMeshes, mp)
 end
+local rootPart = I.new("Part"); rootPart.Name = "RootPart"; rootPart.Size = V3.new(0.2, 0.2, 0.2); rootPart.CFrame = importCF; rootPart.Parent = apeModel
 local restA, boneInst = {}, {}
 for _, b in apeInfo.bones do
 	local r = b.rot
@@ -277,7 +279,7 @@ for _, b in apeInfo.bones do
 	boneInst[b.name] = bone
 end
 for _, b in apeInfo.bones do
-	boneInst[b.name].Parent = b.parent and boneInst[b.parent] or apeMeshes[1]
+	boneInst[b.name].Parent = b.parent and boneInst[b.parent] or rootPart
 end
 I.new("AnimationController").Parent = apeModel
 
@@ -316,6 +318,26 @@ acheck("built at its size, standing where you stood, facing your way",
 acheck("standing on the ground: root part bottom at hip height", math.abs((apeRoot.CFrame.Position.Y - apeRoot.Size.Y / 2) - apeHum.HipHeight) < 0.01)
 acheck("same share of health (80% of 500), ki carried over, roaring (can't move yet)",
 	math.abs(apeHum.Health - 400) < 0.01 and ape:GetAttribute("Ki") == 40 and apeHum.WalkSpeed == 0 and ape:GetAttribute("Form") == "Oozaru")
+-- every mesh carries its own copy of the skeleton, each bone exactly where the import had it
+local copiesOk, meshCount = true, 0
+for _, mp in ape:GetChildren() do
+	if mp:IsA("MeshPart") then
+		meshCount += 1
+		local n = 0
+		for _, d in mp:GetDescendants() do
+			if d:IsA("Bone") then
+				n += 1
+			end
+		end
+		local w = mp:FindFirstChild("WAIST", true)
+		local at = w and (mp.CFrame * modules.HairPhysics.PartSpaceCFrame(w, mp)).Position
+		copiesOk = copiesOk and n == #apeInfo.bones and at ~= nil and (at - wantWaist).Magnitude < 0.01
+	end
+end
+local apeRootPart = ape:FindFirstChild("RootPart")
+acheck(("every mesh carries the skeleton (%d meshes), each bone where it was; the importer's RootPart empties"):format(meshCount),
+	copiesOk and meshCount == 8 and apeRootPart and not apeRootPart:FindFirstChildWhichIsA("Bone", true))
+acheck("the Humanoid has an Animator (Roblox drives skinned meshes through it)", apeHum:FindFirstChildOfClass("Animator") ~= nil)
 acheck("everything welded on; glowing eyes; the importer's AnimationController gone",
 	ape:FindFirstChild("Eyes") and ape.Eyes.Material == roblox.Enum.Material.Neon and ape.Eyes:FindFirstChild("EyeGlow")
 	and not ape:FindFirstChildOfClass("AnimationController") and ape:HasTag("DW_Oozaru"))

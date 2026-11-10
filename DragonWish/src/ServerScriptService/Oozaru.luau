@@ -254,6 +254,47 @@ local function build(): Model
 		paint(part)
 	end
 
+	-- Every mesh gets its own copy of the skeleton, inside it: the same way the hair and the
+	-- fingers are built (bones inside the mesh they bend), which Roblox deforms reliably. The
+	-- importer puts one skeleton in a separate little part called RootPart instead. Each copy
+	-- sits exactly where the original was, so nothing moves; OozaruFX poses every copy alike.
+	local _, holder = skeleton(model)
+	local skinned, meshes, known = 0, 0, 0
+	if holder then
+		local tops = {}
+		for _, child in holder:GetChildren() do
+			if child:IsA("Bone") then
+				table.insert(tops, child)
+			end
+		end
+		for _, part in parts do
+			if part:IsA("MeshPart") then
+				meshes += 1
+				local okSkin, isSkinned = pcall(function()
+					return (part :: any).HasSkinnedMesh
+				end)
+				if okSkin then
+					known += 1 -- (Roblox lets scripts read whether a mesh is skinned)
+					if isSkinned then
+						skinned += 1
+					end
+				end
+				if part ~= holder then
+					for _, top in tops do
+						local copy = top:Clone()
+						copy.CFrame = part.CFrame:ToObjectSpace(holder.CFrame * top.CFrame)
+						copy.Parent = part
+					end
+				end
+			end
+		end
+		if not holder:IsA("MeshPart") and meshes > 0 then
+			for _, top in tops do
+				top:Destroy() -- (the meshes carry it now)
+			end
+		end
+	end
+
 	-- the body that walks: a box from just under the hips to the head
 	local hipHeight = 4.0 * s
 	local root = Instance.new("Part")
@@ -273,6 +314,9 @@ local function build(): Model
 	end
 
 	local humanoid = Instance.new("Humanoid")
+	-- (an Animator, like every character has: Roblox drives skinned meshes through it. It
+	-- plays nothing; OozaruFX sets the bones itself.)
+	Instance.new("Animator").Parent = humanoid
 	humanoid.RigType = Enum.HumanoidRigType.R15
 	humanoid.HipHeight = hipHeight
 	humanoid.RequiresNeck = false -- (it has no neck joint: bones do the bending)
@@ -306,9 +350,13 @@ local function build(): Model
 			table.insert(missing, name)
 		end
 	end
-	log(("built the Great Ape: %d meshes, %d bones lined up, %.1f studs tall; skeleton of %d bones in %s%s"):format(
+	log(("built the Great Ape: %d meshes, %d bones lined up, %.1f studs tall; skeleton of %d bones in %s%s%s"):format(
 		#parts, #design, (OozaruRig.Bounds[2].Y - OozaruRig.Bounds[1].Y) * s, count, holder and holder.Name or "?",
-		(copies > 1) and (" (%d copies)"):format(copies) or ""))
+		(copies > 1) and (" (a copy in each of its %d meshes)"):format(copies) or "",
+		(known > 0) and ("; %d of %d meshes skinned"):format(skinned, meshes) or ""))
+	if known > 0 and known == meshes and skinned == 0 then
+		complain("Roblox says none of its meshes are skinned (they can't bend). Re-import Oozaru_Rigged.fbx with Rig Type Custom")
+	end
 	if #missing > 0 then
 		complain("its skeleton is missing " .. table.concat(missing, ", ") .. ": it won't animate. Re-import Oozaru_Rigged.fbx with Rig Type Custom and \"Keep Zero Influence Bones\" ticked")
 	end
