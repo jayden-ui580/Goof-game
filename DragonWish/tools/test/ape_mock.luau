@@ -75,6 +75,21 @@ end
 for name, bone in bones do
 	bone.Parent = parentOf[name] and bones[parentOf[name]] or holder
 end
+-- (an importer can give a mesh its own copy of part of the skeleton: here the skin has the
+-- spine and head, and its bones' names carry a prefix)
+local skin = I.new("MeshPart")
+skin.Name = "Skin"
+skin.CFrame = CF.identity
+skin.Parent = ape
+local copyOf = {}
+for _, name in { "NULL", "WAIST", "SPINE1", "SPINE2", "SPINE3", "NECK", "HEAD", "FACE", "CHIN" } do
+	local bone = I.new("Bone")
+	bone.Name = "Armature:" .. name
+	bone.CFrame = bones[name].CFrame
+	bone.Transform = CF.identity
+	bone.Parent = parentOf[name] and copyOf[parentOf[name]] or skin
+	copyOf[name] = bone
+end
 -- where every bone really is now (rest pose plus Transforms), in the world
 local function boneWorld(name)
 	local chain = {}
@@ -132,7 +147,7 @@ local player = {
 	end,
 }
 local core = {}
-local camera = { CFrame = CF.new(0, 30, 60) }
+local camera = { CFrame = CF.new(0, 30, 60), CameraType = roblox.Enum.CameraType.Custom, CameraSubject = nil }
 local fxFolder = I.new("Folder")
 fxFolder.Name = "FX"
 local env = {
@@ -297,6 +312,10 @@ check("then the hunch: back rounded forward, mouth shut", hunched < -20 and jawA
 check("your screen: black first, then cut straight in", (blackAt or 1) < 0.1 and (stillBlack or 1) < 0.05 and (clearAt or 0) > 0.95)
 check("your screen: red tint on, UI hidden", tint and tint.Enabled and attrs.Oozaru == true and otherGui.Enabled == false)
 check("the camera pulls back", player.CameraMinZoomDistance >= 10 * s)
+check("the camera follows the giant (Roblox doesn't when a body is swapped)", camera.CameraSubject == hum)
+local headA, headB = bones.HEAD.Transform, copyOf.HEAD.Transform
+check("every copy of the skeleton gets the same pose", (headA.Position - headB.Position).Magnitude < 1e-5
+	and headA.LookVector:Dot(headB.LookVector) > 0.99999 and headA ~= CF.identity)
 local fingers = select(3, anglesOf("F_MIDDLE2_L"))
 check(("hands relaxed, softly curled (middle finger %.0f deg)"):format(fingers), fingers > 8)
 
@@ -369,6 +388,8 @@ check("turning back: the screen goes black", black.BackgroundTransparency < 0.05
 local human = I.new("Model")
 human.Name = "Player1"
 human:SetAttribute("PowerState", "Idle")
+local humanHum = I.new("Humanoid")
+humanHum.Parent = human
 player.Character = human
 ape.Parent = nil
 for i = 1, 60 do
@@ -377,6 +398,7 @@ end
 check("back as yourself: screen clear, tint off, UI back, camera back", black.BackgroundTransparency > 0.95 and not tint.Enabled and attrs.Oozaru == nil
 	and otherGui.Enabled == true and player.CameraMinZoomDistance < 1)
 check("... and a puff of smoke where the giant stood", emitted >= 40)
+check("... and the camera back on you", camera.CameraSubject == humanHum)
 
 if dumpPath then
 	fs.writeFile(dumpPath, serde.encode("json", frames))

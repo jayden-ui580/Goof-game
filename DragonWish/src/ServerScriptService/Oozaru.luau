@@ -75,12 +75,49 @@ local function findSource(): Bone?
 	return nil
 end
 
+-- a bone's name without anything an importer may have added ("Armature:WAIST" -> "WAIST")
+local function canonical(name: string): string
+	return string.upper(string.match(name, "[^:|/]+$") or name)
+end
+
+-- The skeleton: the fullest copy of it (an importer can give each mesh its own copy), as
+-- name -> bone, plus the part holding it, how many bones it has, and how many copies there are
+local function skeleton(model: Model)
+	local perPart, total = {}, 0
+	for _, d in model:GetDescendants() do
+		if d:IsA("Bone") then
+			local part = partOfBone(d)
+			if part then
+				perPart[part] = (perPart[part] or 0) + 1
+			end
+			total += 1
+		end
+	end
+	local holder, most = nil, 0
+	for part, n in perPart do
+		if n > most then
+			holder, most = part, n
+		end
+	end
+	local map = {}
+	if holder then
+		for _, d in holder:GetDescendants() do
+			if d:IsA("Bone") then
+				local key = canonical(d.Name)
+				map[key] = map[key] or d
+			end
+		end
+	end
+	return map, holder, most, (most > 0) and math.floor(total / most + 0.5) or 0
+end
+
 -- where each designed bone ended up (world positions), for fitting
 local function bonePairs(model: Model)
 	local design, actual = {}, {}
+	local map = skeleton(model)
 	for name, modeled in OozaruRig.Bones do
-		local bone = model:FindFirstChild(name, true)
-		local part = bone and bone:IsA("Bone") and partOfBone(bone)
+		local bone = map[name]
+		local part = bone and partOfBone(bone)
 		if part then
 			local cf = HairPhysics.PartSpaceCFrame(bone, part)
 			if cf then
@@ -262,7 +299,19 @@ local function build(): Model
 	model:SetAttribute("KaiokenMult", 1)
 	model:SetAttribute("Exhausted", false)
 	CollectionService:AddTag(model, Oozaru.Tag)
-	log(("built the Great Ape: %d meshes, %d bones lined up, %.1f studs tall"):format(#parts, #design, (OozaruRig.Bounds[2].Y - OozaruRig.Bounds[1].Y) * s))
+	local map, holder, count, copies = skeleton(model)
+	local missing = {}
+	for _, name in { "WAIST", "THIGH_L", "CLANK_L", "TOE1_L", "THIGH_R", "CLANK_R", "TOE1_R", "SPINE1", "HEAD", "CHIN" } do
+		if not map[name] then
+			table.insert(missing, name)
+		end
+	end
+	log(("built the Great Ape: %d meshes, %d bones lined up, %.1f studs tall; skeleton of %d bones in %s%s"):format(
+		#parts, #design, (OozaruRig.Bounds[2].Y - OozaruRig.Bounds[1].Y) * s, count, holder and holder.Name or "?",
+		(copies > 1) and (" (%d copies)"):format(copies) or ""))
+	if #missing > 0 then
+		complain("its skeleton is missing " .. table.concat(missing, ", ") .. ": it won't animate. Re-import Oozaru_Rigged.fbx with Rig Type Custom and \"Keep Zero Influence Bones\" ticked")
+	end
 	return model
 end
 
