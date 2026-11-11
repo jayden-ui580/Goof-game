@@ -4,14 +4,15 @@
 	Turns every player into the "Base" rig (ReplicatedStorage > Base) with the base hair, the
 	belt and fingers on:
 	  1. When the server starts it copies Base, puts the rigged base hair, the (hidden) Super
-	     Saiyan hair, the belt and the fingers on it, and makes that copy the StarterCharacter —
-	     Roblox's built-in way of giving every player a custom character.
+	     Saiyan hairs (SSJ, SSJ2, SSJ3), the belt and the fingers on it, and makes that copy the
+	     StarterCharacter — Roblox's built-in way of giving every player a custom character.
 	  2. Players' own avatars are not loaded onto it, and anything that still sneaks on
 	     (clothing, accessories, body colours from their avatar) is stripped off when they spawn.
 
-	The rigged pieces are found in ServerStorage > CharacterParts (import the five .fbx files
-	there; without the two finger files you get plain hands). Settings: ReplicatedStorage >
-	HairConfig and PowerConfig.
+	The rigged pieces are found in ServerStorage > CharacterParts: import the four hair .glb
+	files (their textures come with them) and the belt and finger .fbx files there. Without the
+	finger files you get plain hands; the SSJ2 / SSJ3 hairs are optional for now. Settings:
+	ReplicatedStorage > HairConfig and PowerConfig.
 ]]
 
 local CollectionService = game:GetService("CollectionService")
@@ -25,7 +26,7 @@ local HairConfig = require(ReplicatedStorage:WaitForChild("HairConfig"))
 local HairPhysics = require(ReplicatedStorage:WaitForChild("HairPhysics"))
 local PowerConfig = require(ReplicatedStorage:WaitForChild("PowerConfig"))
 
-local PIECES = { "BaseHair", "SSJHair", "Belt", "LeftFingers", "RightFingers" }
+local PIECES = { "BaseHair", "SSJHair", "SSJ2Hair", "SSJ3Hair", "Belt", "LeftFingers", "RightFingers" }
 local OWNED = "DWOwned" -- marks things that belong to the Base rig (never stripped)
 
 local function log(message: string)
@@ -47,22 +48,53 @@ local function partOfBone(bone: Instance): BasePart?
 	return node :: BasePart?
 end
 
-local function findSource(signature: string): (Bone?, string?)
-	for _, container in { ServerStorage, ReplicatedStorage, Workspace } do
-		local folder = container:FindFirstChild(HairConfig.ModelFolder)
-		if folder then
-			local bone = folder:FindFirstChild(signature, true)
-			if bone and bone:IsA("Bone") then
-				return bone, folder:GetFullName()
-			end
+-- Does the imported model this bone belongs to have a texture? (a .glb import brings one; an
+-- older .fbx import doesn't, so if both are lying around the textured one wins)
+local function textured(bone: Instance): boolean
+	local holder = bone:FindFirstAncestorWhichIsA("Model") or partOfBone(bone)
+	if not holder then
+		return false
+	end
+	for _, d in holder:GetDescendants() do
+		if d:IsA("SurfaceAppearance") or (d:IsA("MeshPart") and d.TextureID ~= "") then
+			return true
 		end
 	end
-	-- forgiving: imported but left loose in Workspace / ServerStorage
-	for _, container in { Workspace, ServerStorage } do
-		for _, d in container:GetDescendants() do
-			if d.Name == signature and d:IsA("Bone") then
-				return d, container.Name
+	return false
+end
+
+-- signature: the name of a bone only that piece has (or a list of names, tried in order)
+local function findSource(signature: string | { string }): (Bone?, string?)
+	local names = if type(signature) == "table" then signature else { signature }
+	for _, name in names do
+		local found = {}
+		for _, container in { ServerStorage, ReplicatedStorage, Workspace } do
+			local folder = container:FindFirstChild(HairConfig.ModelFolder)
+			if folder then
+				for _, d in folder:GetDescendants() do
+					if d.Name == name and d:IsA("Bone") then
+						table.insert(found, { d, folder:GetFullName() })
+					end
+				end
 			end
+		end
+		if #found == 0 then
+			-- forgiving: imported but left loose in Workspace / ServerStorage
+			for _, container in { Workspace, ServerStorage } do
+				for _, d in container:GetDescendants() do
+					if d.Name == name and d:IsA("Bone") then
+						table.insert(found, { d, container.Name })
+					end
+				end
+			end
+		end
+		for _, f in found do
+			if textured(f[1]) then
+				return f[1], f[2]
+			end
+		end
+		if found[1] then
+			return found[1][1], found[1][2]
 		end
 	end
 	return nil
@@ -197,12 +229,18 @@ local function attachPiece(rig: Model, name: string): boolean
 		return false
 	end
 	local bone, where = findSource(cfg.SignatureBone)
+	local file = cfg.File or (name .. "_Rigged.fbx")
 	if not bone then
+		if cfg.Optional then
+			log(("no %s imported yet (optional): import %s into ServerStorage > %s to add it"):format(name, file, HairConfig.ModelFolder))
+			return false
+		end
+		local signature = if type(cfg.SignatureBone) == "table" then cfg.SignatureBone[1] else cfg.SignatureBone
 		complain(
-			("couldn't find the rigged %s (looking for its bone '%s'). Import the latest %s_Rigged.fbx (File > Import 3D) and put it in ServerStorage > %s; delete any older copy."):format(
+			("couldn't find the rigged %s (looking for its bone '%s'). Import the latest %s (File > Import 3D) and put it in ServerStorage > %s; delete any older copy."):format(
 				name,
-				cfg.SignatureBone,
-				name,
+				tostring(signature),
+				file,
 				HairConfig.ModelFolder
 			)
 		)
@@ -297,7 +335,9 @@ local function attachPiece(rig: Model, name: string): boolean
 	weld.Parent = mesh
 	mesh:SetAttribute("FitScale", math.floor(fit.Scale * 1000 + 0.5) / 1000) -- how big it ended up (1 = as modeled)
 	mesh:SetAttribute("VisibleIn", cfg.VisibleIn or "Both")
-	mesh.Transparency = (cfg.VisibleIn == "SSJ") and 1 or 0
+	-- you spawn in base form: only base-form pieces show
+	local visible = cfg.VisibleIn == nil or cfg.VisibleIn == "Both" or cfg.VisibleIn == "Base"
+	mesh.Transparency = visible and 0 or 1
 	if cfg.Kind == "Fingers" then
 		mesh:SetAttribute("FingerHand", layout.Attach) -- HandFX poses these; no physics
 	else
@@ -344,8 +384,9 @@ do
 			local piece = d:FindFirstAncestorWhichIsA("MeshPart")
 			local pieceName = piece and piece.Name or "?"
 			if owner[d.Name] and owner[d.Name] ~= pieceName then
-				complain(("the %s and the %s both have a bone called '%s', so one of them won't move. Re-import the latest %s_Rigged.fbx."):format(
-					owner[d.Name], pieceName, d.Name, pieceName))
+				local pieceCfg = HairConfig.Hairs[pieceName]
+				complain(("the %s and the %s both have a bone called '%s', so one of them won't move. Re-import the latest %s."):format(
+					owner[d.Name], pieceName, d.Name, pieceCfg and pieceCfg.File or (pieceName .. "_Rigged")))
 			end
 			owner[d.Name] = owner[d.Name] or pieceName
 		end

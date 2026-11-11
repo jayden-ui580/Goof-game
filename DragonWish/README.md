@@ -25,32 +25,31 @@ Every player spawns as the R15 rig **Base**, with their own clothes and accessor
 | File | What it is |
 | --- | --- |
 | `DragonWishKit.rbxmx` | All 17 scripts in one drag-in file. Its folders are named after the service each part goes in. |
-| `models/BaseHair_Rigged.fbx` | The base hair: 1 root bone + 17 spikes + 9 bangs (87 bones). |
-| `models/SSJHair_Rigged.fbx` | The Super Saiyan hair: 1 root bone (`SSJRoot`) + 22 spikes (84 bones). |
+| `models/BaseHair_Rigged.glb` | The base hair, with the black texture inside: 1 root bone + 17 spikes + 9 bangs (87 bones). |
+| `models/SSJHair_Rigged.glb` | The Super Saiyan hair, with the gold texture inside: 1 root bone (`SSJRoot`) + 22 spikes (84 bones). |
+| `models/SSJ2Hair_Rigged.glb` | Your SSJ2 hair, with the gold texture: 1 root bone (`SSJ2Root`) + 25 spikes + the bang (98 bones). |
+| `models/SSJ3Hair_Rigged.glb` | Your SSJ3 hair (front and back joined into one), with the gold texture: 1 root bone (`SSJ3Root`) + 66 spikes and mane clumps, up to 4 bones each (231 bones). |
 | `models/Belt_Rigged.fbx` | The belt: 1 root bone + the 2 hanging ribbons (4 bones each). |
 | `models/LeftFingers_Rigged.fbx` | The left hand's fingers: 1 root bone (`LHandRoot`) + a knuckle bone, a middle-joint bone and a tip for each finger (16 bones). |
 | `models/RightFingers_Rigged.fbx` | The same for the right hand (`RHandRoot`, `RThumb1` …). |
 | `docs/combat_design_notes.txt` | Our combat discussion, saved for later. |
 
-The `.blend` files are the same rigs as Blender scenes. `models/source/` has your original files, including `TakeTheFingers.obj` (the finger pieces) and `R15_body.obj` (your body).
+The hairs are glTF (`.glb`) files, so the texture comes in with the import. `.glb` is one file with the mesh, bones, skin weights and texture packed together. The `.blend` files are the same rigs as Blender scenes. `models/source/` has your original files, including `TakeTheFingers.obj` (the finger pieces), `R15_body.obj` (your body), `SSJ2Hair.obj` and `SSJ3Hair.obj` (your two SSJ3 pieces joined), `HairGold.png` (your texture) and `HairBlack.png` (the black version made from it).
 
 **The Great Ape is parked for now.** Its scripts, test and notes are in `parked/oozaru/` (see the `README.txt` there); the model (`models/Oozaru_Rigged.fbx`, `models/source/GreatApe.fbx`) and how it's made (`tools/rig/build_oozaru.py`) stay in the repo for when it comes back.
 
 ## Setup
 
 > **Updating from an earlier version?** Replace all the scripts with the ones in the new kit.
+> - **New hair files:** delete the old `BaseHair_Rigged` and `SSJHair_Rigged` models from `ServerStorage › CharacterParts`, then import `BaseHair_Rigged.glb`, `SSJHair_Rigged.glb`, `SSJ2Hair_Rigged.glb` and `SSJ3Hair_Rigged.glb` there. They're the same rigs, now with their textures. (If an old untextured copy is left behind, the game picks the textured one.)
 > - **The Great Ape is parked:** delete `Oozaru` and `OozaruRig` (ServerScriptService), `OozaruFX` (StarterPlayerScripts) and the imported `Oozaru_Rigged` model (`ServerStorage › CharacterParts`).
 > - **Keep** `Gait` and `PoseLayers` (ReplicatedStorage) and `Locomotion` (StarterPlayerScripts): they're the realistic walk.
 > - `HandFX` and the two finger files came the round before; keep them.
 >
-> If you haven't yet, also re-import these newer pieces, after deleting the old copy from `ServerStorage › CharacterParts`:
-> - **`BaseHair_Rigged.fbx`** has bones in the bangs. The server looks for bone `BB01_1`, so an older import won't load.
-> - **`SSJHair_Rigged.fbx`** has its root bone named `SSJRoot`. In the first version it was called `HairRoot`, the same as the base hair's, and Roblox ties a skinned mesh to the first bone with a matching name anywhere in the character. The SSJ hair was tied to the base hair's skeleton and never moved.
->
 > The belt hasn't changed.
 
 1. **The rig.** Keep your R15 rig in ReplicatedStorage, named `Base`, with a Humanoid in it.
-2. **Import the five pieces.** In File › Import 3D, pick each `.fbx` (the hair, the SSJ hair, the belt and the two finger files). Set Rig Type to **Custom** and Scale Unit to Studs, and tick **Keep Zero Influence Bones**. Put all five imported models in `ServerStorage › CharacterParts`. The kit makes that folder for you.
+2. **Import the pieces.** In File › Import 3D, pick the four hair `.glb` files (base, SSJ, SSJ2, SSJ3) and the three `.fbx` files (the belt and the two finger files). Set Rig Type to **Custom** and Scale Unit to Studs, and tick **Keep Zero Influence Bones**. Leave **Upload to Roblox** on so the hair textures upload with them. Put all seven imported models in `ServerStorage › CharacterParts`. The kit makes that folder for you. SSJ2 and SSJ3 are optional for now: there are no SSJ2/SSJ3 forms yet, so they're put on hidden. Press **H** and pick one to see it on you.
 3. **Drag in `DragonWishKit.rbxmx`.** Move each folder's contents into the service with the same name. `StarterPlayerScripts` is inside StarterPlayer. Then delete the empty kit folder.
 4. **Untick `LoadCharacterAppearance`** in StarterPlayer's properties. The script tries to do it too, but some places block that.
 5. **Press Play (F5).**
@@ -62,7 +61,7 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 | **R** | POWER button | Start powering up. Press again while charging to cancel. As a Super Saiyan, it powers you back down; in Kaioken, it lets the Kaioken go. |
 | **Space** | big TAP button | Spam it to fill the bar. Tap faster than it drains: it only rises above about 3 taps a second, and 8 a second gets you there in under 3 s. |
 | **K** | KAIOKEN button | Light the Kaioken (base form only), and press again to push it a level higher. |
-| **H** | — | Fit panel: nudge the hair or belt into place, then copy the `Offset` line it shows into `HairConfig`. |
+| **H** | — | Fit panel: nudge the hair or belt into place, then copy the `Offset` line it shows into `HairConfig`. Picking a hair you can't see right now (SSJ2, SSJ3, or the SSJ hair in base form) shows it on you while it's picked. |
 
 On a phone, the charge bar sits at the top right (the radar slides out of the way while you power up), and the TAP button, a big Dragon Ball, sits at the bottom between the thumbstick and the jump button, so nothing covers anything else.
 
@@ -222,7 +221,7 @@ King Kai's technique, in base form only. It's built to fit the combat plan in `d
 - **`DragonUI`** (top of the script): the screens' colours (`INK`, `PAPER`, `GI`, `HP`, `KI` …) and how far every slab leans (`SLANT`).
 - **`HUD`** (top of the script): the portrait camera (`PORTRAIT_FOV`, `PORTRAIT_EYE`, `PORTRAIT_LOOK`), if your head sits too high or low on the card.
 - **`HairConfig`:**
-  - colour, texture id, placement (`Offset`) and size of each piece
+  - placement (`Offset`) and size of each piece; a texture id in `TextureId` replaces the texture that came with the import, and `Color` only shows on a piece with no texture
   - how stiff and heavy it is (`Stiffness`, `GravityCompensation`); the bangs have their own softer settings (`ChainOverrides`, chains `BB01`–`BB09`)
   - the SSJ breeze (`LocalWind`, `LocalWindFlutter`); flip the X to `70` to blow it to the right
   - how hard the aura blows it (`AuraLift`, `AuraSwirl`)
@@ -232,10 +231,17 @@ King Kai's technique, in base form only. It's built to fit the combat plan in `d
 ## Limits
 
 - **Bone names must be unique across every piece worn together.** Roblox ties each skinned mesh to its bones by name across the whole character. `CharacterSetup` warns in the Output if two pieces share a bone name.
-- **No textures.** The `.mtl` files point at `Handle1_diff.png`, which wasn't in the zip. The pieces use flat colours instead: black base hair, gold SSJ hair, blue belt. Paste a texture id into `TextureId` in `HairConfig` if you have one.
-- **Hair placement is worked out from the model files.** The head centre for each piece comes from its shape. If a piece sits a little off on your rig, press **H** and nudge it.
+- **Your texture was drawn for SSJ2 and SSJ3.** Their UVs lay each spike over a drawn spike, so they use it as you made them. The base and SSJ hair had no UVs for it, so `tools/rig/texmap.py` lays a drawn highlight along each of their spikes. It picks one pointing the same way in a front view, and longer spikes get longer highlights. The scalp shows the drawing as seen from the front. Highlights get reused (14 drawn ones, 26 spikes on the base hair), and a reused one is mirrored. The belt stays a flat blue.
+- **SSJ3 is heavy to simulate.** Its 66 strands cost about three times the SSJ hair's physics. A hidden hair isn't simulated at all, so this only costs anything while someone is in SSJ3.
+- **Hair placement is worked out from the model files.** The head centre for each piece comes from its shape. SSJ2 and SSJ3 were exported from another spot in your place, so their centres were found the same way for each:
+  - left–right from the hair's mirror symmetry;
+  - height from its lowest point;
+  - front–back from where a 1.2-stud head overlaps the hair least.
+
+  On the base hair and the SSJ hair (with your fit-tool fix), the same method lands within 0.03 studs of where they really sit. If a piece sits a little off on your rig, press **H** and nudge it.
 - **No sounds yet.** No charge hum, scream or burst sound.
 - **Not tried in real Studio.** The scripts were run against fake characters in tests (`tools/test/`), and the UI was drawn by a stand-in renderer (`tools/preview/`), not in a live Roblox server. The walk was checked with renders of your R15 body posed by the script's own numbers.
+  - **The `.glb` hairs weren't imported in Studio either.** They pass the official glTF validator (no errors), `verify_glb.py` reads every bone, weight and the texture back out of them, and they're laid out like the `.fbx` hairs that already import fine. `CharacterSetup` finds a hair wherever the importer puts its bones. If one still misbehaves, tell me what the Explorer shows under it.
   - **Roblox's walk animations:** they're stopped as they start (the `idle`, `walk` and `run` animations of the `Animate` script). If you replace `Animate` with your own, rename those or the walk won't take over. The renderer uses stand-in fonts, and it can't show the 3D portrait, the ink outline round you or the colour filter exactly. The portrait camera's framing is a best guess: if your head sits wrong on the card, change `PORTRAIT_EYE` / `PORTRAIT_LOOK` in `HUD`.
 - **Slanted edges are a little jagged.** Roblox doesn't smooth the edges of turned frames, and each slab's slanted ends are turned frames.
 - **The kanji** (気, 超 and 拳) use Roblox's built-in fallback font for Japanese, since Bangers and Gotham don't have them.
@@ -247,17 +253,24 @@ King Kai's technique, in base form only. It's built to fit the combat plan in `d
 
 ## Rebuilding and checking
 
-- `tools/rig/build_dbz.py` rigs the `.obj` files with Blender's Python module and writes the `.fbx` and `.blend` files (`BaseHair`, `SSJHair`, `Belt`, `LeftFingers`, `RightFingers`). Add piece names to rebuild only those. `tools/rig/fingers.py` moves the finger pieces onto your R15 hands and finds each joint's hinge from the pieces' rounded knuckles. `tools/rig/verify_dbz.py` re-imports the files and checks the bones.
+- `tools/rig/build_dbz.py` rigs the `.obj` files with Blender's Python module and writes the `.blend` files, the hairs as `.glb` (with their texture) and the belt and fingers as `.fbx` (`BaseHair`, `SSJHair`, `SSJ2Hair`, `SSJ3Hair`, `Belt`, `LeftFingers`, `RightFingers`). Add piece names to rebuild only those. `tools/rig/fingers.py` moves the finger pieces onto your R15 hands and finds each joint's hinge from the pieces' rounded knuckles. `tools/rig/verify_dbz.py` re-imports the `.fbx` files and checks the bones.
+- The hair textures:
+  - `tools/rig/strokes.py` finds the drawn highlights in the texture and saves their frames to `hair_strokes.json`.
+  - `tools/rig/texmap.py` lays them along the spikes of the base and SSJ hair (`build_dbz.py` calls it).
+  - `tools/rig/recolour.py HairGold.png HairBlack.png black` makes the black version. It keeps every anti-aliased edge, and there's a `red` preset ready for SSJ God.
+  - `tools/rig/mergeobj.py` joined your two SSJ3 pieces.
+  - `tools/rig/verify_glb.py models tools/rig/riginfo.json` reads the `.glb` files back without Blender. It checks the mesh, the packed texture, every bone's position against the rig, and weights (4 bones per vertex at most, adding up to 1). Add `--render out.png` to draw them with their textures.
 - `lune run tools/build_rbxmx.luau .` rebuilds `DragonWishKit.rbxmx` from `src/`.
 - Tests, run from this folder with `lune run tools/test/<name>.luau`:
-  - `server_mock`: the morph (all five pieces), the referee, ki, calming down and the Kaioken (levels, ki, strain, the body giving out, speed)
+  - `server_mock`: the morph (all seven pieces, the SSJ2/SSJ3 hair hidden), the referee, ki, calming down and the Kaioken (levels, ki, strain, the body giving out, speed)
   - `client_mock`: controls plus server, end to end, including the cutscene starting and the K key
   - `gait_mock`: the feet don't slide at 4–22 studs/s, steps match the distance, stopping, turning on the spot, curving, sideways, backward, speeding up, jumping
   - `locomotion_mock`: the real walk on a stand-in of your R15 body: standing (weight shifts, looking around), running, jogging and walking with no sliding, arms against the legs, the head steady, the stop, jumping (add `"" motor6d` for old-style joints)
   - `fx_mock`: aura, ring, animation, explosion timing, the point, and Kaioken's red aura, glow and flex (add `"" motor6d` to test old-style joints)
   - `hands_mock`: the fingers: relaxed, fidgets, fists, the point, Kaioken, limp, and trailing when the arm swings
-  - `aura_harness <BaseHair|SSJHair|Belt>`: hair and belt physics through a power-up, walking, stopping and jumping
-  - `wake_mock`: the SSJ hair waking up when it's shown
+  - `aura_harness <BaseHair|SSJHair|SSJ2Hair|SSJ3Hair|Belt>`: hair and belt physics through a power-up, walking, stopping and jumping
+  - `wake_mock [SSJHair|SSJ2Hair|SSJ3Hair]`: a Super Saiyan hair asleep while hidden, waking up when it's shown
+  - `fit_mock`: the fit panel stepping through the pieces: a hidden hair shows in place of the one you have on (never the belt), and closing puts back what your form shows
   - `compile <files...>`: every script compiles
 - UI previews:
   - `lune run tools/preview/ui_dump.luau <idle|charging|ssj|hit|kaioken|exhausted|cutscene:SECONDS> <width> <height> out.json` runs the real HUD, controls and cutscene scripts (and `DragonUI`) and writes out what's on screen.

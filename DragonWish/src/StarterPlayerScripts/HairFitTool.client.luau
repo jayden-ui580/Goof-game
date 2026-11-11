@@ -4,8 +4,10 @@
 	A little panel for lining the hair and belt up on your character while the game is running.
 	Press H (or tap the "Fit" button on a phone) to open or close it.
 
-	  Prev / Next   pick which piece you're moving: base hair, Super Saiyan hair or belt
-	                (it gets an outline; the Super Saiyan hair only shows once you transform)
+	  Prev / Next   pick which piece you're moving: base hair, Super Saiyan hairs or belt
+	                (it gets an outline). A hair you can't see right now (the SSJ2 / SSJ3 hair,
+	                or the Super Saiyan hair in base form) is shown while it's picked, in place of
+	                the hair you have on, so you can line it up; closing the panel puts it back.
 	  Up, Down, Left, Right, Fwd, Back   move it 0.05 studs (hold Shift on a keyboard
 	                                      for 0.01)
 	  Reset         undo this session's nudges
@@ -39,6 +41,7 @@ local player = Players.LocalPlayer
 local nudges = {} -- [hair part] = total nudge this session (head space: right, up, back)
 local selectedIndex = 1
 local gui, title, readout, highlight
+local previewing = {} -- pieces shown / hidden only on this screen while picking a hidden hair
 
 local function tagged(): { BasePart }
 	local list = {}
@@ -91,13 +94,54 @@ local function offsetLine(hair: BasePart): string
 	return ("Offset = CFrame.new(%s, %s, %s),"):format(n(p.X), n(p.Y), n(p.Z))
 end
 
+-- Puts the pieces this tool showed or hid back to what the current form shows.
+local function endPreview()
+	local character = player.Character
+	local form = character and character:GetAttribute("Form") or "Base"
+	for part in previewing do
+		if part.Parent then
+			local visibleIn = part:GetAttribute("VisibleIn")
+			if visibleIn and visibleIn ~= "Both" then
+				part.Transparency = (visibleIn == form) and 0 or 1
+			end
+		end
+	end
+	table.clear(previewing)
+end
+
+-- A hidden hair that's picked is shown (only on this screen) in place of the hair on the same
+-- body part, so it can be fitted without having to reach that form.
+local function preview(hair: BasePart?)
+	endPreview()
+	if not (hair and gui and gui.Enabled) or hair.Transparency < 0.99 then
+		return
+	end
+	local _, body = findWeld(hair)
+	for _, other in tagged() do
+		if other ~= hair and other.Transparency < 0.99 then
+			local _, otherBody = findWeld(other)
+			if otherBody == body then
+				previewing[other] = true
+				other.Transparency = 1
+			end
+		end
+	end
+	previewing[hair] = true
+	hair.Transparency = 0
+end
+
 local function refresh()
 	if not gui then
 		return
 	end
 	local hair = selectedHair()
+	if gui.Enabled then
+		preview(hair)
+	else
+		endPreview()
+	end
 	if hair then
-		title.Text = ("Fit: %s"):format(tostring(hair:GetAttribute("HairPreset")))
+		title.Text = ("Fit: %s%s"):format(tostring(hair:GetAttribute("HairPreset")), previewing[hair] and " (preview)" or "")
 		readout.Text = offsetLine(hair)
 		highlight.Adornee = hair
 	else

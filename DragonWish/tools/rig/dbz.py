@@ -11,6 +11,12 @@ CENTERS = {
     'BaseHair': (23.006, 4.5, -5.485),   # same character as the belt: standard R15 standing on y = 0
     'SSJHair': (17.4645, 4.5, -6.7),     # centred by the hair's inner ring; same head height
     'Belt': (23.006, 2.205, -5.485),     # LowerTorso centre = middle of the belt band
+    # SSJ2 / SSJ3 (the user's hairs, exported from another spot in the place): x from the hair's
+    # left/right symmetry, y = lowest point + 0.42 and z where a 1.2-stud head overlaps the hair
+    # least. The same recipe gives the base hair's centre and the SSJ hair's centre (after the
+    # user's fit-tool nudge) to within 0.03 studs.
+    'SSJ2Hair': (31.986, 4.424, -36.50),
+    'SSJ3Hair': (23.72, 4.445, -37.33),
 }
 
 class DRig(hairs.Rig):
@@ -27,6 +33,7 @@ class DRig(hairs.Rig):
         self.bones = [(root, np.zeros(3), np.array([0, 0.4, 0]), None)]
         self.W = {root: np.ones(len(self.P))}
         self.chains = []
+        self.chain_verts = {}
 
     def add_chain(self, name, joints, verts, chain_w, static_w, radii):
         # same as hairs.Rig.add_chain but with a configurable root bone name
@@ -47,6 +54,7 @@ class DRig(hairs.Rig):
         self.W[names[n - 1]][verts] -= tipshare
         self.W[names[n]][verts] += tipshare
         self.chains.append((name, names, list(radii)))
+        self.chain_verts[name] = np.array(verts)  # (texmap.py lays the texture out per chain)
 
 
 def add_bangs(rig, prefix='BB', min_len=0.4, min_verts=12):
@@ -98,7 +106,12 @@ def add_bangs(rig, prefix='BB', min_len=0.4, min_verts=12):
     print('%s bang locks %d' % (rig.name, len(found)))
 
 
-def spike_rig(name, path, prefix, min_tip_r, min_len, root, extra=None):
+def spike_rig(name, path, prefix, min_tip_r, min_len, root, extra=None, bone_len=None, max_bones=3,
+              bang_prefix=None, radius=None):
+    # bone_len: aim for bones about this long (long spikes get more bones, up to max_bones); without
+    # it a spike gets 2 bones under 0.9 studs, else 3 (how the base and SSJ hair were built).
+    # bang_prefix: spikes whose tip hangs low in front of the face are named with this instead, so
+    # they can be given floppier settings (HairConfig ChainOverrides).
     # every piece worn at the same time needs its own bone names: Roblox ties a skinned mesh to
     # the first bone with a matching name anywhere in the character, so two "HairRoot"s clash
     rig = DRig(name, path, CENTERS[name], root)
@@ -115,7 +128,10 @@ def spike_rig(name, path, prefix, min_tip_r, min_len, root, extra=None):
         rt = r[t]
         rb = max(r[vs].min() + 0.05, 0.62)
         length = rt - rb
-        nb = 2 if length < 0.9 else 3
+        if bone_len:
+            nb = int(np.clip(round(length / bone_len), 2, max_bones))
+        else:
+            nb = 2 if length < 0.9 else 3
         # spike centre line: average of the spike's vertices at increasing distance from the head
         bins = np.linspace(rb, rt, 8)
         pts = []
@@ -131,13 +147,46 @@ def spike_rig(name, path, prefix, min_tip_r, min_len, root, extra=None):
         u = (r[vs] - rb) / max(length, 1e-3) * nb
         cw = chain_weights(u, nb)
         static = 1 - smoothstep(0.0, 0.45, u)
-        radius = 0.16 if length > 1 else 0.12
-        rig.add_chain('%s%02d' % (prefix, n_ + 1), joints, vs, cw, static, [radius] * (nb + 1))
-    print(name, 'spike chains', len(spikes))
+        rad = radius(length) if radius else (0.16 if length > 1 else 0.12)
+        tip = P[t]
+        if bang_prefix and tip[2] < -0.6 and tip[1] < 0.6:
+            chain_name = '%s%02d' % (bang_prefix, sum(1 for c in rig.chains if c[0].startswith(bang_prefix)) + 1)
+        else:
+            chain_name = '%s%02d' % (prefix, sum(1 for c in rig.chains if c[0].startswith(prefix)) + 1)
+        rig.add_chain(chain_name, joints, vs, cw, static, [rad] * (nb + 1))
+    print(name, 'spike chains', len(spikes), 'bones', sum(len(c[1]) for c in rig.chains))
     if extra:
         extra(rig)
     rig.finish()
+    ensure_influence(rig)
     return rig
+
+
+def ensure_influence(rig, share=0.12):
+    """Roblox's importer deletes bones that move no vertex, and a missing bone breaks its chain.
+    On low-poly spikes a bone can end up with no vertex (or only a sliver), so give the vertex
+    of its chain nearest to the bone a small share of it."""
+    W = rig.Wmat
+    names = rig.bone_names
+    head = {b[0]: np.array(b[1]) for b in rig.bones}
+    fixed = []
+    for cname, bones, _ in rig.chains:
+        cols = [names.index(b) for b in bones]
+        verts = np.where(W[:, cols].sum(1) > 0.01)[0]
+        for b, j in zip(bones, cols):
+            if W[:, j].max() >= 0.05 or len(verts) == 0:
+                continue
+            v = verts[np.argmin(np.linalg.norm(rig.P[verts] - head[b], axis=1))]
+            row = W[v] * (1 - share)
+            row[j] += share
+            keep = np.argsort(row)[::-1][:4]
+            if j not in keep:
+                keep[-1] = j
+            out = np.zeros_like(row); out[keep] = row[keep]
+            W[v] = out / out.sum()
+            fixed.append(b)
+    if fixed:
+        print(rig.name, 'gave a little weight to', len(fixed), 'bones that moved nothing:', fixed)
 
 
 def build_base_hair(path):
@@ -146,6 +195,20 @@ def build_base_hair(path):
 
 def build_ssj_hair(path):
     return spike_rig('SSJHair', path, 'SS', 1.2, 0.45, 'SSJRoot')
+
+
+def build_ssj2_hair(path):
+    # 2-3 bones per spike like the SSJ hair; the single bang that hangs over the forehead is
+    # named S2B01 so it can be floppier than the spikes
+    return spike_rig('SSJ2Hair', path, 'S2P', 1.2, 0.45, 'SSJ2Root', bang_prefix='S2B')
+
+
+def build_ssj3_hair(path):
+    # SSJ3 = the front piece (spikes, bangs) and the long mane that fans out behind and down to
+    # the ankles, merged into one mesh. Tiny spikes near the scalp stay fixed (fewer chains to
+    # simulate); long clumps get a bone every ~0.9 studs, up to 4.
+    return spike_rig('SSJ3Hair', path, 'S3P', 1.3, 0.6, 'SSJ3Root', bone_len=0.9, max_bones=4,
+                     bang_prefix='S3B', radius=lambda L: 0.12 if L < 1 else (0.16 if L < 2.2 else 0.22))
 
 
 def build_belt(path):

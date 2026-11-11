@@ -37,7 +37,7 @@ for _, c in layout.Chains do
 	local all = table.clone(c.Bones); table.insert(all, c.Tip)
 	for _, bn in all do addBone(bn, mesh:FindFirstChild(pn, true), pn); pn = bn end
 end
-mesh.Transparency = hair.VisibleIn == "SSJ" and 1 or 0
+mesh.Transparency = (hair.VisibleIn == "Base" or hair.VisibleIn == "Both") and 0 or 1 -- the Super Saiyan hairs start hidden
 local sim = assert(HP.Sim.new(mesh, layout, HP.mergeSettings(hair.Physics)))
 print("problems:", #sim.Problems > 0 and table.concat(sim.Problems, ", ") or "none")
 

@@ -25,24 +25,28 @@
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Replace every script with the ones in this kit. The Great Ape is parked for now: delete
+	  Replace every script with the ones in this kit.
+	  The hairs are now .glb files with their textures inside (black base hair, gold Super
+	  Saiyan hair) and there are two new ones, SSJ2 and SSJ3. Delete the old BaseHair_Rigged
+	  and SSJHair_Rigged models from ServerStorage > CharacterParts and import these four there:
+	    BaseHair_Rigged.glb, SSJHair_Rigged.glb, SSJ2Hair_Rigged.glb, SSJ3Hair_Rigged.glb
+	  (if an old untextured copy is left behind, the textured one is used).
+	  The Great Ape is parked for now: delete
 	  Oozaru and OozaruRig (ServerScriptService), OozaruFX (StarterPlayerScripts) and the
 	  imported Oozaru_Rigged model (ServerStorage > CharacterParts) from your game.
 	  Gait and PoseLayers (ReplicatedStorage) and Locomotion (StarterPlayerScripts) stay: they
 	  are the realistic walk. HandFX and the two finger files came the round before.
-	  If you haven't yet, delete the old copies of these and import the new ones into
-	  ServerStorage > CharacterParts:
-	    BaseHair_Rigged.fbx  - the bangs now have bones
-	    SSJHair_Rigged.fbx   - its root bone was renamed (the old name clashed with the base
-	                           hair's, which tied it to the base hair's skeleton: it never moved)
 
 	SETUP (once)
 	  1. Your R15 rig must be in ReplicatedStorage and called "Base".
-	  2. Import the five rigged pieces with File > Import 3D:
-	       BaseHair_Rigged.fbx, SSJHair_Rigged.fbx, Belt_Rigged.fbx,
+	  2. Import the rigged pieces with File > Import 3D:
+	       BaseHair_Rigged.glb, SSJHair_Rigged.glb, SSJ2Hair_Rigged.glb, SSJ3Hair_Rigged.glb
+	       (the hairs: their textures come with them), Belt_Rigged.fbx,
 	       LeftFingers_Rigged.fbx, RightFingers_Rigged.fbx
-	     (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones").
-	     Drag all five imported models into ServerStorage > CharacterParts.
+	     (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones", leave
+	     "Upload to Roblox" on so the textures upload).
+	     Drag all seven imported models into ServerStorage > CharacterParts. SSJ2 and SSJ3
+	     are optional for now: there are no SSJ2 / SSJ3 forms yet, so they're put on hidden.
 	  3. Move the contents of each folder in this kit into the service with the same name
 	     (StarterPlayerScripts is inside StarterPlayer). Then delete this kit folder.
 	  4. In StarterPlayer's properties, untick LoadCharacterAppearance (the script tries to do
@@ -68,11 +72,13 @@
 	          health every second; push too far and your body gives out (exhausted for a few
 	          seconds). R lets it go. (phones: the KAIOKEN button)
 	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
+	          Picking a hair you can't see right now (SSJ2, SSJ3) shows it on you.
 	  Walking: your feet plant and never slide; walk, jog or run by speed (Roblox's default
 	          speed, 16, is a run for someone your size); a settle step when you stop.
 
 	TWEAKING
-	  HairConfig: hair/belt colours (Color), textures (TextureId), placement (Offset),
+	  HairConfig: placement (Offset), a texture id to replace a hair's own (TextureId),
+	              colours for pieces with no texture (Color),
 	              how stiff/floppy (Stiffness) and heavy (GravityCompensation: lower = heavier),
 	              the Super Saiyan hair's breeze to the left (LocalWind: make the X positive to
 	              blow it right), how hard the aura blows them (AuraLift / AuraSwirl), and the

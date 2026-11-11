@@ -45,14 +45,17 @@ bodyPart("RightHand", V3.new(1, 0.387, 1), CF.new(1.5, 2.1935, 0), true).Color =
 local ownHat = I.new("Accessory"); ownHat.Name = "RigOwnScouter"; ownHat.Parent = base
 base.Parent = RS
 
--- fake imported pieces: re-centred meshes, bones at random angles, somewhere else in the world
+-- fake imported pieces: re-centred meshes, bones at random angles, somewhere else in the world.
+-- The hairs are .glb imports that bring their texture; an old untextured copy of the SSJ hair
+-- is left lying in the folder first (the textured one must win).
 local info = serde.decode("json", fs.readFile("tools/rig/riginfo.json"))
 local parts = I.new("Folder"); parts.Name = "CharacterParts"; parts.Parent = SS
 local seed = 3
 local function rand() seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 end
-for _, h in info do
+local function makeImport(h, texture)
 	local model = I.new("Model"); model.Name = h.name .. "_Rigged"; model.Parent = parts
 	local mp = I.new("MeshPart"); mp.Name = h.name; mp.Parent = model
+	mp.TextureID = texture or "" -- (always readable in Roblox; Lune needs it set)
 	mp.CFrame = CF.new(-40, 7, 22)
 	local junk = I.new("Folder"); junk.Name = "InitialPoses"; junk.Parent = model
 	local world = {}
@@ -68,6 +71,12 @@ for _, h in info do
 		local pn = h.root
 		for _, bn in c.bones do add(bn, mp:FindFirstChild(pn, true), pn); pn = bn end
 	end
+end
+for _, h in info do
+	if h.name == "SSJHair" then makeImport(h, nil) end -- the old .fbx import, no texture
+end
+for _, h in info do
+	makeImport(h, h.name:match("Hair$") and ("rbxassetid://" .. #h.name) or nil)
 end
 
 -- engine stubs the scripts need
@@ -157,6 +166,10 @@ for _, d in sc:GetDescendants() do
 	end
 end
 print("every bone name in the character is unique:", #dupes == 0, #dupes > 0 and table.concat(dupes, ", ") or "")
+local function hidden(model, name) local m = model:FindFirstChild("DW_" .. name); return m and m[name].Transparency >= 1 end
+local function pass(what, ok) print((ok and "PASS  " or "FAIL  ") .. what) end
+pass("the SSJ2 and SSJ3 hair are put on hidden (base hair shown)", hidden(sc, "SSJ2Hair") and hidden(sc, "SSJ3Hair") and not hidden(sc, "BaseHair"))
+pass("the textured SSJ hair (.glb) is picked over an old untextured copy", sc.DW_SSJHair.SSJHair.TextureID == "rbxassetid://7")
 print("rig's own accessory kept and marked:", sc:FindFirstChild("RigOwnScouter") and sc.RigOwnScouter:GetAttribute("DWOwned"))
 
 -- power-up through the referee
@@ -171,10 +184,11 @@ local function send(...) remote.OnServerEvent:Fire(fakePlayer, ...) end
 local function show(tag)
 	local base_ = char.DW_BaseHair.BaseHair.Transparency
 	local ssj = char.DW_SSJHair.SSJHair.Transparency
-	print(("%-28s state %-9s form %-4s charge %.2f wind %.2f breeze %.2f ki %3d walk %2d | base hair %s, SSJ hair %s"):format(
+	local ssj23 = char.DW_SSJ2Hair.SSJ2Hair.Transparency + char.DW_SSJ3Hair.SSJ3Hair.Transparency
+	print(("%-28s state %-9s form %-4s charge %.2f wind %.2f breeze %.2f ki %3d walk %2d | base hair %s, SSJ hair %s, SSJ2/3 %s"):format(
 		tag, char:GetAttribute("PowerState"), char:GetAttribute("Form"), char:GetAttribute("Charge"), char:GetAttribute("AuraWind"),
 		char:GetAttribute("Breeze") or -1, char:GetAttribute("Ki") or -1,
-		h2.WalkSpeed, base_ < 1 and "shown" or "hidden", ssj < 1 and "shown" or "hidden"))
+		h2.WalkSpeed, base_ < 1 and "shown" or "hidden", ssj < 1 and "shown" or "hidden", ssj23 >= 2 and "hidden" or "SHOWN"))
 end
 show("spawned")
 send("Start"); show("pressed R")
@@ -183,6 +197,8 @@ for i = 1, 30 do clock += 0.1; send("Charge", math.min(1, i * 0.04)) end
 show("tapped for 3 s")
 send("Transform"); show("full -> transform")
 task.wait(0.4); heartbeat:Fire(0.016); show("after the burst")
+pass("as a Super Saiyan only the SSJ hair shows (SSJ2 / SSJ3 stay hidden)", hidden(char, "BaseHair") and not hidden(char, "SSJHair")
+	and hidden(char, "SSJ2Hair") and hidden(char, "SSJ3Hair"))
 local glowing = char:GetAttribute("Breeze") == 1 and char:GetAttribute("AuraWind") > 0
 task.wait(0.8); heartbeat:Fire(0.016); show("calmed down (20 s in game)")
 print("SSJ glow on after transforming, then the hair and aura calm down:",
