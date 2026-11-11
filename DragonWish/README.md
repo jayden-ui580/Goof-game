@@ -33,6 +33,7 @@ Every player spawns as the R15 rig **Base**, with their own clothes and accessor
 | `models/LeftFingers_Rigged.fbx` | The left hand's fingers: 1 root bone (`LHandRoot`) + a knuckle bone, a middle-joint bone and a tip for each finger (16 bones). |
 | `models/RightFingers_Rigged.fbx` | The same for the right hand (`RHandRoot`, `RThumb1` …). |
 | `docs/combat_design_notes.txt` | Our combat discussion, saved for later. |
+| `docs/story_and_forms_notes.txt` | The story and form plans so far (Kalhalla and SSJ God, Super Saiyan Dawn, the Grand Froggy button, character slots), saved so nothing gets lost. |
 
 The hairs are glTF (`.glb`) files, so the texture comes in with the import. `.glb` is one file with the mesh, bones, skin weights and texture packed together. The `.blend` files are the same rigs as Blender scenes. `models/source/` has your original files, including `TakeTheFingers.obj` (the finger pieces), `R15_body.obj` (your body), `SSJ2Hair.obj` and `SSJ3Hair.obj` (your two SSJ3 pieces joined), `HairGold.png` (your texture) and `HairBlack.png` (the black version made from it).
 

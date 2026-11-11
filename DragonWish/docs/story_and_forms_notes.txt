@@ -1,0 +1,172 @@
+DRAGON WISH: ONLINE - STORY, FORMS AND SPECIAL ITEMS NOTES
+(saved from our planning chats so nothing gets lost; nothing here is built yet unless it
+says so)
+=====================================================================================
+
+Marked [YOURS] = your idea / decision.  [SUGGESTED] = something I suggested that you haven't
+decided on.  [OPEN] = still to decide.
+
+
+0. THE GAME IN ONE BREATH
+-------------------------
+  Dragon Ball based, but not Dragon Ball's story: an original story and original concepts,
+  written "the Toriyama way" (free, fantasy, simple, a bit funny). [YOURS]
+
+  First saga villain [YOURS]: a purple-skinned alien with a horned/ridged crest, red eyes and
+  pointed ears; black armour with gold trim, a purple chest gem, a purple sash, a dark red
+  cape, white-striped boots and cuffs. He's the villain and FINAL BOSS of the saga, not a
+  farmable raid boss. Name: [OPEN].
+    [SUGGESTED] build him as pieces on the R15 body (like the hair, belt and fingers), the
+    blocky version of your art; a one-off fight with phases and a cutscene.
+
+
+1. THE FORMS IN ORDER (as decided so far)
+-----------------------------------------
+  Base (black hair)
+   -> Super Saiyan (gold)                        BUILT: R + spam Space, cutscene
+   -> Super Saiyan 2 (gold)                      BUILT: as SSJ, R again (no cutscene)
+   -> Super Saiyan 3 (gold, long hair)           BUILT: as SSJ2, R again (no cutscene)
+   -> Super Saiyan God (red), the Kalhalla quest (section 2)
+   -> Mastered SSJG
+   -> Super Saiyan Dawn (orange), the Saiyan way (section 4)
+   -> Perfected Dawn
+
+  After SSJG [YOURS]: you can still go SSJ, SSJ2 and SSJ3 any time. They all carry the
+  SSJG aura and a x100 boost. Power up: SSJ, again SSJ2, again SSJ3, but instead of maxing
+  out you absorb the aura and turn SSJG.
+  Mastered SSJG [YOURS]: your hair is always red.
+
+
+2. SUPER SAIYAN GOD - THE KALHALLA QUEST [YOURS]
+-----------------------------------------------
+  Why: you hate the canon ritual (five righteous Saiyans pour power into a sixth; they even
+  used a baby). No work, no struggle. Instead, a sort of Valhalla, which fits Saiyans.
+
+  1. Go to a specific place (a temple) and sit, days and nights (sped up for Roblox), until
+     you are dying.
+  2. If your Saiyan heart is pure and full of warrior's spirit, your soul crosses over to
+     KALHALLA while your body barely clings on back on earth.
+  3. In Kalhalla: a short story quest. You fight a couple of characters and do some
+     training until you're proven a worthy Saiyan.
+  4. They take you to the highest point of their world, THE (name [OPEN]) SHRINE: high like
+     Snake Way, days of stairs.
+  5. At the top, on a podium, a chalice filled with clear liquid with a slight rainbow tint.
+     It is only filled if you are truly worthy and pure.
+  6. You drink, and wake up back in your body: skinny and dried out. White trails circle
+     you, you levitate, your body turns white and glows, the light bursts: red hair.
+     You're SSJG.
+  7. The hair fades, leaving a permanent red glow around you: the SSJG sign. From then on,
+     going Super Saiyan means going full SSJG. Later, Mastered SSJG: the hair is always red.
+
+  After the SSJG sign you can enter Kalhalla any time: dailies, training, etc. [YOURS]
+
+  [SUGGESTED, not decided]
+    - Name: "Kalhalla" (kale + Valhalla), in Toriyama's vegetable-pun style. You've started
+      using it.
+    - Tie the vigil to zenkai (Saiyans come back stronger from near-death).
+    - Keep the canon myth as a half-remembered legend: the "five righteous Saiyans" are
+      really Kalhalla's five trial masters (strength, endurance, mercy, loyalty, will). Each
+      one you pass pours its light into the chalice; fail one (e.g. finishing off a beaten
+      opponent in the mercy trial) and you climb all those stairs to a cup that's only
+      four-fifths full.
+    - Trial masters named after vegetables (Chard, Okran...); the way up as a giant plant
+      stalk ("the Stalk of Heaven"); the drink "Godwater".
+    - The vigil shouldn't be an idle timer: 2-3 minutes with a day/night timelapse, your body
+      withering, something to do (a breathing rhythm; visions tempting you to quit).
+    - Your body stays at the temple (others can see someone attempting the ascension); your
+      soul wears a halo in Kalhalla.
+    - Make the stairs a mechanic: gravity gets heavier every flight.
+    - The wake-up should be quiet (silence, a heartbeat, the trails), the opposite of SSJ's
+      explosion.
+
+
+3. THE PEAK PATHS (WHY THE DAWN FORM EXISTS) [YOURS]
+-------------------------------------------------
+  In canon, Goku's and Vegeta's forms follow each other, then split at the peak: one went the
+  way of the angels (Ultra Instinct, silver), the other the way of the destroyers (Ultra Ego,
+  purple). Orange hair isn't taken by any Saiyan form, so this game's peak goes a third way:
+  the Saiyan way.
+
+  [SUGGESTED] why orange fits your lore: Super Saiyan is gold (the Saiyan's own rage), SSJG is
+  red (power from beyond). Gold + red = orange: the god power and the Saiyan power fuse in your
+  blood. Orange is also the colour of the Dragon Balls (and the game is called Dragon Wish).
+  (Note: Orange Piccolo exists in canon, but he's a Namekian; orange Saiyan hair is free.)
+
+
+4. SUPER SAIYAN DAWN - THE SAIYAN WAY [YOURS]
+--------------------------------------------
+  Requirement: Mastered SSJG.
+
+  1. Meditate, then enter Kalhalla.
+  2. Regrow your tail: talk to a certain Saiyan there to get it back.
+  3. Look into a full moon: you transform into an Oozaru TWICE the size of normal ones,
+     with glowing red fur.
+  4. Learn to control your rage. Easier if you finished an Oozaru-control side quest earlier
+     in your playthrough.
+  5. Sit and meditate. The task: expel every drop of ki out of you, then hold it around your
+     whole body as a thin, controlled veil, without the ki shooting out, breaking things or
+     blowing up the ground.
+  6. Hold it until morning. When the sun is at its peak above you, you transform out of the
+     Oozaru and glow incredibly bright (a far shot of the Earth for exaggeration).
+  7. Your hair is spiky and looks just like SSJ, but calm and glowing orange.
+  8. From now on the black base hair is gone: you permanently have non-glowing orange hair.
+  9. Super Saiyan is now SUPER SAIYAN DAWN. SSJ2 and SSJ3 are gone; your peak is now
+     PERFECTED DAWN.
+
+  PERFECTED DAWN [YOURS, "experimental"]: gives you a warrior's beard, and messier, excited hair.
+
+  THE SAIYAN PRIDE BOOST (how the forms fight) [YOURS]
+    - Like Broly: your power level never stops rising. You're pumped full of power, and it
+      rises faster the more you're hit.
+    - The price: in both Dawn and Perfected Dawn, as your power level rises your defense
+      drops (explained as your Saiyan heart getting more and more lost in the battle).
+
+  [SUGGESTED, not decided]
+    - Name: we went with "Dawn" (your call). An earlier idea was "Ultra Blood" (Instinct, Ego,
+      Blood).
+    - The Oozaru (parked) becomes this quest's star, so it needs its import problem fixed
+      (it T-posed in Studio).
+    - The ki veil as a mini-game: keep your ki inside a band. Too much and it erupts (cracks
+      the ground: you fail); too little and the veil collapses. The night is sped up.
+    - The tail could be rigged like the hair, so the hair physics moves it.
+
+
+5. THE ZENO BUTTON (GRAND FROGGY) [YOURS]
+----------------------------------------
+  - A rare item, like the button Zeno gives Goku. Only granted by a mod or by you.
+  - When you (FroggyBeach) join your game, it's announced server-wide.
+  - If anyone has the button, pressing it pings you. You can choose to teleport straight to
+    their server and location.
+  - If you decline or ignore it: "Grand Froggy is busy".
+
+  [SUGGESTED]
+    - The game knows you and mods by account ID (not username).
+    - The announcement: a big banner in your server, a smaller line in all the others.
+    - The prompt waits about 20 s. Accept teleports you into their server and next to them.
+    - "Busy" comes with a croak and a little frog hopping off their screen (Toriyama turned
+      Ginyu into a frog).
+    - Needs saving (the item must survive leaving the game). Server-to-server teleports only
+      work in the published game, not in Studio.
+  [OPEN] what if you're offline? a cooldown? can it be lost or traded (bound is safest)? what
+  happens when you arrive?
+
+
+6. CHARACTER SLOTS [YOURS]
+-------------------------
+  3 slots, +1 for finishing the main storyline, +1 as a 99 Robux gamepass (5 total). Since
+  Dawn permanently replaces your black hair, a second slot is how you keep a black-haired
+  character.
+
+
+7. OPEN QUESTIONS
+-----------------
+  - Villain's name; the Shrine's name.
+  - After Dawn: does SSJG (and its red glow) still exist for that character, or does Dawn
+    replace it? Is the permanent "sign" now orange?
+  - How do you get from Dawn to Perfected Dawn?
+  - The power climb: does it reset when you leave a fight? Is there a ceiling, or a floor on
+    defense?
+  - Is the Saiyan way the only peak, or one of three paths (angel / destroyer / Saiyan),
+    picked once per character?
+  - Tails: cosmetic for everyone, or only for those who have earned them?
+  - Prerequisite for most of this: saving (forms, items, quest progress).
