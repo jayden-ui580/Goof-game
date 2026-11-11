@@ -3,7 +3,9 @@
 
 	Your controls, camera and screen for powering up:
 	  R      start powering up (the camera swings round to face you, you drop into a stance)
-	         R again while charging cancels; R as a Super Saiyan (or in Kaioken) powers down
+	         R again while charging cancels. As a Super Saiyan, R powers up to the next form
+	         (SSJ2, then SSJ3); in Kaioken it lets it go
+	  F      power down to base form (or let the Kaioken go) (phones: the DOWN button)
 	  Space  spam it to fill the power bar (phones: the big TAP button)
 	  K      Kaioken: lights it, and each press after pushes it a level higher (phones: the
 	         KAIOKEN button). The server decides if you can; a red "KAIOKEN x3!" pops up when
@@ -276,6 +278,7 @@ local full = false -- the bar filled up: it stays full until you transform
 local startedAt = 0
 local lastSend = 0
 local transformSentAt = -math.huge
+local chargingFrom = "Base" -- the form you were in when you started charging
 local savedCamera = nil
 local camShake = 0
 local fovKick = 0
@@ -290,8 +293,14 @@ local function refreshHint()
 	local kaioken = attr("Kaioken") or 0
 	if charging or bursting or attr("Exhausted") then
 		setHint(nil)
-	elseif attr("Form") == "SSJ" then
-		setHint({ { powerKey, "POWER DOWN" } })
+	elseif PowerConfig.IsSuper(attr("Form")) then
+		local downKey = touch and "DOWN" or PowerConfig.PowerDownKey.Name
+		local nextForm = PowerConfig.NextForm(attr("Form"))
+		if nextForm then
+			setHint({ { powerKey, nextForm == "SSJ2" and "SSJ 2" or "SSJ 3" }, { downKey, "POWER DOWN" } })
+		else
+			setHint({ { downKey, "POWER DOWN" } })
+		end
 	elseif kaioken >= #PowerConfig.KaiokenLevels then
 		setHint({ { powerKey, "LET IT GO" } })
 	elseif kaioken > 0 then
@@ -394,6 +403,7 @@ local function startCharging()
 	full = false
 	startedAt = os.clock()
 	transformSentAt = -math.huge
+	chargingFrom = attr("Form") or "Base"
 	remote:FireServer("Start")
 	takeCamera()
 	panel.Visible = true
@@ -423,10 +433,14 @@ local function playBurst()
 	charging = false
 	panel.Visible = false
 	setTapBinding(false)
-	local cutscene = PowerConfig.Cutscene and Cutscene and character
+	-- the cutscene is for the first time only (Super Saiyan); SSJ2 / SSJ3 just power up
+	local form = attr("Form") or "SSJ"
+	local burstTime = PowerConfig.BurstTimeFor(form)
+	local cutscene = PowerConfig.Cutscene and Cutscene and character and chargingFrom == "Base"
+	bigText:SetText(PowerConfig.FormNames[form] or "SUPER SAIYAN!")
 	if cutscene then
 		gui.Enabled = false -- the cutscene has the screen to itself
-		Cutscene.Play(character, PowerConfig.BurstTime - 0.05, function()
+		Cutscene.Play(character, burstTime - 0.05, function()
 			gui.Enabled = true
 		end)
 	end
@@ -462,7 +476,7 @@ local function playBurst()
 			end)
 		end
 	end)
-	task.delay(PowerConfig.BurstTime, function()
+	task.delay(burstTime, function()
 		bursting = false
 		releaseCamera()
 		refreshHint()
@@ -479,8 +493,10 @@ local function onPowerKey(_, state)
 	end
 	if charging then
 		stopCharging(true)
-	elseif attr("Form") == "SSJ" or (attr("Kaioken") or 0) > 0 then
+	elseif (attr("Kaioken") or 0) > 0 then
 		remote:FireServer("PowerDown")
+	elseif PowerConfig.IsSuper(attr("Form")) and not PowerConfig.NextForm(attr("Form")) then
+		showToast("THAT'S THE LIMIT!")
 	elseif attr("Exhausted") then
 		showToast("TOO TIRED!")
 	else
@@ -490,6 +506,19 @@ local function onPowerKey(_, state)
 end
 ContextActionService:BindAction("DWPower", onPowerKey, true, PowerConfig.PowerKey)
 ContextActionService:SetTitle("DWPower", "Power")
+
+-- F: back to base form (or let the Kaioken go)
+local function onPowerDownKey(_, state)
+	if state ~= Enum.UserInputState.Begin or not character then
+		return Enum.ContextActionResult.Pass
+	end
+	if not charging and not bursting and (PowerConfig.IsSuper(attr("Form")) or (attr("Kaioken") or 0) > 0) then
+		remote:FireServer("PowerDown")
+	end
+	return Enum.ContextActionResult.Sink
+end
+ContextActionService:BindAction("DWPowerDown", onPowerDownKey, true, PowerConfig.PowerDownKey or Enum.KeyCode.F)
+ContextActionService:SetTitle("DWPowerDown", "Down")
 
 -- K: light the Kaioken, or push it higher (the server checks and answers by setting the
 -- Kaioken attribute; the pop-up plays when it does)
@@ -502,7 +531,7 @@ local function onKaiokenKey(_, state)
 		return Enum.ContextActionResult.Sink
 	end
 	local level = attr("Kaioken") or 0
-	if attr("Form") == "SSJ" then
+	if PowerConfig.IsSuper(attr("Form")) then
 		showToast("BASE FORM ONLY!")
 	elseif attr("Exhausted") then
 		showToast("TOO TIRED!")

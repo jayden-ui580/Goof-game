@@ -49,7 +49,7 @@ The hairs are glTF (`.glb`) files, so the texture comes in with the import. `.gl
 > The belt hasn't changed.
 
 1. **The rig.** Keep your R15 rig in ReplicatedStorage, named `Base`, with a Humanoid in it.
-2. **Import the pieces.** In File › Import 3D, pick the four hair `.glb` files (base, SSJ, SSJ2, SSJ3) and the three `.fbx` files (the belt and the two finger files). Set Rig Type to **Custom** and Scale Unit to Studs, and tick **Keep Zero Influence Bones**. Leave **Upload to Roblox** on so the hair textures upload with them. Put all seven imported models in `ServerStorage › CharacterParts`. The kit makes that folder for you. SSJ2 and SSJ3 are optional for now: there are no SSJ2/SSJ3 forms yet, so they're put on hidden. Press **H** and pick one to see it on you.
+2. **Import the pieces.** In File › Import 3D, pick the four hair `.glb` files (base, SSJ, SSJ2, SSJ3) and the three `.fbx` files (the belt and the two finger files). Set Rig Type to **Custom** and Scale Unit to Studs, and tick **Keep Zero Influence Bones**. Leave **Upload to Roblox** on so the hair textures upload with them. Put all seven imported models in `ServerStorage › CharacterParts`. The kit makes that folder for you. The SSJ2 and SSJ3 hair show when you reach those forms. If you leave them out, those forms just keep the SSJ hair hidden too, so import them.
 3. **Drag in `DragonWishKit.rbxmx`.** Move each folder's contents into the service with the same name. `StarterPlayerScripts` is inside StarterPlayer. Then delete the empty kit folder.
 4. **Untick `LoadCharacterAppearance`** in StarterPlayer's properties. The script tries to do it too, but some places block that.
 5. **Press Play (F5).**
@@ -58,7 +58,8 @@ The hairs are glTF (`.glb`) files, so the texture comes in with the import. `.gl
 
 | Key | Phone | What it does |
 | --- | --- | --- |
-| **R** | POWER button | Start powering up. Press again while charging to cancel. As a Super Saiyan, it powers you back down; in Kaioken, it lets the Kaioken go. |
+| **R** | POWER button | Start powering up. Press again while charging to cancel. As a Super Saiyan, it powers you up again: fill the bar to go **Super Saiyan 2**, and again for **Super Saiyan 3** (no cutscene for those, just the power-up). In Kaioken, it lets the Kaioken go. |
+| **F** | DOWN button | Power down to base form, from any Super Saiyan form (or let the Kaioken go). |
 | **Space** | big TAP button | Spam it to fill the bar. Tap faster than it drains: it only rises above about 3 taps a second, and 8 a second gets you there in under 3 s. |
 | **K** | KAIOKEN button | Light the Kaioken (base form only), and press again to push it a level higher. |
 | **H** | — | Fit panel: nudge the hair or belt into place, then copy the `Offset` line it shows into `HairConfig`. Picking a hair you can't see right now (SSJ2, SSJ3, or the SSJ hair in base form) shows it on you while it's picked. |

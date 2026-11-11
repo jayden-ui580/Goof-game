@@ -110,12 +110,11 @@ HairConfig.Hairs = {
 		},
 	},
 
-	-- SSJ2 and SSJ3 (your hairs, rigged the same way). There are no SSJ2 / SSJ3 forms yet, so
-	-- they're put on hidden; the fit tool (H) shows one while you pick it, so you can line it up.
+	-- SSJ2 and SSJ3 (your hairs, rigged the same way), shown in those forms. To line one up
+	-- without transforming, open the fit tool (H) and pick it: it shows while it's picked.
 	SSJ2Hair = {
 		SignatureBone = { "SSJ2Root", "S2P01_1" },
 		File = "SSJ2Hair_Rigged.glb",
-		Optional = true, -- (no warning if it isn't imported yet)
 		TextureId = "",
 		Color = Color3.fromRGB(255, 214, 80),
 		Material = Enum.Material.SmoothPlastic,
@@ -153,7 +152,6 @@ HairConfig.Hairs = {
 	SSJ3Hair = {
 		SignatureBone = { "SSJ3Root", "S3P01_1" },
 		File = "SSJ3Hair_Rigged.glb",
-		Optional = true, -- (no warning if it isn't imported yet)
 		TextureId = "",
 		Color = Color3.fromRGB(255, 214, 80),
 		Material = Enum.Material.SmoothPlastic,

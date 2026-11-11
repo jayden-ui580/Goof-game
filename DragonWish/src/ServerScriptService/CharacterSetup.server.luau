@@ -11,7 +11,7 @@
 
 	The rigged pieces are found in ServerStorage > CharacterParts: import the four hair .glb
 	files (their textures come with them) and the belt and finger .fbx files there. Without the
-	finger files you get plain hands; the SSJ2 / SSJ3 hairs are optional for now. Settings:
+	finger files you get plain hands; without the SSJ2 / SSJ3 hair those forms show no hair. Settings:
 	ReplicatedStorage > HairConfig and PowerConfig.
 ]]
 

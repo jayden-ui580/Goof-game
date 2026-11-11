@@ -6,7 +6,8 @@
 	stance -> spam Space (or tap the TAP button on a phone) -> the aura appears, then grows
 	bigger and faster, your hair and belt get blown upward -> fill the bar and you burst into
 	Super Saiyan (and point at the camera: "YOU'RE FINISHED!"); the golden hair then flows
-	calmly. Press R again as a Super Saiyan to power down.
+	calmly. As a Super Saiyan, press R and fill the bar again to go Super Saiyan 2, and again
+	for Super Saiyan 3 (no cutscene for those: just the power-up). F powers you back down.
 	Kaioken (base form only): press K to light it, again to push it higher. More power, faster
 	legs, a red aura ... and it eats your health every second. R lets it go.
 ]]
@@ -16,7 +17,8 @@ local PowerConfig = {}
 PowerConfig.BaseRigName = "Base" -- the R15 rig in ReplicatedStorage every player becomes
 
 -- controls
-PowerConfig.PowerKey = Enum.KeyCode.R -- start powering up / cancel / power down
+PowerConfig.PowerKey = Enum.KeyCode.R -- start powering up (to the next form) / cancel
+PowerConfig.PowerDownKey = Enum.KeyCode.F -- back to base form (or let the Kaioken go)
 PowerConfig.TapKey = Enum.KeyCode.Space -- spam this to charge
 
 -- charging
@@ -69,6 +71,8 @@ PowerConfig.KiRegen = 1.5 -- ki per second while you're not charging (charging f
 PowerConfig.BasePowerLevel = 1500 -- what the scouter reads in base form at rest
 PowerConfig.ChargePowerBoost = 4 -- charging multiplies it up to this much more
 PowerConfig.SSJMultiplier = 50 -- Super Saiyan power level = base x this
+PowerConfig.SSJ2Multiplier = 100
+PowerConfig.SSJ3Multiplier = 400
 PowerConfig.RadarRange = 250 -- studs the Dragon Radar can see other players
 
 -- looks
@@ -89,5 +93,40 @@ PowerConfig.CameraDistance = 9 -- studs in front of you
 PowerConfig.CameraHeight = 0.8 -- studs above your waist
 PowerConfig.CameraLookHeight = 1.4 -- the camera looks at this height above your waist
 PowerConfig.CameraShake = 0.22 -- strongest shake (studs) at full power
+
+-- the forms, in the order you power up through them
+PowerConfig.Forms = { "Base", "SSJ", "SSJ2", "SSJ3" }
+PowerConfig.FormNames = { SSJ = "SUPER SAIYAN!", SSJ2 = "SUPER SAIYAN 2!", SSJ3 = "SUPER SAIYAN 3!" }
+PowerConfig.NextBurstTime = 3.2 -- seconds the SSJ2 / SSJ3 transformation takes (no cutscene)
+
+function PowerConfig.IsSuper(form: string?): boolean
+	return form == "SSJ" or form == "SSJ2" or form == "SSJ3"
+end
+
+-- the form after this one (nil at the top)
+function PowerConfig.NextForm(form: string?): string?
+	for i, f in PowerConfig.Forms do
+		if f == (form or "Base") then
+			return PowerConfig.Forms[i + 1]
+		end
+	end
+	return nil
+end
+
+function PowerConfig.Multiplier(form: string?): number
+	if form == "SSJ" then
+		return PowerConfig.SSJMultiplier
+	elseif form == "SSJ2" then
+		return PowerConfig.SSJ2Multiplier
+	elseif form == "SSJ3" then
+		return PowerConfig.SSJ3Multiplier
+	end
+	return 1
+end
+
+-- how long turning into this form takes (the first time, Super Saiyan, has the cutscene)
+function PowerConfig.BurstTimeFor(form: string?): number
+	return form == "SSJ" and PowerConfig.BurstTime or PowerConfig.NextBurstTime
+end
 
 return PowerConfig

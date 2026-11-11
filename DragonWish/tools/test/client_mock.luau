@@ -265,10 +265,29 @@ check("after the burst you're a calm Super Saiyan and can move again",
 	attrs.PowerState == "Idle" and attrs.Form == "SSJ" and humanoid.WalkSpeed == 16 and math.abs(attrs.AuraWind - PowerConfig.SSJCalmWind) < 1e-6)
 check("the camera is given back", camera.CameraType ~= roblox.Enum.CameraType.Scriptable)
 
--- 2. power down
+-- 2. as a Super Saiyan, R powers up again: SSJ2 (no cutscene), then SSJ3; F powers down
+local function powerUpAgain()
+	press("DWPower")
+	local burst = false
+	for _ = 1, 600 do
+		run(1 / 60 * 4, 8)
+		if attrs.PowerState == "Bursting" then
+			burst = true
+			break
+		end
+	end
+	run(PowerConfig.NextBurstTime + 0.5)
+	return burst
+end
+check("R as a Super Saiyan powers up to SSJ2, with no cutscene",
+	powerUpAgain() and attrs.Form == "SSJ2" and attrs.PowerState == "Idle" and #cutsceneStub.Plays == 1 and ssjHair.Transparency == 1 and humanoid.WalkSpeed == 16)
+check("... and again to SSJ3", powerUpAgain() and attrs.Form == "SSJ3" and attrs.PowerState == "Idle")
 press("DWPower")
 run(0.5)
-check("R as a Super Saiyan powers down", attrs.Form == "Base" and ssjHair.Transparency == 1 and baseHair.Transparency == 0)
+check("R at SSJ3 does nothing (that's the limit)", attrs.Form == "SSJ3" and attrs.PowerState == "Idle")
+press("DWPowerDown")
+run(0.5)
+check("F powers down to base", attrs.Form == "Base" and ssjHair.Transparency == 1 and baseHair.Transparency == 0)
 
 -- 3. start, tap a little, cancel
 press("DWPower")

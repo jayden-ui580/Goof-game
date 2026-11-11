@@ -54,8 +54,8 @@
 	       LeftFingers_Rigged.fbx, RightFingers_Rigged.fbx
 	     (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones", leave
 	     "Upload to Roblox" on so the textures upload).
-	     Drag all seven imported models into ServerStorage > CharacterParts. SSJ2 and SSJ3
-	     are optional for now: there are no SSJ2 / SSJ3 forms yet, so they're put on hidden.
+	     Drag all seven imported models into ServerStorage > CharacterParts. The SSJ2 and
+	     SSJ3 hair show when you reach those forms.
 	  3. Move the contents of each folder in this kit into the service with the same name
 	     (StarterPlayerScripts is inside StarterPlayer). Then delete this kit folder.
 	  4. In StarterPlayer's properties, untick LoadCharacterAppearance (the script tries to do
@@ -66,7 +66,9 @@
 	  R       power up: the camera swings round to face you and you stand tall, fists at
 	          your waist. As the bar fills you hunch over, head down, elbows wide; when you
 	          transform you lean back, head up, arms spread, and hold it a moment.
-	          R again cancels. As a Super Saiyan, R powers back down to base.
+	          R again cancels. As a Super Saiyan, R powers up again: fill the bar to go
+	          Super Saiyan 2, and again for Super Saiyan 3 (no cutscene, just the power-up).
+	  F       power down to base form (phones: the DOWN button).
 	          (phones: the round POWER button on the right does the same as R)
 	  Space   spam it to fill the power bar (phones: the big TAP button at the bottom).
 	          A ring of light flares at your feet and a sheet of fire rises round you, bigger
@@ -1265,12 +1267,11 @@ HairConfig.Hairs = {
 		},
 	},
 
-	-- SSJ2 and SSJ3 (your hairs, rigged the same way). There are no SSJ2 / SSJ3 forms yet, so
-	-- they're put on hidden; the fit tool (H) shows one while you pick it, so you can line it up.
+	-- SSJ2 and SSJ3 (your hairs, rigged the same way), shown in those forms. To line one up
+	-- without transforming, open the fit tool (H) and pick it: it shows while it's picked.
 	SSJ2Hair = {
 		SignatureBone = { "SSJ2Root", "S2P01_1" },
 		File = "SSJ2Hair_Rigged.glb",
-		Optional = true, -- (no warning if it isn't imported yet)
 		TextureId = "",
 		Color = Color3.fromRGB(255, 214, 80),
 		Material = Enum.Material.SmoothPlastic,
@@ -1308,7 +1309,6 @@ HairConfig.Hairs = {
 	SSJ3Hair = {
 		SignatureBone = { "SSJ3Root", "S3P01_1" },
 		File = "SSJ3Hair_Rigged.glb",
-		Optional = true, -- (no warning if it isn't imported yet)
 		TextureId = "",
 		Color = Color3.fromRGB(255, 214, 80),
 		Material = Enum.Material.SmoothPlastic,
@@ -2191,7 +2191,8 @@ return HairConfig
 	stance -> spam Space (or tap the TAP button on a phone) -> the aura appears, then grows
 	bigger and faster, your hair and belt get blown upward -> fill the bar and you burst into
 	Super Saiyan (and point at the camera: "YOU'RE FINISHED!"); the golden hair then flows
-	calmly. Press R again as a Super Saiyan to power down.
+	calmly. As a Super Saiyan, press R and fill the bar again to go Super Saiyan 2, and again
+	for Super Saiyan 3 (no cutscene for those: just the power-up). F powers you back down.
 	Kaioken (base form only): press K to light it, again to push it higher. More power, faster
 	legs, a red aura ... and it eats your health every second. R lets it go.
 ]]
@@ -2201,7 +2202,8 @@ local PowerConfig = {}
 PowerConfig.BaseRigName = "Base" -- the R15 rig in ReplicatedStorage every player becomes
 
 -- controls
-PowerConfig.PowerKey = Enum.KeyCode.R -- start powering up / cancel / power down
+PowerConfig.PowerKey = Enum.KeyCode.R -- start powering up (to the next form) / cancel
+PowerConfig.PowerDownKey = Enum.KeyCode.F -- back to base form (or let the Kaioken go)
 PowerConfig.TapKey = Enum.KeyCode.Space -- spam this to charge
 
 -- charging
@@ -2254,6 +2256,8 @@ PowerConfig.KiRegen = 1.5 -- ki per second while you're not charging (charging f
 PowerConfig.BasePowerLevel = 1500 -- what the scouter reads in base form at rest
 PowerConfig.ChargePowerBoost = 4 -- charging multiplies it up to this much more
 PowerConfig.SSJMultiplier = 50 -- Super Saiyan power level = base x this
+PowerConfig.SSJ2Multiplier = 100
+PowerConfig.SSJ3Multiplier = 400
 PowerConfig.RadarRange = 250 -- studs the Dragon Radar can see other players
 
 -- looks
@@ -2274,6 +2278,41 @@ PowerConfig.CameraDistance = 9 -- studs in front of you
 PowerConfig.CameraHeight = 0.8 -- studs above your waist
 PowerConfig.CameraLookHeight = 1.4 -- the camera looks at this height above your waist
 PowerConfig.CameraShake = 0.22 -- strongest shake (studs) at full power
+
+-- the forms, in the order you power up through them
+PowerConfig.Forms = { "Base", "SSJ", "SSJ2", "SSJ3" }
+PowerConfig.FormNames = { SSJ = "SUPER SAIYAN!", SSJ2 = "SUPER SAIYAN 2!", SSJ3 = "SUPER SAIYAN 3!" }
+PowerConfig.NextBurstTime = 3.2 -- seconds the SSJ2 / SSJ3 transformation takes (no cutscene)
+
+function PowerConfig.IsSuper(form: string?): boolean
+	return form == "SSJ" or form == "SSJ2" or form == "SSJ3"
+end
+
+-- the form after this one (nil at the top)
+function PowerConfig.NextForm(form: string?): string?
+	for i, f in PowerConfig.Forms do
+		if f == (form or "Base") then
+			return PowerConfig.Forms[i + 1]
+		end
+	end
+	return nil
+end
+
+function PowerConfig.Multiplier(form: string?): number
+	if form == "SSJ" then
+		return PowerConfig.SSJMultiplier
+	elseif form == "SSJ2" then
+		return PowerConfig.SSJ2Multiplier
+	elseif form == "SSJ3" then
+		return PowerConfig.SSJ3Multiplier
+	end
+	return 1
+end
+
+-- how long turning into this form takes (the first time, Super Saiyan, has the cutscene)
+function PowerConfig.BurstTimeFor(form: string?): number
+	return form == "SSJ" and PowerConfig.BurstTime or PowerConfig.NextBurstTime
+end
 
 return PowerConfig
 ]]></ProtectedString>
@@ -3568,7 +3607,7 @@ return PoseLayers
 
 	The rigged pieces are found in ServerStorage > CharacterParts: import the four hair .glb
 	files (their textures come with them) and the belt and finger .fbx files there. Without the
-	finger files you get plain hands; the SSJ2 / SSJ3 hairs are optional for now. Settings:
+	finger files you get plain hands; without the SSJ2 / SSJ3 hair those forms show no hair. Settings:
 	ReplicatedStorage > HairConfig and PowerConfig.
 ]]
 
@@ -4037,7 +4076,7 @@ end
 	X", "I'm full — transform", "cancel", "power down" and "Kaioken"; it checks those make sense
 	and sets attributes on the character that every player's screen reads to draw the aura,
 	pose, hair, fingers and HUD:
-	  Form        "Base" or "SSJ"
+	  Form        "Base", "SSJ", "SSJ2" or "SSJ3"
 	  PowerState  "Idle", "Charging" or "Bursting" (the transformation, cutscene included)
 	  Charge      0..1, how full the power bar is
 	  AuraWind    0..1, how hard the aura blows the hair and belt upward
@@ -4047,7 +4086,9 @@ end
 	  Kaioken     0 = off, 1..5 = the level (x2, x3, x4, x10, x20; PowerConfig.KaiokenLevels)
 	  KaiokenMult the multiplier of that level (1 when off)
 	  Exhausted   true for a few seconds after the Kaioken was pushed until your body gave out
-	It also swaps the visible hair (base <-> Super Saiyan), stops you walking while charging
+	As a Super Saiyan, powering up again goes one form higher (SSJ -> SSJ2 -> SSJ3); powering
+	down always goes back to base.
+	It also swaps the visible hair for the form, stops you walking while charging
 	and transforming, speeds you up in Kaioken, drains your health while it burns, and slows
 	you while you're exhausted.
 	Settings: ReplicatedStorage > PowerConfig.
@@ -4125,7 +4166,7 @@ local function idleWind(character: Model): number
 	if kaioken > 0 then
 		return 0.3 + 0.1 * kaioken
 	end
-	if character:GetAttribute("Form") ~= "SSJ" then
+	if not PowerConfig.IsSuper(character:GetAttribute("Form")) then
 		return 0
 	end
 	return PowerConfig.SSJCalmWind * (character:GetAttribute("Breeze") or 0)
@@ -4189,7 +4230,7 @@ local function calmDown(character: Model, token: number)
 	local st = state(character)
 	local steps = math.max(1, math.floor(PowerConfig.SSJCalmTime / 0.1))
 	for i = 1, steps do
-		if not character.Parent or st.Token ~= token or character:GetAttribute("Form") ~= "SSJ" then
+		if not character.Parent or st.Token ~= token or not PowerConfig.IsSuper(character:GetAttribute("Form")) then
 			return
 		end
 		if character:GetAttribute("PowerState") == "Idle" then
@@ -4201,22 +4242,23 @@ local function calmDown(character: Model, token: number)
 	end
 end
 
-local function burst(character: Model)
+local function burst(character: Model, form: string)
 	local st = state(character)
 	st.Token = (st.Token or 0) + 1
 	local token = st.Token
+	local burstTime = PowerConfig.BurstTimeFor(form)
+	applyForm(character, form) -- (before Bursting, so screens know which form it is)
 	character:SetAttribute("PowerState", "Bursting")
 	character:SetAttribute("Charge", 1)
 	character:SetAttribute("AuraWind", 1)
 	character:SetAttribute("Breeze", 1)
 	character:SetAttribute("Ki", PowerConfig.KiMax)
-	applyForm(character, "SSJ")
-	task.delay(PowerConfig.BurstTime, function()
+	task.delay(burstTime, function()
 		if character.Parent and character:GetAttribute("PowerState") == "Bursting" then
 			stopCharging(character)
 		end
 	end)
-	task.delay(PowerConfig.BurstTime + PowerConfig.SSJCalmAfter, function()
+	task.delay(burstTime + PowerConfig.SSJCalmAfter, function()
 		if character.Parent and st.Token == token then
 			calmDown(character, token)
 		end
@@ -4236,7 +4278,8 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 
 	local kaioken = character:GetAttribute("Kaioken") or 0
 	if action == "Start" then
-		if powerState == "Idle" and form == "Base" and kaioken == 0 and not character:GetAttribute("Exhausted") then
+		-- from base, or as a Super Saiyan to go one form higher
+		if powerState == "Idle" and PowerConfig.NextForm(form) and kaioken == 0 and not character:GetAttribute("Exhausted") then
 			st.Started, st.LastUpdate = now, now
 			character:SetAttribute("PowerState", "Charging")
 			character:SetAttribute("Charge", 0)
@@ -4257,7 +4300,10 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 	elseif action == "Transform" then
 		local charge = character:GetAttribute("Charge") or 0
 		if powerState == "Charging" and charge >= 0.95 and now - (st.Started or now) >= PowerConfig.MinChargeTime - 0.2 then
-			burst(character)
+			local nextForm = PowerConfig.NextForm(form)
+			if nextForm then
+				burst(character, nextForm)
+			end
 		end
 	elseif action == "Cancel" then
 		if powerState == "Charging" then
@@ -4266,7 +4312,7 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 	elseif action == "PowerDown" then
 		if powerState == "Idle" and kaioken > 0 then
 			setKaioken(character, 0) -- let the Kaioken go
-		elseif powerState == "Idle" and form == "SSJ" then
+		elseif powerState == "Idle" and PowerConfig.IsSuper(form) then
 			st.Token = (st.Token or 0) + 1 -- cancels a pending calm-down
 			applyForm(character, "Base")
 			character:SetAttribute("AuraWind", 0)
@@ -4369,7 +4415,9 @@ HairPhysics.StartClient()
 
 	Your controls, camera and screen for powering up:
 	  R      start powering up (the camera swings round to face you, you drop into a stance)
-	         R again while charging cancels; R as a Super Saiyan (or in Kaioken) powers down
+	         R again while charging cancels. As a Super Saiyan, R powers up to the next form
+	         (SSJ2, then SSJ3); in Kaioken it lets it go
+	  F      power down to base form (or let the Kaioken go) (phones: the DOWN button)
 	  Space  spam it to fill the power bar (phones: the big TAP button)
 	  K      Kaioken: lights it, and each press after pushes it a level higher (phones: the
 	         KAIOKEN button). The server decides if you can; a red "KAIOKEN x3!" pops up when
@@ -4642,6 +4690,7 @@ local full = false -- the bar filled up: it stays full until you transform
 local startedAt = 0
 local lastSend = 0
 local transformSentAt = -math.huge
+local chargingFrom = "Base" -- the form you were in when you started charging
 local savedCamera = nil
 local camShake = 0
 local fovKick = 0
@@ -4656,8 +4705,14 @@ local function refreshHint()
 	local kaioken = attr("Kaioken") or 0
 	if charging or bursting or attr("Exhausted") then
 		setHint(nil)
-	elseif attr("Form") == "SSJ" then
-		setHint({ { powerKey, "POWER DOWN" } })
+	elseif PowerConfig.IsSuper(attr("Form")) then
+		local downKey = touch and "DOWN" or PowerConfig.PowerDownKey.Name
+		local nextForm = PowerConfig.NextForm(attr("Form"))
+		if nextForm then
+			setHint({ { powerKey, nextForm == "SSJ2" and "SSJ 2" or "SSJ 3" }, { downKey, "POWER DOWN" } })
+		else
+			setHint({ { downKey, "POWER DOWN" } })
+		end
 	elseif kaioken >= #PowerConfig.KaiokenLevels then
 		setHint({ { powerKey, "LET IT GO" } })
 	elseif kaioken > 0 then
@@ -4760,6 +4815,7 @@ local function startCharging()
 	full = false
 	startedAt = os.clock()
 	transformSentAt = -math.huge
+	chargingFrom = attr("Form") or "Base"
 	remote:FireServer("Start")
 	takeCamera()
 	panel.Visible = true
@@ -4789,10 +4845,14 @@ local function playBurst()
 	charging = false
 	panel.Visible = false
 	setTapBinding(false)
-	local cutscene = PowerConfig.Cutscene and Cutscene and character
+	-- the cutscene is for the first time only (Super Saiyan); SSJ2 / SSJ3 just power up
+	local form = attr("Form") or "SSJ"
+	local burstTime = PowerConfig.BurstTimeFor(form)
+	local cutscene = PowerConfig.Cutscene and Cutscene and character and chargingFrom == "Base"
+	bigText:SetText(PowerConfig.FormNames[form] or "SUPER SAIYAN!")
 	if cutscene then
 		gui.Enabled = false -- the cutscene has the screen to itself
-		Cutscene.Play(character, PowerConfig.BurstTime - 0.05, function()
+		Cutscene.Play(character, burstTime - 0.05, function()
 			gui.Enabled = true
 		end)
 	end
@@ -4828,7 +4888,7 @@ local function playBurst()
 			end)
 		end
 	end)
-	task.delay(PowerConfig.BurstTime, function()
+	task.delay(burstTime, function()
 		bursting = false
 		releaseCamera()
 		refreshHint()
@@ -4845,8 +4905,10 @@ local function onPowerKey(_, state)
 	end
 	if charging then
 		stopCharging(true)
-	elseif attr("Form") == "SSJ" or (attr("Kaioken") or 0) > 0 then
+	elseif (attr("Kaioken") or 0) > 0 then
 		remote:FireServer("PowerDown")
+	elseif PowerConfig.IsSuper(attr("Form")) and not PowerConfig.NextForm(attr("Form")) then
+		showToast("THAT'S THE LIMIT!")
 	elseif attr("Exhausted") then
 		showToast("TOO TIRED!")
 	else
@@ -4856,6 +4918,19 @@ local function onPowerKey(_, state)
 end
 ContextActionService:BindAction("DWPower", onPowerKey, true, PowerConfig.PowerKey)
 ContextActionService:SetTitle("DWPower", "Power")
+
+-- F: back to base form (or let the Kaioken go)
+local function onPowerDownKey(_, state)
+	if state ~= Enum.UserInputState.Begin or not character then
+		return Enum.ContextActionResult.Pass
+	end
+	if not charging and not bursting and (PowerConfig.IsSuper(attr("Form")) or (attr("Kaioken") or 0) > 0) then
+		remote:FireServer("PowerDown")
+	end
+	return Enum.ContextActionResult.Sink
+end
+ContextActionService:BindAction("DWPowerDown", onPowerDownKey, true, PowerConfig.PowerDownKey or Enum.KeyCode.F)
+ContextActionService:SetTitle("DWPowerDown", "Down")
 
 -- K: light the Kaioken, or push it higher (the server checks and answers by setting the
 -- Kaioken attribute; the pop-up plays when it does)
@@ -4868,7 +4943,7 @@ local function onKaiokenKey(_, state)
 		return Enum.ContextActionResult.Sink
 	end
 	local level = attr("Kaioken") or 0
-	if attr("Form") == "SSJ" then
+	if PowerConfig.IsSuper(attr("Form")) then
 		showToast("BASE FORM ONLY!")
 	elseif attr("Exhausted") then
 		showToast("TOO TIRED!")
@@ -5822,7 +5897,7 @@ local function targetIntensity(character: Model, fx): number
 	local kaioken = character:GetAttribute("Kaioken") or 0
 	if kaioken > 0 then
 		return PowerConfig.KaiokenAura[kaioken] or 0.7
-	elseif character:GetAttribute("Form") == "SSJ" then
+	elseif PowerConfig.IsSuper(character:GetAttribute("Form")) then
 		-- the golden aura stays up after transforming and fades when you calm down
 		return PowerConfig.SSJIdleAura * (character:GetAttribute("Breeze") or 1)
 	end
@@ -6010,7 +6085,7 @@ RunService.RenderStepped:Connect(function(dt)
 			fx.Intensity = ease(fx.Intensity, want, want > fx.Intensity and 5 or 1.5, dt)
 			local i = fx.Intensity
 			fx.Flare = ease(fx.Flare, 1, 2.5, dt)
-			local gold = (character:GetAttribute("Form") == "SSJ" or state == "Bursting") and 1 or 0
+			local gold = (PowerConfig.IsSuper(character:GetAttribute("Form")) or state == "Bursting") and 1 or 0
 			fx.Gold = ease(fx.Gold, gold, 6, dt)
 			local kaioken = character:GetAttribute("Kaioken") or 0
 			-- red while the Kaioken burns, and while its aura dies away after; another aura
@@ -6121,7 +6196,8 @@ RunService.RenderStepped:Connect(function(dt)
 				end
 				-- then the "YOU'RE FINISHED!" point
 				local pointAt = PowerConfig.PointAt
-				if pointAt and now - fx.BurstAt >= pointAt then
+				-- (only the first transformation, Super Saiyan, has the point)
+				if pointAt and character:GetAttribute("Form") == "SSJ" and now - fx.BurstAt >= pointAt then
 					fx.PointMix = 1
 					fx.PointT = now - fx.BurstAt - pointAt
 				end
@@ -7368,8 +7444,8 @@ local function powerTarget(c: Model): number
 	local kaioken = c:GetAttribute("Kaioken") or 0
 	if kaioken > 0 then
 		return base * (c:GetAttribute("KaiokenMult") or PowerConfig.KaiokenLevels[kaioken] or 1)
-	elseif c:GetAttribute("Form") == "SSJ" then
-		return base * PowerConfig.SSJMultiplier
+	elseif PowerConfig.IsSuper(c:GetAttribute("Form")) then
+		return base * PowerConfig.Multiplier(c:GetAttribute("Form"))
 	elseif state == "Charging" or state == "Bursting" then
 		return base * (1 + PowerConfig.ChargePowerBoost * (c:GetAttribute("Charge") or 0))
 	end
@@ -7417,7 +7493,7 @@ RunService.RenderStepped:Connect(function(dt)
 	radar.Position = UDim2.new(1, -RADAR_MARGIN + away * (200 * scale + 40), 0, 6)
 
 	-- colours follow your form (gold as a Super Saiyan, red in Kaioken, grey when exhausted)
-	local ssj = character:GetAttribute("Form") == "SSJ"
+	local ssj = PowerConfig.IsSuper(character:GetAttribute("Form"))
 	local kaioken = character:GetAttribute("Kaioken") or 0
 	local tired = character:GetAttribute("Exhausted") == true
 	ssjMix += ((ssj and 1 or 0) - ssjMix) * (1 - math.exp(-dt * 6))
@@ -7555,7 +7631,7 @@ RunService.RenderStepped:Connect(function(dt)
 					blip.Position = UDim2.new(0.5, flat.X * (RADAR_SCREEN / 2 - 6), 0.5, flat.Y * (RADAR_SCREEN / 2 - 6))
 					local pulse = 0.5 + 0.5 * math.sin(now * 6 + used)
 					blip.Size = UDim2.fromOffset(7 + 3 * pulse, 7 + 3 * pulse)
-					blip.BackgroundColor3 = (oc:GetAttribute("Form") == "SSJ") and DragonUI.KI_SSJ or DragonUI.DAMAGE
+					blip.BackgroundColor3 = PowerConfig.IsSuper(oc:GetAttribute("Form")) and DragonUI.KI_SSJ or DragonUI.DAMAGE
 				end
 			end
 		end
@@ -7843,7 +7919,7 @@ local function target(character: Model, rig, hand, now: number, standing: boolea
 	elseif state == "Bursting" then
 		local t = now - (rig.BurstAt or now)
 		local pointAt = PowerConfig.PointAt
-		if hand.Side == "Left" and pointAt and t >= pointAt then
+		if hand.Side == "Left" and pointAt and t >= pointAt and character:GetAttribute("Form") == "SSJ" then
 			-- the "YOU'RE FINISHED!" point, in step with PowerFX's arm
 			local p = t - pointAt
 			if p < 0.62 then
@@ -7859,7 +7935,7 @@ local function target(character: Model, rig, hand, now: number, standing: boolea
 	elseif character:GetAttribute("Exhausted") then
 		return POSES.Loose, 0
 	end
-	local ssj = character:GetAttribute("Form") == "SSJ"
+	local ssj = PowerConfig.IsSuper(character:GetAttribute("Form"))
 	local base = POSES.Relaxed
 	if ssj then
 		-- fists while the golden aura burns, loosening as you calm down

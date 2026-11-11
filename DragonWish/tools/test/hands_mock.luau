@@ -220,6 +220,7 @@ show("charging")
 check("powering up: fists (every finger folded into the palm, the thumb across)", fist("Left") and fist("Right"))
 
 -- transforming, then the point: left index straight out, the rest folded
+char:SetAttribute("Form", "SSJ")
 char:SetAttribute("PowerState", "Bursting")
 run(PowerConfig.PointAt + 1.2)
 show("the point")

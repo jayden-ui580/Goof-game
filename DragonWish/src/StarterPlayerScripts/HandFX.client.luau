@@ -257,7 +257,7 @@ local function target(character: Model, rig, hand, now: number, standing: boolea
 	elseif state == "Bursting" then
 		local t = now - (rig.BurstAt or now)
 		local pointAt = PowerConfig.PointAt
-		if hand.Side == "Left" and pointAt and t >= pointAt then
+		if hand.Side == "Left" and pointAt and t >= pointAt and character:GetAttribute("Form") == "SSJ" then
 			-- the "YOU'RE FINISHED!" point, in step with PowerFX's arm
 			local p = t - pointAt
 			if p < 0.62 then
@@ -273,7 +273,7 @@ local function target(character: Model, rig, hand, now: number, standing: boolea
 	elseif character:GetAttribute("Exhausted") then
 		return POSES.Loose, 0
 	end
-	local ssj = character:GetAttribute("Form") == "SSJ"
+	local ssj = PowerConfig.IsSuper(character:GetAttribute("Form"))
 	local base = POSES.Relaxed
 	if ssj then
 		-- fists while the golden aura burns, loosening as you calm down

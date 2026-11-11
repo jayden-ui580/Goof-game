@@ -45,8 +45,8 @@
 	       LeftFingers_Rigged.fbx, RightFingers_Rigged.fbx
 	     (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones", leave
 	     "Upload to Roblox" on so the textures upload).
-	     Drag all seven imported models into ServerStorage > CharacterParts. SSJ2 and SSJ3
-	     are optional for now: there are no SSJ2 / SSJ3 forms yet, so they're put on hidden.
+	     Drag all seven imported models into ServerStorage > CharacterParts. The SSJ2 and
+	     SSJ3 hair show when you reach those forms.
 	  3. Move the contents of each folder in this kit into the service with the same name
 	     (StarterPlayerScripts is inside StarterPlayer). Then delete this kit folder.
 	  4. In StarterPlayer's properties, untick LoadCharacterAppearance (the script tries to do
@@ -57,7 +57,9 @@
 	  R       power up: the camera swings round to face you and you stand tall, fists at
 	          your waist. As the bar fills you hunch over, head down, elbows wide; when you
 	          transform you lean back, head up, arms spread, and hold it a moment.
-	          R again cancels. As a Super Saiyan, R powers back down to base.
+	          R again cancels. As a Super Saiyan, R powers up again: fill the bar to go
+	          Super Saiyan 2, and again for Super Saiyan 3 (no cutscene, just the power-up).
+	  F       power down to base form (phones: the DOWN button).
 	          (phones: the round POWER button on the right does the same as R)
 	  Space   spam it to fill the power bar (phones: the big TAP button at the bottom).
 	          A ring of light flares at your feet and a sheet of fire rises round you, bigger

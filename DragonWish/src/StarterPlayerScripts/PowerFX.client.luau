@@ -780,7 +780,7 @@ local function targetIntensity(character: Model, fx): number
 	local kaioken = character:GetAttribute("Kaioken") or 0
 	if kaioken > 0 then
 		return PowerConfig.KaiokenAura[kaioken] or 0.7
-	elseif character:GetAttribute("Form") == "SSJ" then
+	elseif PowerConfig.IsSuper(character:GetAttribute("Form")) then
 		-- the golden aura stays up after transforming and fades when you calm down
 		return PowerConfig.SSJIdleAura * (character:GetAttribute("Breeze") or 1)
 	end
@@ -968,7 +968,7 @@ RunService.RenderStepped:Connect(function(dt)
 			fx.Intensity = ease(fx.Intensity, want, want > fx.Intensity and 5 or 1.5, dt)
 			local i = fx.Intensity
 			fx.Flare = ease(fx.Flare, 1, 2.5, dt)
-			local gold = (character:GetAttribute("Form") == "SSJ" or state == "Bursting") and 1 or 0
+			local gold = (PowerConfig.IsSuper(character:GetAttribute("Form")) or state == "Bursting") and 1 or 0
 			fx.Gold = ease(fx.Gold, gold, 6, dt)
 			local kaioken = character:GetAttribute("Kaioken") or 0
 			-- red while the Kaioken burns, and while its aura dies away after; another aura
@@ -1079,7 +1079,8 @@ RunService.RenderStepped:Connect(function(dt)
 				end
 				-- then the "YOU'RE FINISHED!" point
 				local pointAt = PowerConfig.PointAt
-				if pointAt and now - fx.BurstAt >= pointAt then
+				-- (only the first transformation, Super Saiyan, has the point)
+				if pointAt and character:GetAttribute("Form") == "SSJ" and now - fx.BurstAt >= pointAt then
 					fx.PointMix = 1
 					fx.PointT = now - fx.BurstAt - pointAt
 				end

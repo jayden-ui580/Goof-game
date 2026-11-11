@@ -491,8 +491,8 @@ local function powerTarget(c: Model): number
 	local kaioken = c:GetAttribute("Kaioken") or 0
 	if kaioken > 0 then
 		return base * (c:GetAttribute("KaiokenMult") or PowerConfig.KaiokenLevels[kaioken] or 1)
-	elseif c:GetAttribute("Form") == "SSJ" then
-		return base * PowerConfig.SSJMultiplier
+	elseif PowerConfig.IsSuper(c:GetAttribute("Form")) then
+		return base * PowerConfig.Multiplier(c:GetAttribute("Form"))
 	elseif state == "Charging" or state == "Bursting" then
 		return base * (1 + PowerConfig.ChargePowerBoost * (c:GetAttribute("Charge") or 0))
 	end
@@ -540,7 +540,7 @@ RunService.RenderStepped:Connect(function(dt)
 	radar.Position = UDim2.new(1, -RADAR_MARGIN + away * (200 * scale + 40), 0, 6)
 
 	-- colours follow your form (gold as a Super Saiyan, red in Kaioken, grey when exhausted)
-	local ssj = character:GetAttribute("Form") == "SSJ"
+	local ssj = PowerConfig.IsSuper(character:GetAttribute("Form"))
 	local kaioken = character:GetAttribute("Kaioken") or 0
 	local tired = character:GetAttribute("Exhausted") == true
 	ssjMix += ((ssj and 1 or 0) - ssjMix) * (1 - math.exp(-dt * 6))
@@ -678,7 +678,7 @@ RunService.RenderStepped:Connect(function(dt)
 					blip.Position = UDim2.new(0.5, flat.X * (RADAR_SCREEN / 2 - 6), 0.5, flat.Y * (RADAR_SCREEN / 2 - 6))
 					local pulse = 0.5 + 0.5 * math.sin(now * 6 + used)
 					blip.Size = UDim2.fromOffset(7 + 3 * pulse, 7 + 3 * pulse)
-					blip.BackgroundColor3 = (oc:GetAttribute("Form") == "SSJ") and DragonUI.KI_SSJ or DragonUI.DAMAGE
+					blip.BackgroundColor3 = PowerConfig.IsSuper(oc:GetAttribute("Form")) and DragonUI.KI_SSJ or DragonUI.DAMAGE
 				end
 			end
 		end

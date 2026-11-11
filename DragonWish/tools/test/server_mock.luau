@@ -119,6 +119,7 @@ modules.HairPhysics = luau.load(fs.readFile("src/ReplicatedStorage/HairPhysics.l
 modules.HairConfig = luau.load(fs.readFile("src/ReplicatedStorage/HairConfig.luau"), { environment = mods })()
 modules.PowerConfig = luau.load(fs.readFile("src/ReplicatedStorage/PowerConfig.luau"), { environment = mods })()
 modules.PowerConfig.BurstTime = 0.3
+modules.PowerConfig.NextBurstTime = 0.3
 modules.PowerConfig.SSJCalmAfter = 0.3 -- (20 s in the game)
 modules.PowerConfig.SSJCalmTime = 0.3
 modules.PowerConfig.KaiokenExhaustTime = 0.3 -- (4 s in the game)
@@ -203,8 +204,22 @@ local glowing = char:GetAttribute("Breeze") == 1 and char:GetAttribute("AuraWind
 task.wait(0.8); heartbeat:Fire(0.016); show("calmed down (20 s in game)")
 print("SSJ glow on after transforming, then the hair and aura calm down:",
 	glowing and char:GetAttribute("Breeze") == 0 and char:GetAttribute("AuraWind") == 0)
-send("Start"); show("R as Super Saiyan (ignored)")
+local function goHigher(tag)
+	send("Start"); clock += 0.1
+	for i = 1, 30 do clock += 0.1; send("Charge", math.min(1, i * 0.04)) end
+	send("Transform"); show(tag)
+	task.wait(0.4); heartbeat:Fire(0.016)
+end
+goHigher("R again: Super Saiyan 2")
+pass("powering up as a Super Saiyan goes to SSJ2: only the SSJ2 hair shows", char:GetAttribute("Form") == "SSJ2"
+	and hidden(char, "SSJHair") and not hidden(char, "SSJ2Hair") and hidden(char, "SSJ3Hair") and hidden(char, "BaseHair"))
+goHigher("R again: Super Saiyan 3")
+pass("and again goes to SSJ3: only the SSJ3 hair shows", char:GetAttribute("Form") == "SSJ3"
+	and hidden(char, "SSJ2Hair") and not hidden(char, "SSJ3Hair"))
+send("Start"); show("R as SSJ3 (the top: ignored)")
+pass("no higher than SSJ3", char:GetAttribute("PowerState") == "Idle" and char:GetAttribute("Form") == "SSJ3")
 send("PowerDown"); show("power down")
+pass("powering down goes all the way back to base", char:GetAttribute("Form") == "Base" and not hidden(char, "BaseHair") and hidden(char, "SSJ3Hair"))
 send("Start"); clock += 0.1; send("Charge", 0.1); send("Cancel"); show("start then cancel")
 send("Start"); clock += 10; heartbeat:Fire(0.016); show("went quiet for 10 s")
 char:SetAttribute("Ki", 10)

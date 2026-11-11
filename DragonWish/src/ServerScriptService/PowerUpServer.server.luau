@@ -5,7 +5,7 @@
 	X", "I'm full — transform", "cancel", "power down" and "Kaioken"; it checks those make sense
 	and sets attributes on the character that every player's screen reads to draw the aura,
 	pose, hair, fingers and HUD:
-	  Form        "Base" or "SSJ"
+	  Form        "Base", "SSJ", "SSJ2" or "SSJ3"
 	  PowerState  "Idle", "Charging" or "Bursting" (the transformation, cutscene included)
 	  Charge      0..1, how full the power bar is
 	  AuraWind    0..1, how hard the aura blows the hair and belt upward
@@ -15,7 +15,9 @@
 	  Kaioken     0 = off, 1..5 = the level (x2, x3, x4, x10, x20; PowerConfig.KaiokenLevels)
 	  KaiokenMult the multiplier of that level (1 when off)
 	  Exhausted   true for a few seconds after the Kaioken was pushed until your body gave out
-	It also swaps the visible hair (base <-> Super Saiyan), stops you walking while charging
+	As a Super Saiyan, powering up again goes one form higher (SSJ -> SSJ2 -> SSJ3); powering
+	down always goes back to base.
+	It also swaps the visible hair for the form, stops you walking while charging
 	and transforming, speeds you up in Kaioken, drains your health while it burns, and slows
 	you while you're exhausted.
 	Settings: ReplicatedStorage > PowerConfig.
@@ -93,7 +95,7 @@ local function idleWind(character: Model): number
 	if kaioken > 0 then
 		return 0.3 + 0.1 * kaioken
 	end
-	if character:GetAttribute("Form") ~= "SSJ" then
+	if not PowerConfig.IsSuper(character:GetAttribute("Form")) then
 		return 0
 	end
 	return PowerConfig.SSJCalmWind * (character:GetAttribute("Breeze") or 0)
@@ -157,7 +159,7 @@ local function calmDown(character: Model, token: number)
 	local st = state(character)
 	local steps = math.max(1, math.floor(PowerConfig.SSJCalmTime / 0.1))
 	for i = 1, steps do
-		if not character.Parent or st.Token ~= token or character:GetAttribute("Form") ~= "SSJ" then
+		if not character.Parent or st.Token ~= token or not PowerConfig.IsSuper(character:GetAttribute("Form")) then
 			return
 		end
 		if character:GetAttribute("PowerState") == "Idle" then
@@ -169,22 +171,23 @@ local function calmDown(character: Model, token: number)
 	end
 end
 
-local function burst(character: Model)
+local function burst(character: Model, form: string)
 	local st = state(character)
 	st.Token = (st.Token or 0) + 1
 	local token = st.Token
+	local burstTime = PowerConfig.BurstTimeFor(form)
+	applyForm(character, form) -- (before Bursting, so screens know which form it is)
 	character:SetAttribute("PowerState", "Bursting")
 	character:SetAttribute("Charge", 1)
 	character:SetAttribute("AuraWind", 1)
 	character:SetAttribute("Breeze", 1)
 	character:SetAttribute("Ki", PowerConfig.KiMax)
-	applyForm(character, "SSJ")
-	task.delay(PowerConfig.BurstTime, function()
+	task.delay(burstTime, function()
 		if character.Parent and character:GetAttribute("PowerState") == "Bursting" then
 			stopCharging(character)
 		end
 	end)
-	task.delay(PowerConfig.BurstTime + PowerConfig.SSJCalmAfter, function()
+	task.delay(burstTime + PowerConfig.SSJCalmAfter, function()
 		if character.Parent and st.Token == token then
 			calmDown(character, token)
 		end
@@ -204,7 +207,8 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 
 	local kaioken = character:GetAttribute("Kaioken") or 0
 	if action == "Start" then
-		if powerState == "Idle" and form == "Base" and kaioken == 0 and not character:GetAttribute("Exhausted") then
+		-- from base, or as a Super Saiyan to go one form higher
+		if powerState == "Idle" and PowerConfig.NextForm(form) and kaioken == 0 and not character:GetAttribute("Exhausted") then
 			st.Started, st.LastUpdate = now, now
 			character:SetAttribute("PowerState", "Charging")
 			character:SetAttribute("Charge", 0)
@@ -225,7 +229,10 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 	elseif action == "Transform" then
 		local charge = character:GetAttribute("Charge") or 0
 		if powerState == "Charging" and charge >= 0.95 and now - (st.Started or now) >= PowerConfig.MinChargeTime - 0.2 then
-			burst(character)
+			local nextForm = PowerConfig.NextForm(form)
+			if nextForm then
+				burst(character, nextForm)
+			end
 		end
 	elseif action == "Cancel" then
 		if powerState == "Charging" then
@@ -234,7 +241,7 @@ remote.OnServerEvent:Connect(function(player: Player, action, value)
 	elseif action == "PowerDown" then
 		if powerState == "Idle" and kaioken > 0 then
 			setKaioken(character, 0) -- let the Kaioken go
-		elseif powerState == "Idle" and form == "SSJ" then
+		elseif powerState == "Idle" and PowerConfig.IsSuper(form) then
 			st.Token = (st.Token or 0) + 1 -- cancels a pending calm-down
 			applyForm(character, "Base")
 			character:SetAttribute("AuraWind", 0)
