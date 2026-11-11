@@ -12,10 +12,7 @@
 	                            PoseLayers   (stacks the walk and the power-up poses in order)
 	  ServerScriptService    -> CharacterSetup (every player becomes the Base rig with hair, belt
 	                                            and fingers)
-	                            PowerUpServer  (referee for powering up / Super Saiyan / Kaioken /
-	                                            the Great Ape)
-	                            Oozaru         (ModuleScript: builds the Great Ape, swaps you in/out)
-	                            OozaruRig      (ModuleScript: where the ape's bones were designed)
+	                            PowerUpServer  (referee for powering up / Super Saiyan / Kaioken)
 	  StarterPlayerScripts   -> HairPhysicsClient (runs the hair + belt physics on each screen)
 	                            PowerUpClient     (R / Space / K controls, front camera, power bar)
 	                            PowerFX           (aura, animation, dust, rocks, the explosion)
@@ -24,17 +21,15 @@
 	                            HandFX            (the fingers: relaxed, fidgets, fists, the point)
 	                            Locomotion        (realistic idle / walk / run for everyone, in
 	                                               place of Roblox's cartoony ones)
-	                            OozaruFX          (the Great Ape: roar, hunch, heavy walk, your red
-	                                               screen)
 	                            HairFitTool       (press H: nudge hair/belt into place)
 	  ServerStorage          -> CharacterParts (empty: the imported rigged pieces go here)
 
 	UPDATING FROM AN EARLIER VERSION
-	  Replace every script with the ones in this kit. New: Gait and PoseLayers (ReplicatedStorage),
-	  Oozaru and OozaruRig (ModuleScripts in ServerScriptService), Locomotion and OozaruFX
-	  (LocalScripts in StarterPlayerScripts). Import Oozaru_Rigged.fbx into ServerStorage >
-	  CharacterParts like the hair (without it G does nothing; the Output says why).
-	  HandFX and the two finger files were new last time.
+	  Replace every script with the ones in this kit. The Great Ape is parked for now: delete
+	  Oozaru and OozaruRig (ServerScriptService), OozaruFX (StarterPlayerScripts) and the
+	  imported Oozaru_Rigged model (ServerStorage > CharacterParts) from your game.
+	  Gait and PoseLayers (ReplicatedStorage) and Locomotion (StarterPlayerScripts) stay: they
+	  are the realistic walk. HandFX and the two finger files came the round before.
 	  If you haven't yet, delete the old copies of these and import the new ones into
 	  ServerStorage > CharacterParts:
 	    BaseHair_Rigged.fbx  - the bangs now have bones
@@ -43,12 +38,11 @@
 
 	SETUP (once)
 	  1. Your R15 rig must be in ReplicatedStorage and called "Base".
-	  2. Import the six rigged pieces with File > Import 3D:
+	  2. Import the five rigged pieces with File > Import 3D:
 	       BaseHair_Rigged.fbx, SSJHair_Rigged.fbx, Belt_Rigged.fbx,
-	       LeftFingers_Rigged.fbx, RightFingers_Rigged.fbx, Oozaru_Rigged.fbx
+	       LeftFingers_Rigged.fbx, RightFingers_Rigged.fbx
 	     (Rig Type: Custom, Scale Unit: Studs, tick "Keep Zero Influence Bones").
-	     Drag all six imported models into ServerStorage > CharacterParts. (The Great Ape is one
-	     model with eight meshes: keep them together. Its size doesn't matter.)
+	     Drag all five imported models into ServerStorage > CharacterParts.
 	  3. Move the contents of each folder in this kit into the service with the same name
 	     (StarterPlayerScripts is inside StarterPlayer). Then delete this kit folder.
 	  4. In StarterPlayer's properties, untick LoadCharacterAppearance (the script tries to do
@@ -73,9 +67,6 @@
 	          it higher (x2, x3, x4, x10, x20), each level burning a ki pip, but it eats your
 	          health every second; push too far and your body gives out (exhausted for a few
 	          seconds). R lets it go. (phones: the KAIOKEN button)
-	  G       the Great Ape (base form, 60 ki): the screen goes black and cuts in on you as a giant
-	          ape, roaring. Heavy, ground-shaking steps; red screen, no UI. G or R turns you
-	          back; it wears off after a minute. (phones: the APE button)
 	  H       fit panel: nudge the hair/belt and copy the Offset line into HairConfig.
 	  Walking: your feet plant and never slide; walk, jog or run by speed (Roblox's default
 	          speed, 16, is a run for someone your size); a settle step when you stop.
@@ -95,10 +86,7 @@
 	  DragonUI: the screens' colours (INK, PAPER, GI, HP, KI ...) and how far every slab
 	            leans (SLANT).
 	  HandFX (top of the script): finger poses (POSES) and idle fidgets (FIDGETS).
-	  PowerConfig: the Great Ape (OozaruKey, OozaruKiCost, OozaruTime, OozaruScale, OozaruHealth,
-	               OozaruWalkSpeed, OozaruTurnSpeed, OozaruIntro, colours, OozaruRoarSound).
-	  Locomotion (top): how people walk (HUMAN). OozaruFX (top): how the giant walks (APE) and
-	               its hands (HANDS). Gait's DEFAULTS explains every walking setting.
+	  Locomotion (top): how people walk (HUMAN). Gait's DEFAULTS explains every walking setting.
 	  HairConfig: give LeftFingers / RightFingers a Color to stop them matching your hands.
 	  HUD (top of the script): the portrait camera (PORTRAIT_FOV, PORTRAIT_EYE, PORTRAIT_LOOK).
 ]]

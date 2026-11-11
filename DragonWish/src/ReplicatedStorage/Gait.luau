@@ -20,7 +20,7 @@
 	  * The hips do what hips do: rise and fall with each step (highest over the standing foot
 	    when walking, lowest when running), sway over the standing foot, turn with the swinging
 	    leg and drop on its side.
-	The script using it (Locomotion for people, OozaruFX for the Great Ape) adds the upper
+	The script using it (Locomotion, for people) adds the upper
 	body, arms and head on top, reading Phase / Mode / Accel / events from here.
 
 	A rig is described as joints: { Parent, C0, C1, Instance } where the child sits at

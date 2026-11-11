@@ -3,7 +3,6 @@
 Every player spawns as the R15 rig **Base**, with their own clothes and accessories stripped. They start with the base hair, the belt and **fingers** on, and a Dragon Ball-style HUD on screen.
 
 - **Walking and standing:** Roblox's cartoony idle, walk and run are replaced by a realistic coded one. Your feet plant on the ground and never slide, because the steps are worked out from how far you actually move. Standing, you breathe, shift your weight from leg to leg and look around. Moving, you walk, jog or run depending on your speed, arms swinging against your legs. When you stop, you take a settle step and your body rocks forward and back upright.
-- **The Great Ape (Oozaru):** press **G** in base form. The screen goes black and cuts in on you as a 34-stud giant ape, already roaring at the sky with rings of sound pounding out of its mouth. Then it drops into a hunch. It walks with heavy steps that thud, shake the ground and kick up dust, and the walk matches its speed exactly. When it stops, its body carries on forward, rocks back and lets out a big breath. Your screen turns red and your UI disappears. **G** or **R** turns you back, and it wears off after a minute.
 
 - **Fingers:** both hands have a thumb and four fingers, two joints each. Standing around, they hang relaxed, a little curled. Every few seconds one hand fidgets, bored: a quick open-close-open-close, drumming along the fingers, rubbing the thumb on the index, a stretch, or squeezing a fist and shaking it loose. They make fists when you power up, transform or use the Kaioken, and they trail behind your hands as your arms swing.
 
@@ -25,26 +24,24 @@ Every player spawns as the R15 rig **Base**, with their own clothes and accessor
 
 | File | What it is |
 | --- | --- |
-| `DragonWishKit.rbxmx` | All 20 scripts in one drag-in file. Its folders are named after the service each part goes in. |
+| `DragonWishKit.rbxmx` | All 17 scripts in one drag-in file. Its folders are named after the service each part goes in. |
 | `models/BaseHair_Rigged.fbx` | The base hair: 1 root bone + 17 spikes + 9 bangs (87 bones). |
 | `models/SSJHair_Rigged.fbx` | The Super Saiyan hair: 1 root bone (`SSJRoot`) + 22 spikes (84 bones). |
 | `models/Belt_Rigged.fbx` | The belt: 1 root bone + the 2 hanging ribbons (4 bones each). |
 | `models/LeftFingers_Rigged.fbx` | The left hand's fingers: 1 root bone (`LHandRoot`) + a knuckle bone, a middle-joint bone and a tip for each finger (16 bones). |
 | `models/RightFingers_Rigged.fbx` | The same for the right hand (`RHandRoot`, `RThumb1` …). |
-| `models/Oozaru_Rigged.fbx` | The Great Ape: 8 meshes (fur, skin, face, ink, mouth, teeth, inner ears, eyes; 60k triangles) sharing one skeleton of 103 bones, with an opening jaw. Made from your `GreatApe` model. |
 | `docs/combat_design_notes.txt` | Our combat discussion, saved for later. |
 
-The `.blend` files are the same rigs as Blender scenes. `models/source/` has your original files, including `TakeTheFingers.obj` (the finger pieces), `R15_body.obj` (your body) and `GreatApe.fbx` (the ape you sent).
+The `.blend` files are the same rigs as Blender scenes. `models/source/` has your original files, including `TakeTheFingers.obj` (the finger pieces) and `R15_body.obj` (your body).
+
+**The Great Ape is parked for now.** Its scripts, test and notes are in `parked/oozaru/` (see the `README.txt` there); the model (`models/Oozaru_Rigged.fbx`, `models/source/GreatApe.fbx`) and how it's made (`tools/rig/build_oozaru.py`) stay in the repo for when it comes back.
 
 ## Setup
 
-> **Updating from an earlier version?** Replace all the scripts with the ones in the new kit. Six are new:
-> - **ReplicatedStorage:** `Gait` and `PoseLayers` (ModuleScripts).
-> - **ServerScriptService:** `Oozaru` and `OozaruRig` (ModuleScripts, next to `PowerUpServer`).
-> - **StarterPlayerScripts:** `Locomotion` and `OozaruFX` (LocalScripts).
-> - **Import `Oozaru_Rigged.fbx`** into `ServerStorage › CharacterParts`, the same way as the hair (step 2 below). Without it, G does nothing and the Output says why.
->
-> `HandFX` and the two finger files were new last time; keep them.
+> **Updating from an earlier version?** Replace all the scripts with the ones in the new kit.
+> - **The Great Ape is parked:** delete `Oozaru` and `OozaruRig` (ServerScriptService), `OozaruFX` (StarterPlayerScripts) and the imported `Oozaru_Rigged` model (`ServerStorage › CharacterParts`).
+> - **Keep** `Gait` and `PoseLayers` (ReplicatedStorage) and `Locomotion` (StarterPlayerScripts): they're the realistic walk.
+> - `HandFX` and the two finger files came the round before; keep them.
 >
 > If you haven't yet, also re-import these newer pieces, after deleting the old copy from `ServerStorage › CharacterParts`:
 > - **`BaseHair_Rigged.fbx`** has bones in the bangs. The server looks for bone `BB01_1`, so an older import won't load.
@@ -53,7 +50,7 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 > The belt hasn't changed.
 
 1. **The rig.** Keep your R15 rig in ReplicatedStorage, named `Base`, with a Humanoid in it.
-2. **Import the six pieces.** In File › Import 3D, pick each `.fbx` (the hair, the SSJ hair, the belt, the two finger files and the Great Ape). Set Rig Type to **Custom** and Scale Unit to Studs, and tick **Keep Zero Influence Bones**. Put all six imported models in `ServerStorage › CharacterParts`. The kit makes that folder for you. The Great Ape comes in as one model with eight meshes: keep them together. Its size doesn't matter; the server measures it and resizes it.
+2. **Import the five pieces.** In File › Import 3D, pick each `.fbx` (the hair, the SSJ hair, the belt and the two finger files). Set Rig Type to **Custom** and Scale Unit to Studs, and tick **Keep Zero Influence Bones**. Put all five imported models in `ServerStorage › CharacterParts`. The kit makes that folder for you.
 3. **Drag in `DragonWishKit.rbxmx`.** Move each folder's contents into the service with the same name. `StarterPlayerScripts` is inside StarterPlayer. Then delete the empty kit folder.
 4. **Untick `LoadCharacterAppearance`** in StarterPlayer's properties. The script tries to do it too, but some places block that.
 5. **Press Play (F5).**
@@ -65,7 +62,6 @@ The `.blend` files are the same rigs as Blender scenes. `models/source/` has you
 | **R** | POWER button | Start powering up. Press again while charging to cancel. As a Super Saiyan, it powers you back down; in Kaioken, it lets the Kaioken go. |
 | **Space** | big TAP button | Spam it to fill the bar. Tap faster than it drains: it only rises above about 3 taps a second, and 8 a second gets you there in under 3 s. |
 | **K** | KAIOKEN button | Light the Kaioken (base form only), and press again to push it a level higher. |
-| **G** | APE button | Become the Great Ape (base form, not in Kaioken, 60 ki). As the ape, G or R turns you back. |
 | **H** | — | Fit panel: nudge the hair or belt into place, then copy the `Offset` line it shows into `HairConfig`. |
 
 On a phone, the charge bar sits at the top right (the radar slides out of the way while you power up), and the TAP button, a big Dragon Ball, sits at the bottom between the thumbstick and the jump button, so nothing covers anything else.
@@ -106,7 +102,7 @@ The power-up controls (`PowerUpClient`) use the same look:
 - **Phones:** a big Dragon Ball **TAP!** button.
 - **Hints:** key caps along the bottom (**R** / **POWER UP**, **K** / **KAIOKEN**).
 - **Kaioken:** a red **KAIOKEN x4!** shout pops up each time it's lit or pushed higher, with a red flash and a kick of the camera.
-- **Notices:** short lines when a key can't work: NOT ENOUGH KI!, BASE FORM ONLY!, TOO TIRED!, LET THE KAIOKEN GO FIRST!
+- **Notices:** short lines when a key can't work: NOT ENOUGH KI!, BASE FORM ONLY!, TOO TIRED!
 
 ## Walking and standing (`Locomotion` + `Gait`, every screen)
 
@@ -123,27 +119,6 @@ Roblox's own idle, walk and run animations are stopped as they start and replace
 - **Standing:** slow breathing, your weight shifting from one leg to the other every few seconds (that hip drops, the other knee softens, the shoulders tilt against it), the head looking around, arms hanging with soft elbows, a tiny balance sway.
 - **Moving:** the hips rise and fall, sway over the standing foot and turn with the swinging leg. The chest turns against the hips, the head stays level and facing where you're going, and you lean into turns.
 - **Layers.** `PoseLayers` runs the walk first and `PowerFX`'s power-up poses on top, every frame, in that order.
-
-## The Great Ape (`Oozaru` on the server, `OozaruFX` on every screen)
-
-- **Turning into it (G).** The server checks you're in base form, not in Kaioken or exhausted, with 60 ki (`OozaruKiCost`). Your screen fades to black, and a copy of the giant is put where you stand, facing your way. It becomes your character. Your own body, with its hair, belt and fingers, is kept aside. You keep the same share of your health (out of `OozaruHealth`, 500) and your ki.
-- **The entrance.** The screen cuts straight in on it already roaring:
-  - leaning back, head thrown up at the sky, jaw wide open, a chatter of rage in it;
-  - arms flung out wide, fingers curled in rage (clawed, not fists), toes gripping the ground, trembling;
-  - rings of sound pounding out of its mouth, a ring of dust blasting off the ground, the ground shaking for everyone near, the roar sound.
-  
-  Then it drops forward into its hunch: back rounded, head up, knees bent, feet wide apart, arms hanging heavy. You can move after `OozaruIntro` (4.4 s).
-- **Standing:** deep slow breaths with a puff of breath on each one, its weight rolling from foot to foot, looking around (at the nearest person in front of it, if there is one), now and then a snarl and a shake of the head. The tail sways on its own.
-- **Walking:** heavy steps from `Gait`, at `OozaruWalkSpeed` (11 studs/s), about 1.2 steps a second. Each step lands with a dip of the whole body, a deep thud, a ring of dust and the camera shaking for anyone near. The hips sway in a rolling waddle, the shoulders roll, the arms swing, the tail swings behind and trails through turns. It's slow to get going.
-- **Stopping (the pause):** the swinging foot comes down, its body carries on forward and rocks back, it lets out a big breath, then settles. If a foot's left behind, it takes a slow settle step.
-- **Turning:** it can't spin on the spot. It turns at `OozaruTurnSpeed` (140°/s), slows down while it turns hard, and shuffles its feet round.
-- **Your screen while you're the giant:**
-  - a red tint, with a dark red edge that throbs with its breathing;
-  - your UI gone (the HUD, the power-up screen, the backpack and player list; the chat stays);
-  - the camera pulled back to take it all in;
-  - a few seconds before it wears off (`OozaruTime`, 60 s), your vision starts to swim.
-- **Turning back:** press **G** or **R** (not mid-roar), or wait it out. The screen goes black and you're back in your own body where the giant stood, with its share of health and the ki you have. Everyone else sees it vanish in a cloud of smoke. If the giant is beaten, you respawn as normal.
-- **Its eyes glow red** (a light at night too).
 
 ## The fingers (`HandFX`, every screen)
 
@@ -193,7 +168,6 @@ King Kai's technique, in base form only. It's built to fit the combat plan in `d
   - It swaps the hair and freezes your walking while you charge and transform. In Kaioken it checks your ki and the pause between levels, speeds you up, drains your health, and exhausts you when your body gives out.
   - **Calming down:** `SSJCalmAfter` (20 s) after you get control back, it fades `Breeze` and the hair lift to 0 over `SSJCalmTime` (4 s). The hair stops flowing and the aura fades with it.
 - **Your controls (`PowerUpClient`).** The keys, the power bar and the front-view camera, which shakes harder as you charge. When you transform it plays the cutscene. Space is grabbed at a higher priority than jumping, so spamming it doesn't make you hop.
-- **The Great Ape (`Oozaru`, server).** The first time someone presses G, it finds the imported model by its tail-tip bone (`TAIL18`). It compares every bone with where it was designed (`OozaruRig`, generated from the rig) to learn how the importer sized and turned it, resizes it to `OozaruScale`, and stands it upright. Then it adds an invisible root part (a box from the hips to the head: it does the walking and the bumping into things) and a Humanoid, and welds everything on. Each player who transforms gets a copy.
 - **The cutscene (`SSJCutscene`, only the player transforming sees it).**
   - **Camera:** it takes the camera for the transformation (`BurstTime`, 6.9 s). Every shot is measured from your head or body as they move:
     - **Eyes (0–1 s):** an extreme close-up panning across your eyes.
@@ -243,9 +217,7 @@ King Kai's technique, in base form only. It's built to fit the combat plan in `d
   - **HUD:** ki (`KiMax`, `KiStart`, `KiRegen`), power level (`BasePowerLevel`, `ChargePowerBoost`, `SSJMultiplier`), radar range (`RadarRange`)
   - **camera:** distance, height and shake
 - **`PowerFX`** (top of the script): the key poses (`READY`, `STRAIN`, `RELEASE`, the point's `POINT_TOUCH` / `POINT_HIT` / `POINT_TIMING`, `KAIOKEN_FLEX`, `SLUMP`), the aura's sizes (`RING_RADIUS`, `FLAME_HEIGHT`, `FLAME_LEAN`) and its flame groups (`GROUPS`), if you want to restyle them.
-- **`PowerConfig` › the Great Ape:** the key, ki cost, how long it lasts, size, health, walk and turn speed, how long it roars, its colours, and the roar and footstep sounds (`OozaruKey` … `OozaruStepSound`).
 - **`Locomotion`** (top of the script): how people walk (`HUMAN`: stride, stance width, toe-out, hip sway and bob, settle-step time). Every setting is explained in `Gait`'s `DEFAULTS`.
-- **`OozaruFX`** (top of the script): how the giant walks (`APE`), its hands (`HANDS`: relaxed, rage, loose) and its toes.
 - **`HandFX`** (top of the script): the finger poses (`POSES`, in degrees: knuckle bend, middle-joint bend, spread), the idle fidgets (`FIDGETS`, `SSJ_FIDGETS`: key poses over time, which finger leads, how far behind each one follows), and how springy the fingers are (`OMEGA`, `DAMPING`, `LAG`).
 - **`DragonUI`** (top of the script): the screens' colours (`INK`, `PAPER`, `GI`, `HP`, `KI` …) and how far every slab leans (`SLANT`).
 - **`HUD`** (top of the script): the portrait camera (`PORTRAIT_FOV`, `PORTRAIT_EYE`, `PORTRAIT_LOOK`), if your head sits too high or low on the card.
@@ -262,12 +234,8 @@ King Kai's technique, in base form only. It's built to fit the combat plan in `d
 - **Bone names must be unique across every piece worn together.** Roblox ties each skinned mesh to its bones by name across the whole character. `CharacterSetup` warns in the Output if two pieces share a bone name.
 - **No textures.** The `.mtl` files point at `Handle1_diff.png`, which wasn't in the zip. The pieces use flat colours instead: black base hair, gold SSJ hair, blue belt. Paste a texture id into `TextureId` in `HairConfig` if you have one.
 - **Hair placement is worked out from the model files.** The head centre for each piece comes from its shape. If a piece sits a little off on your rig, press **H** and nudge it.
-- **Sounds.** Only the Great Ape has any. Its footsteps are Roblox's own landing thud played deep and slow (`rbxasset://sounds/action_jump_land.mp3`). The roar is "Monster Roar - Sound Effect" from the Creator Store (`rbxassetid://2139510606`), uploaded by another creator. I couldn't check from here that it plays in your game: if it's silent, search the Creator Store's Audio for "roar" and paste the id into `OozaruRoarSound`. There's still no charge hum, scream or burst sound.
-- **The Great Ape model.** The ape you sent looks ripped from a commercial Dragon Ball game (the bone names and toon materials point that way). Roblox removes assets that get a copyright claim, and can moderate the game too. It's fine for testing. Before you publish, swap in a model you made or have the rights to. The scripts only need the same bone names, and `tools/rig/build_oozaru.py` shows how this one was prepared.
-- **The Great Ape's look.** The original toon shading and textures aren't in the `.fbx`; the meshes get flat colours from `PowerConfig` (fur, skin) and the server (ink lines, mouth, teeth, glowing eyes).
-- **Not tried in real Studio.** The scripts were run against fake characters in tests (`tools/test/`), and the UI was drawn by a stand-in renderer (`tools/preview/`), not in a live Roblox server. The walk and the Great Ape were checked with renders of your R15 body and the ape mesh posed by the scripts' own numbers.
-  - **Swapping characters:** turning into the giant sets `Player.Character` to a new model and keeps your body in ServerStorage, the standard way to morph. The camera, controls and network ownership should follow, but this couldn't be run in a real server here.
-  - **If the Great Ape stands in a T-pose,** look in the Output for a line starting `[OozaruFX]` or `[Oozaru]`: it says what's wrong with its skeleton (usually a re-import with Rig Type Custom and "Keep Zero Influence Bones" ticked fixes it). When it works you'll see `[OozaruFX] animating the Great Ape: … bones`.
+- **No sounds yet.** No charge hum, scream or burst sound.
+- **Not tried in real Studio.** The scripts were run against fake characters in tests (`tools/test/`), and the UI was drawn by a stand-in renderer (`tools/preview/`), not in a live Roblox server. The walk was checked with renders of your R15 body posed by the script's own numbers.
   - **Roblox's walk animations:** they're stopped as they start (the `idle`, `walk` and `run` animations of the `Animate` script). If you replace `Animate` with your own, rename those or the walk won't take over. The renderer uses stand-in fonts, and it can't show the 3D portrait, the ink outline round you or the colour filter exactly. The portrait camera's framing is a best guess: if your head sits wrong on the card, change `PORTRAIT_EYE` / `PORTRAIT_LOOK` in `HUD`.
 - **Slanted edges are a little jagged.** Roblox doesn't smooth the edges of turned frames, and each slab's slanted ends are turned frames.
 - **The kanji** (気, 超 and 拳) use Roblox's built-in fallback font for Japanese, since Bangers and Gotham don't have them.
@@ -279,15 +247,13 @@ King Kai's technique, in base form only. It's built to fit the combat plan in `d
 
 ## Rebuilding and checking
 
-- `tools/rig/build_oozaru.py` prepares the Great Ape from `models/source/GreatApe.fbx` with Blender's Python module: it re-weights the jaw to the chin bone so the mouth opens, drops unused bones, thins the fur to fit Roblox's 20k-triangle limit per mesh, joins the pieces by colour, and exports `Oozaru_Rigged.fbx` plus `oozaru.json`. `tools/rig/emit_oozaru.py` turns `oozaru.json` into `OozaruRig`.
 - `tools/rig/build_dbz.py` rigs the `.obj` files with Blender's Python module and writes the `.fbx` and `.blend` files (`BaseHair`, `SSJHair`, `Belt`, `LeftFingers`, `RightFingers`). Add piece names to rebuild only those. `tools/rig/fingers.py` moves the finger pieces onto your R15 hands and finds each joint's hinge from the pieces' rounded knuckles. `tools/rig/verify_dbz.py` re-imports the files and checks the bones.
 - `lune run tools/build_rbxmx.luau .` rebuilds `DragonWishKit.rbxmx` from `src/`.
 - Tests, run from this folder with `lune run tools/test/<name>.luau`:
-  - `server_mock`: the morph (all five pieces), the referee, ki, calming down, the Kaioken (levels, ki, strain, the body giving out, speed), and the Great Ape (built from a fake import turned and placed elsewhere, swapped in and out, the roar lock, the time limit, refusals)
-  - `client_mock`: controls plus server, end to end, including the cutscene starting and the K and G keys
+  - `server_mock`: the morph (all five pieces), the referee, ki, calming down and the Kaioken (levels, ki, strain, the body giving out, speed)
+  - `client_mock`: controls plus server, end to end, including the cutscene starting and the K key
   - `gait_mock`: the feet don't slide at 4–22 studs/s, steps match the distance, stopping, turning on the spot, curving, sideways, backward, speeding up, jumping
   - `locomotion_mock`: the real walk on a stand-in of your R15 body: standing (weight shifts, looking around), running, jogging and walking with no sliding, arms against the legs, the head steady, the stop, jumping (add `"" motor6d` for old-style joints)
-  - `ape_mock`: the real Great Ape script on a stand-in built from the rig: the roar, the hunch, the walk with planted feet, the stop, turning, and your screen
   - `fx_mock`: aura, ring, animation, explosion timing, the point, and Kaioken's red aura, glow and flex (add `"" motor6d` to test old-style joints)
   - `hands_mock`: the fingers: relaxed, fidgets, fists, the point, Kaioken, limp, and trailing when the arm swings
   - `aura_harness <BaseHair|SSJHair|Belt>`: hair and belt physics through a power-up, walking, stopping and jumping

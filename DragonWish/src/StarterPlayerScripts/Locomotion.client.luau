@@ -16,7 +16,7 @@
 	Roblox's own jump, fall, climb, swim and sit animations still play: this fades out while
 	you're off your feet and back in when you land. Emotes, and anything an attack plays at
 	Action priority, take over from it while they play. Tools keep their arm pose.
-	The Great Ape is animated by OozaruFX instead. Walk / run style: the HUMAN table below.
+	Walk / run style: the HUMAN table below.
 ]]
 
 local Players = game:GetService("Players")
@@ -46,7 +46,6 @@ local JOINTS = {
 local LEGS = { "Root", "LeftHip", "LeftKnee", "LeftAnkle", "RightHip", "RightKnee", "RightAnkle" }
 local RIGHT_ARM = { RightShoulder = true, RightElbow = true, RightWrist = true }
 local FAR = 110 -- studs from the camera: further away the pose is worked out every third frame
-local OOZARU_TAG = "DW_Oozaru"
 
 -- Roblox's own animations this replaces (the Animate script's idle / walk / run) ...
 local REPLACED = { idle = true, walk = true, run = true }
@@ -432,7 +431,7 @@ PoseLayers.Add(10, "Locomotion", function(dt: number)
 	for _, character in exclude do
 		local root = character:FindFirstChild("HumanoidRootPart")
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if root and humanoid and humanoid.RigType == Enum.HumanoidRigType.R15 and not character:GetAttribute("Oozaru") then
+		if root and humanoid and humanoid.RigType == Enum.HumanoidRigType.R15 then
 			seen[character] = true
 			local st = states[character]
 			-- joints swapped out (the joint upgrade, a respawned limb) or the body resized:
