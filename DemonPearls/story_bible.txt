@@ -96,7 +96,7 @@ the AI made them purple), art/kohaku_genzo.webp
     - Can one person eat pearls from different kings?
     - Is a king one mind spread over his ten pearls? Can he feel his other pearls?
     - Can a pearl be destroyed? Can the kings be sealed again, and at what cost?
-    - The restriction after the barrier vanished: see note A in section 10.
+    - The Kohaku pearl is the last death pearl: the clan's life force froze its barrier (note A).
 
 
 5. VEXTRILL ("VEX"), THE GAME'S FIRST FINAL VILLAIN  [YOURS]
@@ -322,18 +322,16 @@ the AI made them purple), art/kohaku_genzo.webp
 
 10. NOTES  [SUGGESTED]
 ---------------------
-  A. THE RESTRICTOR AFTER THE BARRIER VANISHED. In 1653 the fading barrier explains why the
-     pearl didn't kill the Shiranui king. But the barrier vanished completely ~1933, so why does
-     the pearl still restrict Genzo in 2043? Options:
-       1. (my favourite) The weakening was never the barrier: a sealed king drinks the strength
-          of whoever holds him, and the stronger you are, the more he drinks. That explains the
-          1653 king collapsing, the restrictor still working in 2043, AND why Vex (a bookworm
-          with no fighting power) felt nothing when he grabbed his pearl. Dark bonus: the Kohaku
-          clan has been feeding their pearl for 390 years, so instead of fading like the others
-          it's been topped up: the strongest of the thirty. And a beat: when you grab it in SSJ
-          at the end, your power stutters until it's in your pocket.
-       2. A last remnant of the barrier lives on in that one pearl, kept alive by the clan's
-          training against it.
+  A. THE RESTRICTOR AFTER THE BARRIER VANISHED: SOLVED [YOURS]. As the Kohaku clan wore the
+     pearl, their natural life force kept its barrier stable, almost like freezing it,
+     dramatically slowing its fading. The others never trained with theirs, so the Kohaku pearl
+     is THE LAST DEATH PEARL: in 2043 it still kills the weak and drains the strong.
+     [SUGGESTED] what follows from it:
+       - It explains the ending: Vex swallowing a pearl that still drains strong fighters is what
+         leaves him "too distracted to fight properly".
+       - When you grab it in SSJ, your power stutters until it's in your pocket.
+       - Now nobody is wearing it, so its barrier starts fading again.
+       - Anyone weak who picks it up still dies: worth a scene.
   B. AGE RATING (if it's on Roblox): a hole through someone's chest and ripping someone in two
      count as impalement and dismemberment. If they look realistic the game is 18+ only (age
      verified); shown Dragon Ball style (a flash, a cut-away, a silhouette), it stays open to
@@ -353,7 +351,6 @@ the AI made them purple), art/kohaku_genzo.webp
 11. OPEN QUESTIONS
 ------------------
   - Whose pearl does the Kohaku clan carry?
-  - Which fix for note A?
   - Is the timeline in section 2 right?
   - Your Saiyan: where they come from, how they met Genzo.
   - What happens between the opening and the end of the saga.
