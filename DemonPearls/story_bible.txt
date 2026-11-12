@@ -1,8 +1,17 @@
-THE DEMON PEARLS - STORY BIBLE  (a new, story-only game; working title, folder can be renamed)
+THE DEMON PEARLS - STORY BIBLE  (a story game connected to Dragon Wish; working title, the
+folder can be renamed)
 ==========================================================================================
 
 Marked [YOURS] = your idea / decision.  [SUGGESTED] = my suggestion, not decided.
-[OPEN] = still to decide.  Concept art: art/the_three_demon_kings.webp
+[OPEN] = still to decide.
+Art: art/the_three_demon_kings.webp, art/masked_fighter.webp
+
+
+0. THE BIG PICTURE
+------------------
+  - Connected to Dragon Wish. [YOURS]  How exactly: [OPEN]
+  - A story game.  [YOURS]
+  - The main character: [OPEN] (you'll get into that).
 
 
 1. THE CORE: THE DEMON PEARLS  [YOURS]
@@ -32,104 +41,203 @@ Marked [YOURS] = your idea / decision.  [SUGGESTED] = my suggestion, not decided
     life energy, mixed into the universe's own energy and diluted.
   - Billions of years later, the story of the battle has been lost to history. And, most
     importantly, the Ruler MISCALCULATED: he was too drained and dazed, and the barrier around
-    the pearls has finally disappeared.
+    the pearls has finally disappeared. It fell about 10 years before the story starts, and
+    nobody noticed (Kazgor felt a jolt of power that woke him; Vex worked it out on paper).
 
 
-2. THE THREE DEMON KINGS  [YOURS: names, titles, art]
-----------------------------------------------------
-  KAZGOR, THE EMBER KING: orange, molten cracks through a rocky body, crescent horns, a
-    jagged grin.
-  ZARVETH, THE CRIMSON KING: red, the giant in the middle, crowned, huge horns, a cape,
-    reaching out under a blood-red moon.
-  NEMRYTH, THE VOID KING: black, a ragged shadow cloak covered in eyes, a pale sigil above
-    him.
+2. THE THREE DEMON KINGS  [YOURS]
+--------------------------------
+  ZARVETH, THE CRIMSON KING: the eldest and the strongest. Red, the giant in the middle of the
+    art, crowned, huge horns, a cape, under a blood-red moon.
+  KAZGOR, THE EMBER KING: Zarveth's younger brother. Orange, molten cracks through a rocky body,
+    crescent horns, a jagged grin. The first king to wake and find a vessel (Vex).
+  NEMRYTH, THE VOID KING: Zarveth's younger brother. Black, a ragged shadow cloak covered in
+    eyes, a pale sigil above him.
   Each has a sigil under his name in the art.
 
-  [OPEN] their personalities, what each one wants, whether Zarveth (centre, biggest) is the
-  leader.
-  [SUGGESTED] put each king's sigil on his ten pearls, so a pearl can be recognised at a
-  glance. Each king's nature could leak into whoever holds one of his pearls:
-    Ember: power and rage that won't cool down.
-    Crimson: strength, and a hunger to rule.
-    Void: seeing what others can't, and slowly being pulled into nothing.
+  [OPEN] their personalities and what each one wants.
+  [SUGGESTED] put each king's sigil on his ten pearls. Each king's nature could leak into
+  whoever holds or eats one of his pearls (Ember: rage that won't cool down; Crimson: a hunger
+  to rule; Void: seeing what nobody else can, and slowly fading into nothing).
+  [SUGGESTED] brothers: Kazgor making a deal on his own may be trying to get back first, before
+  his big brother wakes and takes charge. A rivalry gives the kings personalities beyond
+  "evil".
 
 
-3. DRAFT OPENING NARRATION  [SUGGESTED: your legend, written for the game's intro]
----------------------------------------------------------------------------------
-  Before time had a name, there were the Demon Kings.
-  Kazgor, the Ember King. Zarveth, the Crimson King. Nemryth, the Void King.
-  They held the power of many universes, and they ruled them all.
-
-  One rose against them: the one we now call the Past Ruler.
-  For a billion years his army fought theirs. For a billion years, neither side could win.
-
-  So he set a trap.
-
-  He meant to burn every drop of his life to destroy them. It was not enough.
-  He tried to seal them away. It was not enough.
-  So he did the last thing he could: he broke them. Each king was crushed into ten pearls,
-  and thirty pearls scattered across the universe like falling stars.
-
-  To do it, he took more than he was allowed. He made a binding deal: everything he was,
-  his very existence, in return for twice his power. And when the light faded, the deal came
-  to collect.
-
-  His army ran to him and poured their own strength into his fading body. "Live," they
-  begged.
-  "Fools!" he screamed. "A deal this great carries a punishment just as great. If I escape
-  my death, the binding breaks, and they come back."
-
-  So he spent their gift on one last act: a barrier around every pearl, that would kill
-  anything that touched it.
-  "It's too cruel," they said.
-  "They must be feared," he answered, "for the rest of history."
-
-  In time, he told them, the pearls would melt away. Their power would seep into the
-  universe, thin out, and become nothing more than the quiet energy of life.
-
-  Then he was gone.
-
-  Billions of years passed. The war was forgotten. The Past Ruler was forgotten.
-  But he had been drained, and dazed, and dying, and he had made one mistake.
-
-  The barrier did not last as long as the pearls.
+3. THE RULES OF THE PEARLS
+--------------------------
+  Decided [YOURS]:
+    - A pearl speaks to you when you're close, and its king can look into your mind.
+    - The kings are weaker than they were, but still very powerful.
+    - Eating a pearl gives you strength beyond your wildest dreams.
+    - One pearl is too weak for its king to take control of you: if he tried, the burst of
+      power would destroy the pearl, and you with it.
+  [OPEN]
+    - How many pearls before a king can take control? Does Vex know?
+    - Does each king's pearl give its own kind of power? Can one person eat pearls from
+      different kings?
+    - Is a king one mind spread over his ten pearls, or ten minds? Can he feel where his other
+      pearls are?
+    - Can a pearl be destroyed? Can the kings be sealed again, and at what cost?
 
 
-4. IDEAS TO CONSIDER  [SUGGESTED]
---------------------------------
-  - THE OPENING SCENE: for billions of years, everything that touched a pearl died. The game
-    opens on the day someone touches one, and lives. Who that is (hero or villain) sets up
-    the whole story.
-  - THE PEARLS AREN'T FULL ANY MORE: billions of years of seeping means part of every king has
-    already dissolved into the universe's life energy, the energy every living thing has.
-      - The kings would come back weaker than they were, which is why mortals stand a chance.
-      - A revived king could pull his missing power back out of every living thing, so a
-        revival drains the whole world, not just the place it happens.
-      - (optional) a main character born with an unusually large share of that energy, so
-        the pearls react to them.
-  - "THE PAST RULER": a title, or just what people call him now? If he ruled the past itself,
-    erasing him explains why history forgot the war: the past lost its keeper. "Lost to
-    history" becomes a consequence, not a coincidence.
-  - THE ARMY'S FATE: they gave everything too. They (or their descendants) could become the
-    pearls' first guardians, who kept the fear alive long after the story was lost: folk rules
-    like "never touch the red stones", temples built around a pearl nobody remembers why.
-    Now that fear is the only thing protecting the pearls.
-  - THE OTHER SIDE OF THE DEAL: a binding deal needs someone to make it with: a higher being,
-    or the universe itself. Whoever it was may still exist, and still knows the story.
+4. VEXTRILL ("VEX"), THE GAME'S FIRST FINAL VILLAIN  [YOURS]
+-----------------------------------------------------------
+  - A billionaire, in charge of the fight tournaments. Very intelligent; has studied books ever
+    since he was a child.
+  - His favourite book, passed down his family for generations, he believed was fiction: the
+    legend of the Demon Kings.
+  - He dreamed of being a ruler like the supreme kings, and believed the Demon Kings were the
+    good ones, keeping strict order:
+      "The demon kings' powers were that of multiple gods. They could erase an entire galaxy
+      with a thought. This brought peace according to their rule, and in the case of a law
+      breaker, they were entirely erased, no problems."
+    He justified their evils as "natural": "with such power, naturally you would be more than
+    just bored."
+  - Years later a pearl was put on show at a museum, at an absurd price, for being deadly to
+    touch and for the immense power flowing from it. The people selling it had no idea its
+    barrier had faded; they only went off the legend.
+  - It was exactly as the book described. Vex knew he had to have it. He tried to tell himself
+    the book was fiction, probably written about the pearl and not as old as it claims. It
+    bothered him. The next week he drove to the museum and studied the pearl.
+  - Kazgor, curious why this man was inspecting him like that, looked into his mind, a little
+    excited at the 0.00001% chance this human knew. He did. Kazgor spoke to him telepathically:
+    everything in the book is true, he is the Ember King, and Vex must find a way to consume him.
+  - Vex: he has read that book thousands of times and can recite at least 90% of it from memory;
+    he has had hundreds of theories and done more than enough research. He spent a summer
+    working out how much power every individual soldier would have had, and the barrier must
+    have lifted years ago, at least 10, and nobody knows.
+  - Kazgor hesitated: about 10 years ago he was woken by a sudden jolt of power, but paid it no
+    attention as he couldn't do anything. Still, Vex is most likely the only one in the
+    universe, if not the multiverse, who knows the legend; it's too risky for him to die.
+  - Vex: "You've been in this pearl for billions of years, Lord Kazgor. The battle you fought is
+    faded at best. I've studied it for years. You must trust me." He walks away.
+  - Auction day: Vex spends almost everything he has and easily wins the pearl, because everyone
+    else is scared of it.
+  - At home he opens the case and grabs the pearl. Nothing happens. He swallows it.
+    KAZGOR: "YES! YES! Well done, my child! Your body is a suitable vessel. But this one pearl
+    is far too weak. If I attempt to control you, the power burst will destroy this pearl and
+    you."
+  - Vex now has new power.
+
+  [SUGGESTED] ideas around Vex:
+    - EVERY PEARL BRINGS HIM CLOSER TO HIS DOOM: more pearls, more power, but more of Kazgor
+      inside him, until Kazgor can take control. His ambition is the trap. Being a genius, he'd
+      see it coming and try to cheat it, e.g. eat pearls from different kings so no one brother
+      ever gets enough of a foothold: the brothers' rivalry keeping each other in check inside
+      his body.
+    - WHO WROTE THE BOOK: it's too accurate to be fiction, down to the soldiers' power. A
+      soldier of the Past Ruler's army wrote it, and it was copied down Vex's family for ages:
+      Vex descends from the army that sealed the kings. The bloodline meant to keep the pearls
+      feared produced the one man who loves them.
+    - THE TOURNAMENTS ARE HIS NET: nearly broke after the auction, he needs them to refill his
+      fortune and to hunt pearls (fighters as unwitting pearl hunters, or a pearl as a prize
+      nobody else understands). A natural bridge to Dragon Wish: its tournaments could be his.
+    - A DEMON RADAR: with a pearl inside him he might feel Kazgor's other nine; a billionaire
+      genius would build a machine around that feeling, his own dark Dragon Radar.
+    - THE IRONY: the Past Ruler's last order was that the pearls be feared forever. The fear
+      outlived the barrier, and it's exactly why nobody else bid. His protection handed the
+      pearl to the one man who wasn't afraid.
 
 
-5. RULES OF THE PEARLS TO PIN DOWN  [OPEN]
-------------------------------------------
-  1. Holding one: nothing? it whispers? it gives power? it slowly changes you?
-  2. Gathering a king's ten: does he come back? At what strength?
-  3. Can a pearl be destroyed, absorbed or used without bringing its king back?
-  4. Are the kings aware inside the pearls? Can they talk to or steer people?
-  5. Can they be sealed again, and what would that cost now there's no Past Ruler?
+5. DRAFT SCENES  [SUGGESTED: your story, written as game scenes]
+----------------------------------------------------------------
+  OPENING NARRATION
+    Before time had a name, there were the Demon Kings.
+    Kazgor, the Ember King. Zarveth, the Crimson King. Nemryth, the Void King.
+    They held the power of many universes, and they ruled them all.
+
+    One rose against them: the one we now call the Past Ruler.
+    For a billion years his army fought theirs. For a billion years, neither side could win.
+
+    So he set a trap.
+
+    He meant to burn every drop of his life to destroy them. It was not enough.
+    He tried to seal them away. It was not enough.
+    So he did the last thing he could: he broke them. Each king was crushed into ten pearls,
+    and thirty pearls scattered across the universe like falling stars.
+
+    To do it, he took more than he was allowed. He made a binding deal: everything he was,
+    his very existence, in return for twice his power. And when the light faded, the deal came
+    to collect.
+
+    His army ran to him and poured their own strength into his fading body. "Live," they
+    begged.
+    "Fools!" he screamed. "A deal this great carries a punishment just as great. If I escape
+    my death, the binding breaks, and they come back."
+
+    So he spent their gift on one last act: a barrier around every pearl, that would kill
+    anything that touched it.
+    "It's too cruel," they said.
+    "They must be feared," he answered, "for the rest of history."
+
+    In time, he told them, the pearls would melt away. Their power would seep into the
+    universe, thin out, and become nothing more than the quiet energy of life.
+
+    Then he was gone.
+
+    Billions of years passed. The war was forgotten. The Past Ruler was forgotten.
+    But he had been drained, and dazed, and dying, and he had made one mistake.
+
+    The barrier did not last as long as the pearls.
+
+  THE MUSEUM (the pearl on show before its auction)
+    [A glass case under spotlights. A sign: LETHAL ON CONTACT - DO NOT APPROACH. Visitors keep
+     a wide circle around it. One man stands right at the glass, and has for a long time:
+     VEXTRILL.]
+    KAZGOR (to himself): He studies me like a scholar, not a tourist...
+    [The pearl pulses. Kazgor slips into Vex's mind: pages, thousands of them. The same book,
+     read over and over.]
+    KAZGOR: ...He knows.
+    KAZGOR (in Vex's head): Don't look away, human. That book you love... every word of it is
+      true. I am Kazgor, the Ember King. Find a way to consume me.
+    VEX (thinking back, calm): I've read that book thousands of times. I can recite nine-tenths
+      of it from memory. I spent a summer working out how much power each of the Past Ruler's
+      soldiers gave him. That barrier fell at least ten years ago. Nobody noticed.
+    KAZGOR: ...Ten years ago, something jolted me awake. I could do nothing with it.
+    KAZGOR: No. If you're wrong, you die, and you may be the only one in the universe who still
+      knows. I won't risk you.
+    VEX: You've been in that pearl for billions of years, Lord Kazgor. Your war is a faded story
+      at best. I've studied it for years.
+    [He turns and walks away.]
+    VEX: You must trust me.
+
+  THE AUCTION
+    [The opening price is read out. The room goes quiet. Nobody raises a paddle; nobody wants
+     to own death.]
+    [One paddle goes up.]
+    AUCTIONEER: ...Sold.
+    [Vex has spent almost everything he owns.]
+
+  VEX'S STUDY
+    [The case opens with a hiss. His bare hand hovers over the pearl. For billions of years,
+     everything that touched it died.]
+    [He picks it up. Nothing happens.]
+    [He looks at it for a long moment. Then he swallows it.]
+    KAZGOR: YES! YES! Well done, my child! Your body is a suitable vessel... but one pearl is
+      far too weak. If I tried to take control of you now, the burst would destroy this pearl,
+      and you with it.
+    [Embers crawl along Vex's veins. He starts to laugh.]
 
 
-6. OTHER OPEN QUESTIONS
------------------------
-  - Its own universe, or connected to Dragon Wish?
-  - What kind of game: chapters, cutscenes, dialogue, fights?
+6. OTHER IDEAS  [SUGGESTED]
+--------------------------
+  - THE OPENING SCENE: for billions of years, everything that touched a pearl died. The story
+    opens on the day someone touches one and lives (now: Vex, in his study).
+  - THE PEARLS AREN'T FULL ANY MORE: part of every king has already dissolved into the
+    universe's life energy. The kings come back weaker (why mortals stand a chance), and a
+    revived king could pull his missing power back out of every living thing.
+  - "THE PAST RULER": if he ruled the past itself, erasing him explains why history forgot.
+  - THE ARMY'S FATE: they or their descendants became guardians who kept the fear alive after
+    the story was lost (see "who wrote the book" above).
+  - THE OTHER SIDE OF THE DEAL: whoever the binding deal was made with may still exist.
+
+
+7. OPEN QUESTIONS
+-----------------
+  - The masked fighter in the art (spiky black hair, a metal mask with a glowing purple visor,
+    a black gi, an arm cannon firing purple energy): who is he?
+  - How it connects to Dragon Wish: the same world later on, the same time, or Dragon Wish
+    leading into it?
   - The main character: who they are, and how they meet the first pearl.
   - The title of the game.
